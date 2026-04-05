@@ -1,83 +1,84 @@
-import React, { useState } from 'react'
+import React from 'react'
 
 export default function App() {
-  const [nombre, setNombre] = useState("");
-
   return (
-    <div className="min-h-screen bg-white text-[#0A193F] font-sans antialiased relative overflow-x-hidden">
-      {/* Fondo con degradado sutil de tenis */}
-      <div className="absolute inset-0 z-0 opacity-5 blur-[120px] pointer-events-none"
-        style={{
-          background: "radial-gradient(circle at 80% 20%, #00E676 0%, #1565C0 100%)"
-        }}
-      />
-
-      {/* NAVBAR */}
-      <nav className="relative z-10 flex justify-between items-center px-10 py-8 max-w-7xl mx-auto">
-        <div className="text-2xl font-black tracking-tighter">
+    <div className="min-h-screen bg-[#fafafa] text-[#0f172a] font-sans antialiased selection:bg-[#00E676]/30">
+      
+      {/* Navbar Minimalista estilo SaaS */}
+      <nav className="flex justify-between items-center px-6 py-5 max-w-6xl mx-auto border-b border-slate-100">
+        <div className="text-2xl font-black tracking-tighter flex items-center gap-1">
+          <div className="w-8 h-8 bg-[#1565C0] rounded-lg flex items-center justify-center text-white text-xs italic">V</div>
           VAd<span className="text-[#00E676]">.</span>
         </div>
-        <div className="hidden md:flex gap-10 text-sm font-semibold text-slate-500">
-          <a href="#" className="hover:text-[#1565C0] transition-colors">Ranking</a>
-          <a href="#" className="hover:text-[#1565C0] transition-colors">Torneos</a>
-          <a href="#" className="hover:text-[#1565C0] transition-colors">CART</a>
+        <div className="hidden md:flex gap-8 text-[13px] font-bold uppercase tracking-wider text-slate-400">
+          <a href="#" className="hover:text-[#1565C0] transition-all">Ranking</a>
+          <a href="#" className="hover:text-[#1565C0] transition-all">Torneos</a>
+          <a href="#" className="hover:text-[#1565C0] transition-all">Club CART</a>
         </div>
-        <button className="px-5 py-2.5 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all">
-          Entrar
+        <button className="bg-[#0f172a] text-white px-5 py-2 rounded-full text-xs font-bold hover:bg-[#1565C0] transition-all shadow-lg shadow-black/10">
+          ENTRAR
         </button>
       </nav>
 
-      {/* HERO SECTION */}
-      <main className="relative z-10 grid md:grid-cols-2 gap-20 items-center px-10 pt-16 pb-32 max-w-7xl mx-auto">
+      <main className="max-w-6xl mx-auto px-6 pt-16 pb-24 grid md:grid-cols-2 gap-12 items-center">
         
-        {/* Lado Izquierdo: El Gancho */}
-        <div className="max-w-xl">
-          <h1 className="text-7xl font-black tracking-tighter leading-[0.9] mb-8">
-            Tu ventaja <br />
-            <span className="bg-gradient-to-r from-[#1565C0] to-[#00E676] bg-clip-text text-transparent italic">
-              adentro.
-            </span>
+        {/* Columna Izquierda: Mensaje Central */}
+        <div className="space-y-8">
+          <div className="inline-block px-3 py-1 rounded-full bg-[#00E676]/10 border border-[#00E676]/20 text-[#008a46] text-[10px] font-black uppercase tracking-widest">
+            🎾 Rosarito Tennis Network
+          </div>
+          
+          <h1 className="text-6xl md:text-8xl font-black tracking-[ -0.05em] leading-[0.85]">
+            DOMINA <br />
+            <span className="text-[#1565C0]">LA CANCHA.</span>
           </h1>
-          <p className="text-slate-500 text-xl font-light leading-relaxed mb-10">
-            La plataforma de gestión y ranking ELO para la comunidad de tenis en Rosarito. Registra tus partidos y escala niveles.
+          
+          <p className="text-lg text-slate-500 font-medium leading-relaxed max-w-md">
+            Registra tus victorias, analiza tu progreso y escala en el ranking oficial de <span className="text-[#0f172a] font-bold">VAd</span>. El estándar de ELO para Rosarito.
           </p>
-          <div className="flex gap-4">
-            <button className="px-10 py-5 bg-[#00E676] text-slate-950 font-black rounded-2xl shadow-xl shadow-[#00E676]/20 hover:-translate-y-1 transition-all">
-              REGISTRARSE
+
+          <div className="flex gap-4 pt-4">
+            <button className="bg-[#00E676] text-slate-950 px-8 py-4 rounded-2xl font-black text-sm shadow-[0_10px_20px_rgba(0,230,118,0.3)] hover:-translate-y-1 transition-all">
+              CREAR PERFIL
             </button>
-            <button className="px-10 py-5 bg-[#1565C0] text-white font-black rounded-2xl shadow-xl shadow-[#1565C0]/20 hover:-translate-y-1 transition-all">
-              RANKING
+            <button className="bg-white border-2 border-slate-100 text-slate-400 px-8 py-4 rounded-2xl font-black text-sm hover:border-[#1565C0] hover:text-[#1565C0] transition-all">
+              EXPLORAR
             </button>
           </div>
         </div>
 
-        {/* Lado Derecho: Preview del Perfil (Estilo Base44) */}
-        <div className="relative group">
-          <div className="absolute -inset-1 bg-gradient-to-r from-[#00E676] to-[#1565C0] rounded-[2rem] blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
-          <div className="relative bg-white border border-slate-100 p-10 rounded-[2rem] shadow-2xl">
-            <div className="flex items-center gap-6 mb-10">
-              <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-2xl font-bold text-slate-400">
-                ?
-              </div>
-              <div>
-                <h3 className="text-2xl font-black tracking-tight">Nuevo Jugador</h3>
-                <p className="text-slate-400 text-sm tracking-wide uppercase font-bold">Pendiente de ELO</p>
-              </div>
-            </div>
+        {/* Columna Derecha: El "Hero Card" (Inspirado en tu imagen) */}
+        <div className="relative">
+          {/* Adorno de fondo (Círculo difuso) */}
+          <div className="absolute -top-20 -right-20 w-64 h-64 bg-[#1565C0] rounded-full blur-[100px] opacity-10"></div>
+          
+          <div className="relative bg-white rounded-[2.5rem] p-1 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] border border-slate-100 overflow-hidden">
+            <div className="bg-[#1565C0] h-32 w-full absolute top-0 left-0"></div>
             
-            <div className="space-y-4">
-              <div className="h-14 w-full bg-slate-50 rounded-xl border border-dashed border-slate-200 flex items-center px-4 text-slate-400 text-sm font-medium">
-                Próximo partido no programado...
+            <div className="relative pt-16 px-8 pb-10 flex flex-col items-center">
+              <div className="w-32 h-32 rounded-[2rem] bg-white shadow-xl mb-6 p-1">
+                <div className="w-full h-full bg-slate-50 rounded-[1.8rem] flex items-center justify-center border border-dashed border-slate-200">
+                  <span className="text-slate-300 font-black text-4xl">?</span>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Victorias</p>
-                  <p className="text-xl font-black text-[#1565C0]">0</p>
+              
+              <h2 className="text-3xl font-black tracking-tighter mb-1">Tu Nombre Aquí</h2>
+              <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mb-8">Rosarito, B.C.</p>
+              
+              <div className="grid grid-cols-2 gap-4 w-full">
+                <div className="bg-slate-50 p-5 rounded-3xl text-center border border-slate-100">
+                  <p className="text-[10px] font-black text-slate-300 uppercase mb-1">Ranking</p>
+                  <p className="text-2xl font-black text-[#1565C0]">#--</p>
                 </div>
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Fuerza</p>
-                  <p className="text-xl font-black text-[#00E676]">--</p>
+                <div className="bg-[#00E676]/5 p-5 rounded-3xl text-center border border-[#00E676]/10">
+                  <p className="text-[10px] font-black text-[#00E676] uppercase mb-1">Puntos ELO</p>
+                  <p className="text-2xl font-black text-[#00E676]">1000</p>
                 </div>
+              </div>
+
+              <div className="mt-6 w-full p-4 bg-slate-900 rounded-2xl flex justify-between items-center text-white">
+                <span className="text-[10px] font-black uppercase tracking-tighter opacity-50">Próximo Match</span>
+                <span className="text-xs font-bold">Buscando rival...</span>
               </div>
             </div>
           </div>
@@ -85,12 +86,11 @@ export default function App() {
 
       </main>
 
-      {/* FOOTER SIMPLE */}
-      <footer className="relative z-10 px-10 py-12 border-t border-slate-100 flex justify-between items-center max-w-7xl mx-auto text-slate-400 text-xs font-bold uppercase tracking-widest">
-        <div>© 2026 VAd ROSARITO</div>
-        <div className="flex gap-6">
-          <span>Términos</span>
-          <span>Privacidad</span>
+      <footer className="max-w-6xl mx-auto px-6 py-10 flex justify-between items-center text-[10px] font-black text-slate-300 uppercase tracking-widest border-t border-slate-50">
+        <div>© 2026 VAd PROJECT</div>
+        <div className="flex gap-8">
+          <span>Matchmaking</span>
+          <span>Ranking System</span>
         </div>
       </footer>
     </div>
