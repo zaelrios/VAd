@@ -1,0 +1,66 @@
+{
+  "name": "CourtBooking",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "title": "Email"
+    },
+    "player_name": {
+      "type": "string",
+      "title": "Nombre del jugador"
+    },
+    "court_id": {
+      "type": "string",
+      "title": "ID de cancha"
+    },
+    "court_name": {
+      "type": "string",
+      "title": "Cancha"
+    },
+    "date": {
+      "type": "string",
+      "title": "Fecha",
+      "format": "date"
+    },
+    "time_start": {
+      "type": "string",
+      "title": "Hora inicio"
+    },
+    "time_end": {
+      "type": "string",
+      "title": "Hora fin"
+    },
+    "status": {
+      "type": "string",
+      "title": "Estado",
+      "enum": [
+        "confirmada",
+        "cancelada"
+      ],
+      "default": "confirmada"
+    },
+    "payment_status": {
+      "type": "string",
+      "title": "Pago",
+      "enum": [
+        "pagado",
+        "pendiente"
+      ],
+      "default": "pagado"
+    },
+    "amount_paid": {
+      "type": "number",
+      "title": "Monto pagado"
+    }
+  },
+  "required": [
+    "user_email",
+    "player_name",
+    "court_id",
+    "court_name",
+    "date",
+    "time_start",
+    "time_end"
+  ]
+}

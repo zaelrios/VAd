@@ -1,0 +1,48 @@
+{
+  "name": "Court",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Nombre de la cancha"
+    },
+    "surface": {
+      "type": "string",
+      "title": "Superficie",
+      "enum": [
+        "arcilla",
+        "cesped",
+        "dura",
+        "sintetica"
+      ]
+    },
+    "is_indoor": {
+      "type": "boolean",
+      "title": "Techada",
+      "default": false
+    },
+    "has_lights": {
+      "type": "boolean",
+      "title": "Con iluminaci\u00f3n",
+      "default": true
+    },
+    "location": {
+      "type": "string",
+      "title": "Ubicaci\u00f3n"
+    },
+    "image_url": {
+      "type": "string",
+      "title": "Imagen"
+    },
+    "is_available": {
+      "type": "boolean",
+      "title": "Disponible",
+      "default": true
+    }
+  },
+  "required": [
+    "name",
+    "surface",
+    "location"
+  ]
+}
