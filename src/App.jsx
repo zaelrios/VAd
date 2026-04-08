@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import logo from './assets/logo.png'
 
 export default function App() {
   // Las primeras 10 líneas de lógica se mantienen intactas
@@ -9,16 +10,20 @@ export default function App() {
       
       {/* --- MENÚ SUPERIOR (Navegación fija) --- */}
       <nav className="fixed top-0 left-0 w-full z-50 bg-[#0A0F1C] border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-1 h-16 flex justify-between items-center">
           
-          {/* Logo VAd */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setTab('home')}>
-            <div className="bg-[#B7FF00] text-black w-10 h-10 rounded-lg flex items-center justify-center font-black text-xl shadow-[0_0_20px_rgba(183,255,0,0.3)]">V</div>
-            <span className="text-2xl font-black tracking-tighter italic">VAd<span className="text-[#B7FF00]">.</span></span>
-          </div>
+          {/* Logo VAd con el fondo igualado al menú */}
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setTab('home')}>
+          <img 
+    src={logo} 
+    alt="Logo VAd" 
+    className="w-11 h-11 rounded-full object-cover" 
+  />
+  <span className="text-2xl font-black tracking-tighter italic">VAd<span className="text-[#B7FF00]">.</span></span>
+</div>
 
           {/* Opciones del Menú con efecto "Resaltado/Relleno" */}
-          <div className="hidden lg:flex items-center gap-4 font-bold text-[10px] uppercase tracking-widest text-gray-400">
+          <div className="hidden lg:flex items-center gap-1 font-bold text-[14px] uppercase tracking-widest text-gray-400">
             {[
               { id: 'home', label: 'Home', icon: '🏠' },
               { id: 'buscar', label: 'Buscar Partido', icon: '🔍' },
@@ -46,7 +51,7 @@ export default function App() {
           </div>
 
           {/* Botón de Login */}
-          <button className="bg-white text-black px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-[#B7FF00] transition-all">
+          <button className="bg-white text-black px-5 py-2 rounded-full font-black text-[14px] uppercase tracking-widest hover:bg-[#B7FF00] transition-all">
             LOGIN
           </button>
         </div>
