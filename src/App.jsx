@@ -1,92 +1,144 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 export default function App() {
+  // Las primeras 10 líneas de lógica se mantienen intactas
+  const [tab, setTab] = useState('home');
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans selection:bg-[#00E676]/30">
+    <div className="min-h-screen bg-[#0F172A] text-white font-sans selection:bg-[#B7FF00]/30">
       
-      {/* --- NAVEGACIÓN --- */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+      {/* --- MENÚ SUPERIOR (Navegación fija) --- */}
+      <nav className="fixed top-0 left-0 w-full z-50 bg-[#0A0F1C] border-b border-white/10">
         <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="bg-[#0A193F] text-[#00E676] w-10 h-10 rounded-xl flex items-center justify-center font-black text-xl shadow-lg shadow-blue-900/20">V</div>
-            <span className="text-2xl font-[900] tracking-tighter text-[#0A193F]">VAd<span className="text-[#00E676]">.</span></span>
-          </div>
           
-          <div className="hidden md:flex items-center gap-8 font-bold text-sm text-slate-500 uppercase tracking-widest">
-            <a href="#" className="hover:text-[#1565C0] transition-colors">Ranking</a>
-            <a href="#" className="hover:text-[#1565C0] transition-colors">Torneos</a>
-            <button className="bg-[#0A193F] text-white px-6 py-2.5 rounded-xl hover:bg-[#1565C0] transition-all shadow-md">ENTRAR</button>
+          {/* Logo VAd */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setTab('home')}>
+            <div className="bg-[#B7FF00] text-black w-10 h-10 rounded-lg flex items-center justify-center font-black text-xl shadow-[0_0_20px_rgba(183,255,0,0.3)]">V</div>
+            <span className="text-2xl font-black tracking-tighter italic">VAd<span className="text-[#B7FF00]">.</span></span>
           </div>
+
+          {/* Opciones del Menú con efecto "Resaltado/Relleno" */}
+          <div className="hidden lg:flex items-center gap-4 font-bold text-[10px] uppercase tracking-widest text-gray-400">
+            {[
+              { id: 'home', label: 'Home', icon: '🏠' },
+              { id: 'buscar', label: 'Buscar Partido', icon: '🔍' },
+              { id: 'reservar', label: 'Reservar Cancha', icon: '🎾' },
+              { id: 'mis-partidos', label: 'Mis Partidos', icon: '📅' },
+              { id: 'ranking', label: 'Ranking', icon: '📊' },
+              { id: 'perfil', label: 'Perfil', icon: '👤' },
+              { id: 'planes', label: 'Planes', icon: '💎' }
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className={`
+                  flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300
+                  ${tab === item.id 
+                    ? 'bg-[#B7FF00] text-black scale-110 shadow-[0_0_20px_rgba(183,255,0,0.4)]' 
+                    : 'hover:bg-white/5 hover:text-white'
+                  }
+                `}
+              >
+                <span className="text-sm">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Botón de Login */}
+          <button className="bg-white text-black px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-[#B7FF00] transition-all">
+            LOGIN
+          </button>
         </div>
       </nav>
 
-      {/* --- CUERPO DE LA PÁGINA --- */}
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      {/* --- CONTENIDO PRINCIPAL --- */}
+      <main className="pt-32 px-6 max-w-7xl mx-auto">
         
-        {/* Sección de Bienvenida */}
-        <section className="grid lg:grid-cols-12 gap-12 items-center mb-20">
-          <div className="lg:col-span-7 space-y-8">
-            <div className="inline-block px-4 py-1.5 bg-[#00E676]/10 border border-[#00E676]/20 rounded-full">
-              <span className="text-[#00C853] text-[10px] font-black uppercase tracking-[0.2em]">Circuito CART Rosarito</span>
+        {/* VISTA: HOME */}
+        {tab === 'home' && (
+          <div className="animate-in fade-in duration-700">
+            
+            {/* Cabecera Hero */}
+            <div className="mb-24 mt-10">
+              <h2 className="text-[#B7FF00] font-black uppercase tracking-[0.4em] text-[10px] mb-4">
+                Circuito CART Rosarito
+              </h2>
+              <h1 className="text-7xl md:text-9xl font-black italic tracking-tighter leading-[0.8] uppercase mb-8">
+                VENTAJA <br /> 
+                <span className="text-transparent" style={{ WebkitTextStroke: '2px white' }}>
+                  ADENTRO.
+                </span>
+              </h1>
+              <p className="text-[#94A3B8] text-xl max-w-xl mb-10 leading-relaxed border-l-2 border-[#B7FF00] pl-6 italic">
+                "No es solo tenis, es estrategia. Sube de nivel, domina el ELO y demuestra quién manda en la cancha."
+              </p>
+              <button className="bg-[#B7FF00] text-black px-10 py-4 rounded-full font-black italic uppercase text-xs hover:scale-105 transition-all shadow-[0_10px_30px_rgba(183,255,0,0.2)]">
+                Inscribirse al Circuito
+              </button>
             </div>
-            <h1 className="text-6xl md:text-8xl font-[950] tracking-[-0.04em] leading-[0.9] text-[#0A193F]">
-              Domina la <br />
-              <span className="text-[#1565C0]">Cancha.</span>
-            </h1>
-            <p className="text-lg text-slate-500 font-medium max-w-md leading-relaxed">
-              La plataforma oficial para medir tu nivel, encontrar rivales y escalar en el ranking de Baja California.
-            </p>
-            <div className="flex gap-4">
-              <button className="px-8 py-4 bg-[#0A193F] text-white font-bold rounded-2xl shadow-xl hover:scale-105 transition-transform">Ver Ranking</button>
-              <button className="px-8 py-4 bg-white border-2 border-slate-200 font-bold rounded-2xl hover:border-[#1565C0] transition-all">Reglas ELO</button>
-            </div>
-          </div>
 
-          {/* Tarjeta de Perfil Rápido (Preview) */}
-          <div className="lg:col-span-5">
-            <div className="bg-white p-8 rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] border border-slate-100 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-[#00E676]/10 rounded-bl-full -mr-10 -mt-10 group-hover:scale-110 transition-transform"></div>
+            {/* --- ZONA DE TRABAJO INFERIOR (HOME) --- */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pb-32">
               
-              <div className="flex items-center gap-6 mb-10">
-                <div className="w-20 h-20 bg-slate-100 rounded-[24px] flex items-center justify-center text-3xl font-black text-slate-300 border-2 border-dashed border-slate-200">ZR</div>
-                <div>
-                  <h3 className="text-2xl font-black text-[#0A193F]">Zael Rios</h3>
-                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nivel: Avanzado</p>
-                </div>
+              {/* Columna Izquierda: Actividad / Torneos */}
+              <div className="lg:col-span-2 space-y-10">
+                <section className="bg-white/5 border border-white/10 rounded-[3rem] p-10 hover:border-[#B7FF00]/20 transition-colors group">
+                  <div className="flex justify-between items-center mb-8">
+                    <h3 className="text-2xl font-black italic uppercase">Próximos Torneos</h3>
+                    <span className="text-[#B7FF00] text-[10px] font-black tracking-widest uppercase cursor-pointer hover:underline">Ver calendario</span>
+                  </div>
+                  <div className="p-8 border-2 border-dashed border-white/5 rounded-3xl flex items-center justify-center text-gray-600 font-black italic uppercase text-sm">
+                    Espacio para Lista de Torneos
+                  </div>
+                </section>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex justify-between items-end">
-                  <span className="text-slate-400 font-bold text-xs uppercase tracking-widest">Puntos ELO</span>
-                  <span className="text-4xl font-black text-[#1565C0]">1,000</span>
+              {/* Columna Derecha: Mi Perfil Rápido */}
+              <aside className="space-y-8">
+                <div className="bg-gradient-to-br from-[#1E293B] to-[#0A0F1C] border border-white/10 rounded-[3rem] p-10 relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 text-9xl text-white/5 font-black italic select-none">ELO</div>
+                  <h3 className="text-white font-black italic uppercase tracking-widest text-[10px] mb-10">Mi Ranking Actual</h3>
+                  
+                  <div className="relative z-10">
+                    <div className="flex items-end justify-between mb-4">
+                      <div>
+                        <p className="text-[#94A3B8] text-[9px] font-black uppercase mb-1">Puntos de Jugador</p>
+                        <span className="text-6xl font-black italic text-[#B7FF00]">1,000</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-white font-black italic text-lg leading-none">TOP 15</p>
+                        <p className="text-[#94A3B8] text-[8px] uppercase tracking-tighter">Ranking Local</p>
+                      </div>
+                    </div>
+                    
+                    {/* Barra de Progreso ELO */}
+                    <div className="h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                      <div className="bg-[#B7FF00] h-full w-[65%] shadow-[0_0_15px_rgba(183,255,0,0.6)]"></div>
+                    </div>
+                  </div>
                 </div>
-                <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-[#1565C0] to-[#00E676] w-[60%]"></div>
-                </div>
-                <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest pt-4">Próximo objetivo: 1,200 pts</p>
-              </div>
+              </aside>
+
             </div>
           </div>
-        </section>
+        )}
 
-        {/* Sección de Estadísticas Rápidas o Acciones */}
-        <section className="grid md:grid-cols-3 gap-6">
-           {['Top Ranking', 'Últimos Matches', 'Torneos Activos'].map((title, i) => (
-             <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 hover:shadow-lg transition-shadow cursor-pointer">
-               <div className="w-12 h-12 bg-slate-50 rounded-2xl mb-4 flex items-center justify-center text-xl">
-                 {i === 0 ? '🏆' : i === 1 ? '🎾' : '📅'}
-               </div>
-               <h4 className="font-black text-[#0A193F] text-lg mb-1">{title}</h4>
-               <p className="text-sm text-slate-400 font-medium">Explora las estadísticas y mantente al día con el club.</p>
-             </div>
-           ))}
-        </section>
+        {/* VISTAS DE OTRAS PESTAÑAS (En construcción) */}
+        {tab !== 'home' && (
+          <div className="py-20 text-center animate-in zoom-in duration-300">
+            <h2 className="text-6xl font-black italic uppercase mb-4 text-[#B7FF00]">{tab.replace('-', ' ')}</h2>
+            <p className="text-[#94A3B8] text-lg">Esta sección se encuentra actualmente en mantenimiento.</p>
+            <button 
+              onClick={() => setTab('home')}
+              className="mt-8 bg-white/5 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest border border-white/10 hover:bg-white/10 transition-all"
+            >
+              Regresar al Home
+            </button>
+          </div>
+        )}
 
       </main>
-
-      <footer className="max-w-7xl mx-auto px-6 py-12 border-t border-slate-200 text-center">
-         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em]">VAd © 2026 // Ventaja Adentro</p>
-      </footer>
     </div>
   )
 }
