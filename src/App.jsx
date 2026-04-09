@@ -1,4 +1,7 @@
+import { supabase } from './supabase'
 import React, { useState } from 'react'
+// Prueba de conexión rápida
+  console.log("Supabase Client:", supabase);
 
 export default function App() {
   const [tab, setTab] = useState('home');
