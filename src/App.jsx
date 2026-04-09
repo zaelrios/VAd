@@ -61,12 +61,12 @@ export default function App() {
             </div>
 
             <button 
-              onClick={() => setTab('buscar')}
-              className="w-full max-w-sm bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-105"
-            >
-              Buscar Partido Ahora 🎾
-            </button>
-          </div>
+  onClick={() => isLoggedIn ? setTab('buscar') : setTab('perfil')}
+  className="w-fit px-6 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-105"
+>
+  {isLoggedIn ? "Encuentra rival ➜" : "Únete ➜"}
+</button>
+            </div>
         )}
 
         {/* VISTA RANKING */}
@@ -104,30 +104,30 @@ export default function App() {
         )}
       </main>
 
-      {/* --- MENÚ INFERIOR (Oscuro Unificado) --- */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 bg-[#142B1F] border-t border-white/5 px-6 pb-8 pt-4 shadow-[0_-5px_20px_rgba(0,0,0,0.2)]">
-        <div className="flex justify-between items-center max-w-md mx-auto">
-          {[
-            { id: 'home', icon: '🏠' },
-            { id: 'buscar', icon: '🔍' },
-            { id: 'reservar', icon: '📅' },
-            { id: 'ranking', icon: '📊' },
-            { id: 'perfil', icon: '👤' }
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setTab(item.id)}
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${
-                tab === item.id 
-                ? 'bg-[#29C454] text-white scale-110 shadow-md shadow-[#29C454]/30' 
-                : 'text-gray-500 active:bg-white/5'
-              }`}
-            >
-              <span className="text-xl">{item.icon}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
+     {/* --- MENÚ INFERIOR (Glassmorphism Style) --- */}
+<nav className="fixed bottom-0 left-0 w-full z-50 bg-[#F8F7F2]/70 backdrop-blur-lg border-t border-[#1A1C1E]/5 px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
+  <div className="flex justify-between items-center max-w-md mx-auto">
+    {[
+      { id: 'home', icon: '🏠' },
+      { id: 'buscar', icon: '🔍' },
+      { id: 'reservar', icon: '📅' },
+      { id: 'ranking', icon: '📊' },
+      { id: 'perfil', icon: '👤' }
+    ].map((item) => (
+      <button
+        key={item.id}
+        onClick={() => setTab(item.id)}
+        className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${
+          tab === item.id 
+          ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/30' 
+          : 'text-[#1A1C1E]/40 active:bg-[#1A1C1E]/5'
+        }`}
+      >
+        <span className="text-xl">{item.icon}</span>
+      </button>
+    ))}
+  </div>
+</nav>
     </div>
   )
 }
