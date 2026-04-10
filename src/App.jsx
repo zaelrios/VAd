@@ -68,9 +68,8 @@ export default function App() {
   // FUNCIÓN INTELIGENTE PARA INICIALES (Primer letra Nombre + Primer letra Apellido)
   const getInitials = (fullName) => {
     if (!fullName) return '🎾';
-    const names = fullName.trim().split(/\s+/); // Soporta múltiples espacios
+    const names = fullName.trim().split(/\s+/);
     if (names.length >= 2) {
-      // Toma la primera letra del primer nombre y la primera del último apellido
       return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
     }
     return fullName.substring(0, 2).toUpperCase();
@@ -117,7 +116,6 @@ export default function App() {
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     
-    // Filtro Profesional: Debe tener al menos dos palabras
     const nameParts = registrationName.trim().split(/\s+/);
     if (nameParts.length < 2) {
       setAuthError('El anonimato no está permitido. Ingresa tu nombre y apellido reales.');
@@ -135,7 +133,7 @@ export default function App() {
             telefono: fullPhone, 
             pin: pin, 
             nombre: registrationName.trim(),
-            elo: 1000, // Valores por defecto explícitos
+            elo: 1000, 
             confianza: 100
         }])
         .select()
@@ -174,7 +172,6 @@ export default function App() {
     if (!isLoggedIn) { setTab('auth'); return; }
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
-    // Verificamos que no se empalme con otra búsqueda activa
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
       return (startTime < search.hora_fin && endTime > search.hora_inicio);
@@ -186,6 +183,7 @@ export default function App() {
         .from('buscar')
         .insert([{
           jugador_id: currentUser.id,
+          nombre: currentUser.nombre,
           fecha: searchDate,
           hora_inicio: startTime,
           hora_fin: endTime,
@@ -195,7 +193,7 @@ export default function App() {
         .single();
 
       if (error) throw error;
-      setActiveSearches([...activeSearches, data]); // Agregamos a la pantalla
+      setActiveSearches([...activeSearches, data]); 
     } catch (error) {
       console.error(error);
       setSearchError('Error al publicar tu búsqueda.');
@@ -205,17 +203,14 @@ export default function App() {
   // --- CANCELAR BÚSQUEDA (BORRADO REAL DB) ---
   const handleCancelSearch = async (id) => {
     try {
-      // Primero intentamos borrar en Supabase
       const { error } = await supabase
         .from('buscar')
         .delete()
         .eq('id', id);
 
-      if (error) throw error; // Si hay error en DB, saltamos al catch
+      if (error) throw error; 
 
-      // Si el borrado en DB tuvo éxito, lo quitamos de la pantalla
       setActiveSearches(prev => prev.filter(search => search.id !== id));
-      console.log("Búsqueda eliminada correctamente de Supabase");
     } catch (error) {
       console.error('Error al cancelar en Supabase:', error);
       alert('Error al eliminar de la base de datos. Verifica tus políticas RLS.');
@@ -336,7 +331,6 @@ export default function App() {
 
         {/* VISTA: BUSCAR RIVAL */}
         {tab === 'buscar' && (
-          {/* CORRECCIÓN: Agregado max-w-sm mx-auto y flex flex-col items-center para centrado perfecto */}
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
             <form onSubmit={handleSearchSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
@@ -361,7 +355,6 @@ export default function App() {
               </div>
               <div className="pt-6 flex flex-col items-center">
                 <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
-                  {/* CORRECCIÓN: Punto parpadeante blanco hueso (#F8F7F2) y terminología corregida */}
                   <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
                 </button>
               </div>
@@ -401,7 +394,6 @@ export default function App() {
 
         {/* VISTA: RESERVAR CANCHA */}
         {tab === 'reservar' && (
-          {/* CORRECCIÓN: Agregado max-w-sm mx-auto y flex flex-col items-center para centrado perfecto */}
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
             <div className="text-center">
               <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Reservar Cancha</h2>
@@ -421,7 +413,7 @@ export default function App() {
                       <input type="time" value={bookStart} onChange={(e) => setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                     </div>
                     <div className="space-y-1 w-full min-w-0">
-                      <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Hasta</span>
+                      <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Fin</span>
                       <input type="time" value={bookEnd} onChange={(e) => setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                     </div>
                   </div>
