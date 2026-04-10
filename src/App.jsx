@@ -60,12 +60,11 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // --- NUEVO: CARGAR PARTIDOS CONFIRMADOS ---
+  // --- CARGAR PARTIDOS CONFIRMADOS (EN SEGUNDO PLANO) ---
   useEffect(() => {
-    if (currentUser && tab === 'partidos') {
+    if (currentUser) {
       const cargarPartidos = async () => {
         try {
-          // Buscamos partidos donde el usuario sea el jugador 1 O el jugador 2
           const { data: matches, error } = await supabase
             .from('partidos')
             .select('*')
@@ -75,18 +74,9 @@ export default function App() {
           if (error) throw error;
 
           if (matches && matches.length > 0) {
-            // Recorremos los partidos para buscar los datos del rival
             const partidosConRivales = await Promise.all(matches.map(async (partido) => {
-              // Identificamos quién es el rival
               const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
-              
-              // Traemos su nombre y ELO
-              const { data: rivalData } = await supabase
-                .from('Perfiles')
-                .select('nombre, elo')
-                .eq('id', rivalId)
-                .single();
-
+              const { data: rivalData } = await supabase.from('Perfiles').select('nombre, elo').eq('id', rivalId).single();
               return { ...partido, rival: rivalData || { nombre: 'Jugador Desconocido', elo: '?' } };
             }));
             setMisPartidos(partidosConRivales);
@@ -99,7 +89,7 @@ export default function App() {
       };
       cargarPartidos();
     }
-  }, [currentUser, tab]); // Se actualiza cada vez que el usuario abre la pestaña "partidos"
+  }, [currentUser]); // Ahora busca partidos en cuanto abres la app
 
   const formatTime = (time24) => {
     const [hourString, minute] = time24.split(':');
@@ -664,7 +654,13 @@ export default function App() {
               key={item.id} onClick={() => setTab(item.id)}
               className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/30' : 'text-[#1A1C1E]/40 active:bg-[#1A1C1E]/5 hover:text-[#1A1C1E]/60'}`}
             >
-              <span className="text-xl">{item.icon}</span>
+              <div className="relative">
+                <span className="text-xl">{item.icon}</span>
+                {/* NOTIFICACIÓN AZUL TENIS SI HAY PARTIDOS */}
+                {item.id === 'partidos' && misPartidos.length > 0 && (
+                  <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
+                )}
+              </div>
             </button>
           ))}
         </div>
