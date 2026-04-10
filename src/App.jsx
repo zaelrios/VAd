@@ -51,7 +51,7 @@ export default function App() {
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
   const [endTime, setEndTime] = useState(initData.end);
-  const [superficie, setSuperficie] = useState('Dura'); // RE-AGREGADO
+  const [superficie, setSuperficie] = useState('Dura');
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
@@ -85,6 +85,11 @@ export default function App() {
           .eq('jugador_id', currentUser.id)
           .order('fecha', { ascending: true });
         
+        if (error) {
+          console.error("Error cargando búsquedas:", error);
+          return;
+        }
+
         if (data) {
           const now = new Date();
           const busquedasValidas = [];
@@ -158,6 +163,14 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
+  // Función para saber si el partido ya terminó cronológicamente
+  const yaTerminoElTiempo = (partido) => {
+    const now = new Date();
+    // Forzamos la interpretación local de la fecha y hora
+    const finPartido = new Date(`${partido.fecha}T${partido.hora_fin}:00`);
+    return now >= finPartido;
+  };
+
   const renderBalls = (score) => {
     const numericScore = Number(score) || 5;
     return (
@@ -176,7 +189,7 @@ export default function App() {
     );
   };
 
-  // --- MOTOR MATEMÁTICO ---
+  // --- MOTOR MATEMÁTICO: ELO Y CONFIANZA ---
   const calculateElo = (miElo, rivalElo, gane) => {
     const K = 40;
     const expectedScore = 1 / (1 + Math.pow(10, (rivalElo - miElo) / 400));
@@ -187,13 +200,15 @@ export default function App() {
   const calcularNuevaConfianza = (confianzaActual, rachaActual) => {
     let nuevaConfianza = Number(confianzaActual);
     let nuevaRacha = rachaActual + 1;
+
+    // Recuperación de media pelota en rachas clave
     if (nuevaRacha === 5 || nuevaRacha === 8 || nuevaRacha === 10 || nuevaRacha > 10) {
        nuevaConfianza = Math.min(5.0, nuevaConfianza + 0.5);
     }
     return { nuevaConfianza, nuevaRacha };
   };
 
-  // --- JUEZ DE SILLA ---
+  // --- FLUJO DE REPORTE (JUEZ DE SILLA) ---
   const handleSubmitReport = async (partido) => {
     if (!marcador.trim() || !ganadorId) {
       alert('Ingresa el marcador y selecciona al ganador.');
@@ -202,14 +217,22 @@ export default function App() {
     try {
       const { error } = await supabase
         .from('partidos')
-        .update({ estado: 'en_revision', marcador: marcador, ganador_id: ganadorId, reportado_por: currentUser.id })
+        .update({ 
+          estado: 'en_revision', 
+          marcador: marcador, 
+          ganador_id: ganadorId, 
+          reportado_por: currentUser.id 
+        })
         .eq('id', partido.id);
 
       if (error) throw error;
-      setReportingMatch(null); setMarcador(''); setGanadorId('');
+      setReportingMatch(null);
+      setMarcador('');
+      setGanadorId('');
       fetchPartidos(); 
       alert('Reporte enviado. Esperando confirmación del rival.');
     } catch (error) {
+      console.error("Error al reportar:", error);
       alert('Hubo un error al enviar el reporte.');
     }
   };
@@ -221,12 +244,14 @@ export default function App() {
       const yoGane = partido.ganador_id === currentUser.id;
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, yoGane);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, !yoGane);
+
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
       const rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
 
       const { data: miPerfilActualizado } = await supabase.from('Perfiles')
         .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
-        .eq('id', currentUser.id).select().single();
+        .eq('id', currentUser.id)
+        .select().single();
       
       await supabase.from('Perfiles')
         .update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha })
@@ -236,9 +261,14 @@ export default function App() {
 
       setCurrentUser(miPerfilActualizado);
       localStorage.setItem('vad_session', JSON.stringify(miPerfilActualizado));
+      
       fetchPartidos();
       alert(`¡Partido finalizado!\nTu nuevo ELO es: ${miNuevoElo}`);
-    } catch (error) { alert('Error al confirmar el partido.'); }
+
+    } catch (error) {
+      console.error(error);
+      alert('Error al confirmar el partido.');
+    }
   };
 
   const handleWO = async (partido) => {
@@ -247,55 +277,119 @@ export default function App() {
 
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
+      
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, true);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, false);
+
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
       const rivalConfianzaCastigada = Math.max(0, Number(rivalDB.confianza) - 1.0); 
 
-      await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
-      await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalConfianzaCastigada, racha_asistencia: 0 }).eq('id', rivalDB.id);
+      await supabase.from('Perfiles')
+        .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
+        .eq('id', currentUser.id);
+      
+      await supabase.from('Perfiles')
+        .update({ elo: rivalNuevoElo, confianza: rivalConfianzaCastigada, racha_asistencia: 0 })
+        .eq('id', rivalDB.id);
+
       await supabase.from('partidos').update({ estado: 'wo', ganador_id: currentUser.id }).eq('id', partido.id);
 
       const { data: miPerfilFresquito } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
       setCurrentUser(miPerfilFresquito);
       localStorage.setItem('vad_session', JSON.stringify(miPerfilFresquito));
+      
       fetchPartidos();
-      alert('Reporte por W.O. procesado.');
-    } catch (error) { console.error(error); }
+      alert('Reporte por W.O. procesado. El sistema ha ajustado las puntuaciones.');
+    } catch (error) {
+      console.error(error);
+    }
   };
 
+  // --- AUTENTICACIÓN BÁSICA ---
   const handleAuthSubmit = async (e) => {
-    e.preventDefault(); setAuthError(''); setAuthLoading(true);
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
     const fullPhone = `${phonePrefix}${phoneNumber}`;
+
     try {
-      const { data: existingUser, error } = await supabase.from('Perfiles').select('*').eq('telefono', fullPhone).maybeSingle();
-      if (error) throw error;
+      const { data: existingUser, error: searchError } = await supabase
+        .from('Perfiles') 
+        .select('*')
+        .eq('telefono', fullPhone)
+        .maybeSingle();
+
+      if (searchError) throw searchError;
+
       if (existingUser) {
         if (existingUser.pin === pin) {
-          setCurrentUser(existingUser); setIsLoggedIn(true); setTab('home');
+          setCurrentUser(existingUser);
+          setIsLoggedIn(true);
+          setTab('home');
           localStorage.setItem('vad_session', JSON.stringify(existingUser));
-        } else { setAuthError('PIN incorrecto.'); }
-      } else { setIsRegistering(true); }
-    } catch { setAuthError('Error de conexión al circuito.'); } finally { setAuthLoading(false); }
+        } else {
+          setAuthError('PIN incorrecto para este número.');
+        }
+      } else {
+        setIsRegistering(true);
+      }
+    } catch (error) {
+      console.error(error);
+      setAuthError('Error de conexión al circuito.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
-    if (registrationName.trim().split(/\s+/).length < 2) { setAuthError('Ingresa nombre y apellido.'); return; }
-    setAuthError(''); setAuthLoading(true);
+    const nameParts = registrationName.trim().split(/\s+/);
+    if (nameParts.length < 2) {
+      setAuthError('El anonimato no está permitido. Ingresa nombre y apellido reales.');
+      return;
+    }
+    
+    setAuthError('');
+    setAuthLoading(true);
     const fullPhone = `${phonePrefix}${phoneNumber}`;
+
     try {
-      const { data: newUser, error } = await supabase.from('Perfiles')
-        .insert([{ telefono: fullPhone, pin: pin, nombre: registrationName.trim(), elo: 1000, confianza: 5.0, racha_asistencia: 0 }])
-        .select().single();
-      if (error) throw error;
-      setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegistrationName(''); setTab('home');
+      const { data: newUser, error: insertError } = await supabase
+        .from('Perfiles')
+        .insert([{ 
+          telefono: fullPhone, 
+          pin: pin, 
+          nombre: registrationName.trim(), 
+          elo: 1000, 
+          confianza: 5.0, 
+          racha_asistencia: 0 
+        }])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+      setCurrentUser(newUser);
+      setIsLoggedIn(true);
+      setIsRegistering(false); 
+      setRegistrationName('');
+      setTab('home');
       localStorage.setItem('vad_session', JSON.stringify(newUser));
-    } catch { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
+    } catch (error) {
+      console.error(error);
+      setAuthError('Error al crear tu cuenta.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false); setCurrentUser(null); setTab('home'); setPhoneNumber(''); setPin(''); setIsRegistering(false); localStorage.removeItem('vad_session');
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setTab('home');
+    setPhoneNumber('');
+    setPin('');
+    setIsRegistering(false); 
+    localStorage.removeItem('vad_session');
   };
 
   // --- MOTOR DE MATCHMAKING BLINDADO ---
@@ -314,7 +408,10 @@ export default function App() {
       return;
     }
 
-    const hasOverlap = activeSearches.some(search => search.fecha === searchDate && (startTime < search.hora_fin && endTime > search.hora_inicio));
+    const hasOverlap = activeSearches.some(search => {
+      if (search.fecha !== searchDate) return false; 
+      return (startTime < search.hora_fin && endTime > search.hora_inicio);
+    });
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     try {
@@ -399,7 +496,6 @@ export default function App() {
             estado: 'confirmado'
           }]);
         
-        // ¡AQUÍ ESTÁ EL PARCHE DE RAYOS X!
         if (insertMatchError) throw new Error("Error Supabase: " + insertMatchError.message);
 
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
@@ -430,10 +526,19 @@ export default function App() {
   };
 
   const handleCancelSearch = async (id) => {
-    try { await supabase.from('buscar').delete().eq('id', id); setActiveSearches(prev => prev.filter(search => search.id !== id)); } catch { alert('Error al cancelar.'); }
+    try {
+      await supabase.from('buscar').delete().eq('id', id);
+      setActiveSearches(prev => prev.filter(search => search.id !== id));
+    } catch (error) {
+      alert('Error al eliminar de la base de datos.');
+    }
   };
 
-  const handleBookSubmit = (e) => { e.preventDefault(); if (!isLoggedIn) { setTab('auth'); return; } alert(`Redirigiendo al pago...`); };
+  const handleBookSubmit = (e) => {
+    e.preventDefault();
+    if (!isLoggedIn) { setTab('auth'); return; }
+    alert(`Redirigiendo al pago...`);
+  };
 
   return (
     <div className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30">
@@ -462,12 +567,18 @@ export default function App() {
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
             {!isRegistering ? (
               <>
-                <div className="text-center"><h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2></div>
+                <div className="text-center">
+                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2>
+                  <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad.</p>
+                </div>
                 <form onSubmit={handleAuthSubmit} className="space-y-6">
                   <div className="space-y-2 text-left">
                     <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular</label>
                     <div className="flex gap-2">
-                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-1/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-2 py-4 text-[#1A1C1E] font-bold"><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option></select>
+                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-1/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-2 py-4 text-[#1A1C1E] font-bold shadow-sm appearance-none cursor-pointer">
+                        <option value="+52">🇲🇽 +52</option>
+                        <option value="+1">🇺🇸 +1</option>
+                      </select>
                       <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest focus:outline-none focus:border-[#29C454]" />
                     </div>
                   </div>
@@ -476,13 +587,18 @@ export default function App() {
                     <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
                   </div>
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
-                  <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">{authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}</button>
+                  <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">
+                    {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
+                  </button>
                 </form>
                 <button onClick={() => setTab('home')} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2">Cancelar</button>
               </>
             ) : (
               <div className="animate-in fade-in space-y-8">
-                <div className="text-center"><h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2></div>
+                <div className="text-center">
+                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2>
+                  <p className="text-[#1A1C1E]/60 text-sm">Crea tu perfil ahora.</p>
+                </div>
                 <form onSubmit={handleCompleteRegistration} className="space-y-6">
                   <input type="text" required placeholder="Nombre y Apellido" value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold focus:outline-none focus:border-[#29C454]" />
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{authError}</div>}
@@ -636,7 +752,12 @@ export default function App() {
                       {/* --- ESTADOS DEL PARTIDO --- */}
                       {partido.estado === 'confirmado' && (
                         <>
-                          {reportingMatch === partido.id ? (
+                          {!yaTerminoElTiempo(partido) ? (
+                            <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
+                              <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Partido en curso...</p>
+                              <p className="text-[9px] opacity-60 mt-1">El reporte se habilita al terminar la hora.</p>
+                            </div>
+                          ) : reportingMatch === partido.id ? (
                             <div className="mt-4 bg-white/20 p-4 rounded-xl space-y-3 animate-in fade-in">
                               <p className="text-xs font-bold uppercase tracking-widest">Reportar Resultado</p>
                               <input type="text" placeholder="Ej: 6-4, 6-3" value={marcador} onChange={(e) => setMarcador(e.target.value)} className="w-full bg-[#FFFFFF] border-none rounded-xl px-4 py-3 text-[#1A1C1E] font-bold focus:outline-none" />
@@ -649,7 +770,10 @@ export default function App() {
                                 <button onClick={() => setReportingMatch(null)} className="flex-1 bg-white/20 py-3 rounded-xl font-bold text-xs uppercase tracking-widest">Cancelar</button>
                                 <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-3 rounded-xl font-bold text-xs uppercase tracking-widest">Enviar</button>
                               </div>
-                              <button onClick={() => handleWO(partido)} className="w-full mt-2 text-xs font-black text-red-300 uppercase tracking-widest py-2 hover:bg-red-500/20 rounded-xl transition-colors">
+                              <button 
+                                onClick={() => handleWO(partido)} 
+                                className="w-full mt-4 border-2 border-red-500/40 bg-red-500/10 text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
+                              >
                                 🚨 El rival no se presentó (W.O.)
                               </button>
                             </div>
