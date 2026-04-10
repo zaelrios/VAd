@@ -24,6 +24,9 @@ export default function App() {
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
+  // NUEVO: ESTADO PARA LOS PARTIDOS CONFIRMADOS
+  const [misPartidos, setMisPartidos] = useState([]);
+
   const [bookDate, setBookDate] = useState('2026-04-10');
   const [bookStart, setBookStart] = useState('16:00');
   const [bookEnd, setBookEnd] = useState('18:00');
@@ -57,6 +60,47 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // --- NUEVO: CARGAR PARTIDOS CONFIRMADOS ---
+  useEffect(() => {
+    if (currentUser && tab === 'partidos') {
+      const cargarPartidos = async () => {
+        try {
+          // Buscamos partidos donde el usuario sea el jugador 1 O el jugador 2
+          const { data: matches, error } = await supabase
+            .from('partidos')
+            .select('*')
+            .or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`)
+            .order('fecha', { ascending: true });
+
+          if (error) throw error;
+
+          if (matches && matches.length > 0) {
+            // Recorremos los partidos para buscar los datos del rival
+            const partidosConRivales = await Promise.all(matches.map(async (partido) => {
+              // Identificamos quién es el rival
+              const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
+              
+              // Traemos su nombre y ELO
+              const { data: rivalData } = await supabase
+                .from('Perfiles')
+                .select('nombre, elo')
+                .eq('id', rivalId)
+                .single();
+
+              return { ...partido, rival: rivalData || { nombre: 'Jugador Desconocido', elo: '?' } };
+            }));
+            setMisPartidos(partidosConRivales);
+          } else {
+            setMisPartidos([]);
+          }
+        } catch (error) {
+          console.error("Error al cargar partidos:", error);
+        }
+      };
+      cargarPartidos();
+    }
+  }, [currentUser, tab]); // Se actualiza cada vez que el usuario abre la pestaña "partidos"
+
   const formatTime = (time24) => {
     const [hourString, minute] = time24.split(':');
     let hour = parseInt(hourString, 10);
@@ -74,16 +118,15 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // --- RENDERIZADOR VISUAL DE PELOTAS DE CONFIANZA ---
   const renderBalls = (score) => {
     const numericScore = Number(score) || 5;
     return (
       <div className="flex flex-col items-center gap-1">
         <div className="flex gap-1">
           {[1, 2, 3, 4, 5].map((ball) => {
-            let opacityClass = "opacity-20 grayscale"; // Vacía
-            if (numericScore >= ball) opacityClass = "opacity-100"; // Llena
-            else if (numericScore >= ball - 0.5) opacityClass = "opacity-50 scale-75"; // Media pelota
+            let opacityClass = "opacity-20 grayscale"; 
+            if (numericScore >= ball) opacityClass = "opacity-100"; 
+            else if (numericScore >= ball - 0.5) opacityClass = "opacity-50 scale-75"; 
             
             return (
               <span key={ball} className={`text-2xl transition-all ${opacityClass}`}>🎾</span>
@@ -95,7 +138,6 @@ export default function App() {
     );
   };
 
-  // --- PASO 1: VERIFICAR SI EXISTE EL JUGADOR ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -132,7 +174,6 @@ export default function App() {
     }
   };
 
-  // --- PASO 2: COMPLETAR REGISTRO ---
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     
@@ -154,7 +195,7 @@ export default function App() {
             pin: pin, 
             nombre: registrationName.trim(),
             elo: 1000, 
-            confianza: 5.0,
+            confianza: 5.0, 
             racha_asistencia: 0 
         }])
         .select()
@@ -186,7 +227,6 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
-  // --- MOTOR DE MATCHMAKING (CON RAYOS X DE ERRORES) ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
@@ -200,15 +240,14 @@ export default function App() {
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     try {
-      // Traemos las búsquedas activas de forma segura
       const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
-        .select('*')
+        .select('*, Perfiles ( elo )')
         .eq('fecha', searchDate)
         .neq('jugador_id', currentUser.id)
         .eq('estado', 'activa');
 
-      if (fetchError) throw new Error("Error al leer el radar: " + fetchError.message);
+      if (fetchError) throw fetchError;
 
       let matchEncontrado = null;
       let matchInicio = '';
@@ -217,32 +256,19 @@ export default function App() {
       if (posiblesRivales && posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
           const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
+          const eloRival = rival.Perfiles?.elo || 1000;
+          const diferenciaElo = Math.abs(currentUser.elo - eloRival);
           
-          if (hayCruceHorario) {
-            // Extraer ELO del rival de forma individual a prueba de fallos
-            const { data: perfilRival, error: eloError } = await supabase
-              .from('Perfiles')
-              .select('elo')
-              .eq('id', rival.jugador_id)
-              .single();
-
-            if (eloError) console.warn("No se pudo obtener ELO del rival:", eloError);
-
-            const eloRival = perfilRival?.elo || 1000;
-            const diferenciaElo = Math.abs(currentUser.elo - eloRival);
-            
-            if (diferenciaElo <= 200) {
-              matchEncontrado = rival;
-              matchInicio = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
-              matchFin = endTime < rival.hora_fin ? endTime : rival.hora_fin;
-              break;
-            }
+          if (hayCruceHorario && diferenciaElo <= 200) {
+            matchEncontrado = rival;
+            matchInicio = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
+            matchFin = endTime < rival.hora_fin ? endTime : rival.hora_fin;
+            break;
           }
         }
       }
 
       if (matchEncontrado) {
-        // --- MATCH ENCONTRADO - CREANDO PARTIDO ---
         const { error: insertMatchError } = await supabase
           .from('partidos')
           .insert([{
@@ -254,17 +280,14 @@ export default function App() {
             estado: 'confirmado'
           }]);
         
-        // Si Supabase bloquea crear el partido, lanzamos el error exacto
-        if (insertMatchError) throw new Error("Error Supabase al crear partido. Asegúrate de tener la tabla 'partidos' creada y con políticas RLS en 'true'. Detalle: " + insertMatchError.message);
+        if (insertMatchError) throw new Error("Error Supabase al crear partido. Detalle: " + insertMatchError.message);
 
-        // Borramos la búsqueda original del rival
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
 
         alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado el ${searchDate} de ${formatTime(matchInicio)} a ${formatTime(matchFin)}.`);
         setTab('partidos');
         
       } else {
-        // --- SIN RIVAL - PUBLICANDO ---
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
           .insert([{
@@ -286,7 +309,6 @@ export default function App() {
 
     } catch (error) {
       console.error(error);
-      // Imprimimos el error EXACTO en la pantalla roja
       setSearchError(error.message || 'Hubo un error en el circuito. Intenta de nuevo.');
     }
   };
@@ -437,11 +459,10 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                {/* ESTA ES LA CAJA ROJA QUE AHORA MOSTRARÁ EL ERROR EXACTO DE SUPABASE */}
                 {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
               <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all">
+                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all hover:brightness-105">
                   <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
                 </button>
               </div>
@@ -516,7 +537,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: MIS PARTIDOS */}
+        {/* VISTA: MIS PARTIDOS CONECTADA A SUPABASE */}
         {tab === 'partidos' && (
           <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto">
             <div className="text-center relative">
@@ -524,22 +545,58 @@ export default function App() {
               <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mt-2">Tu Circuito</h2>
             </div>
             
-            <div className={`space-y-3 ${!isLoggedIn && 'opacity-80'} text-left`}>
-              <h3 className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Próximo Encuentro</h3>
-              <div className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden">
-                <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
-                <div className="relative z-10">
-                  <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Jueves, 16 Abril</p>
-                  <h4 className="text-3xl font-black italic mb-4">6:00 PM</h4>
-                  <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20">
-                    <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic">MC</div>
-                    <div>
-                      <p className="text-xs uppercase tracking-widest font-bold opacity-80">Rival Confirmado</p>
-                      <p className="font-black italic">Mateo C. (1,250 Pts)</p>
+            <div className={`space-y-4 text-left ${!isLoggedIn && 'opacity-80'}`}>
+              
+              {!isLoggedIn ? (
+                // Vista de ejemplo para usuarios no registrados
+                <div className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden">
+                  <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
+                  <div className="relative z-10">
+                    <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Jueves, 16 Abril</p>
+                    <h4 className="text-3xl font-black italic mb-4">6:00 PM</h4>
+                    <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20">
+                      <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic">MC</div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
+                        <p className="font-black italic">Mateo C. (1,250 Pts)</p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : misPartidos.length === 0 ? (
+                // Vista cuando no hay partidos
+                <div className="text-center bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
+                  <p className="text-4xl mb-4 opacity-50">🕸️</p>
+                  <p className="text-[#1A1C1E]/60 font-bold text-sm">Aún no tienes partidos programados.</p>
+                  <button onClick={() => setTab('buscar')} className="mt-6 px-6 py-3 bg-[#F8F7F2] text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10 transition-colors">
+                    Buscar Rival
+                  </button>
+                </div>
+              ) : (
+                // Renderizado real de los partidos confirmados
+                misPartidos.map((partido) => (
+                  <div key={partido.id} className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4 transition-transform group-hover:scale-110">🎾</div>
+                    <div className="relative z-10">
+                      <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">
+                        {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                      </p>
+                      <h4 className="text-3xl font-black italic mb-4">
+                        {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
+                      </h4>
+                      <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20">
+                        <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic uppercase">
+                          {getInitials(partido.rival.nombre)}
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
+                          <p className="font-black italic">{partido.rival.nombre} ({partido.rival.elo} Pts)</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             {!isLoggedIn && (
