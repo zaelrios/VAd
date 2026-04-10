@@ -2,6 +2,40 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from './supabase' 
 
 export default function App() {
+  // --- LÓGICA DE HORA INTELIGENTE INICIAL ---
+  const getInitialTimes = () => {
+    const now = new Date();
+    
+    // Redondear a la siguiente hora en punto (ej. 12:37 -> 13:00)
+    now.setMinutes(0, 0, 0);
+    now.setHours(now.getHours() + 1);
+
+    // Start Time: Hora redondeada + 3 horas
+    const startObj = new Date(now);
+    startObj.setHours(startObj.getHours() + 3);
+    
+    // End Time: Start Time + 2 horas
+    const endObj = new Date(startObj);
+    endObj.setHours(endObj.getHours() + 2);
+
+    // Formatear a 'HH:MM'
+    const formatTime = (dateObj) => dateObj.toTimeString().substring(0, 5);
+    // Formatear a 'YYYY-MM-DD' ajustando zona horaria local
+    const formatDate = (dateObj) => {
+      const offset = dateObj.getTimezoneOffset() * 60000;
+      return new Date(dateObj - offset).toISOString().split('T')[0];
+    };
+
+    return {
+      date: formatDate(startObj),
+      start: formatTime(startObj),
+      end: formatTime(endObj)
+    };
+  };
+
+  // Guardamos la configuración inicial para que no cambie mientras el usuario usa la app
+  const [initData] = useState(getInitialTimes);
+
   const [tab, setTab] = useState('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
   const [currentUser, setCurrentUser] = useState(null); 
@@ -17,10 +51,10 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [registrationName, setRegistrationName] = useState('');
 
-  // ESTADOS PARA BÚSQUEDA DE RIVAL
-  const [searchDate, setSearchDate] = useState('2026-04-10');
-  const [startTime, setStartTime] = useState('05:00');
-  const [endTime, setEndTime] = useState('13:00');
+  // ESTADOS PARA BÚSQUEDA DE RIVAL (AQUÍ ENTRA LA HORA INTELIGENTE)
+  const [searchDate, setSearchDate] = useState(initData.date);
+  const [startTime, setStartTime] = useState(initData.start);
+  const [endTime, setEndTime] = useState(initData.end);
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
@@ -30,9 +64,10 @@ export default function App() {
   const [marcador, setMarcador] = useState('');
   const [ganadorId, setGanadorId] = useState('');
 
-  const [bookDate, setBookDate] = useState('2026-04-10');
-  const [bookStart, setBookStart] = useState('16:00');
-  const [bookEnd, setBookEnd] = useState('18:00');
+  // ESTADOS PARA RESERVAS (AQUÍ TAMBIÉN ENTRA LA HORA INTELIGENTE)
+  const [bookDate, setBookDate] = useState(initData.date);
+  const [bookStart, setBookStart] = useState(initData.start);
+  const [bookEnd, setBookEnd] = useState(initData.end);
   const [bookError, setBookError] = useState('');
 
   // MEMORIA PERMANENTE
@@ -157,7 +192,6 @@ export default function App() {
     let nuevaConfianza = Number(confianzaActual);
     let nuevaRacha = rachaActual + 1;
 
-    // Recuperación de media pelota en rachas clave: 5, 8 (5+3), 10 (8+2), y luego cada partido (>10)
     if (nuevaRacha === 5 || nuevaRacha === 8 || nuevaRacha === 10 || nuevaRacha > 10) {
        nuevaConfianza = Math.min(5.0, nuevaConfianza + 0.5);
     }
@@ -185,7 +219,7 @@ export default function App() {
       setReportingMatch(null);
       setMarcador('');
       setGanadorId('');
-      fetchPartidos(); // Recargar la lista
+      fetchPartidos(); 
       alert('Reporte enviado. Esperando confirmación del rival.');
     } catch (error) {
       console.error("Error al reportar:", error);
@@ -195,10 +229,8 @@ export default function App() {
 
   const handleConfirmReport = async (partido) => {
     try {
-      // 1. Obtener datos frescos del rival desde la base de datos
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
       
-      // 2. Calcular matemáticas (Yo = currentUser, Rival = rivalDB)
       const yoGane = partido.ganador_id === currentUser.id;
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, yoGane);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, !yoGane);
@@ -206,21 +238,17 @@ export default function App() {
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
       const rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
 
-      // 3. Actualizar Mi Perfil
       const { data: miPerfilActualizado } = await supabase.from('Perfiles')
         .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
         .eq('id', currentUser.id)
         .select().single();
       
-      // 4. Actualizar Perfil Rival
       await supabase.from('Perfiles')
         .update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha })
         .eq('id', rivalDB.id);
 
-      // 5. Cerrar el Partido
       await supabase.from('partidos').update({ estado: 'finalizado' }).eq('id', partido.id);
 
-      // Actualizar sesión local
       setCurrentUser(miPerfilActualizado);
       localStorage.setItem('vad_session', JSON.stringify(miPerfilActualizado));
       
@@ -240,12 +268,10 @@ export default function App() {
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
       
-      // Matemática del Castigo W.O. (Rival pierde, yo gano)
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, true);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, false);
 
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
-      // Castigo duro al rival: -1 pelota entera, racha a 0
       const rivalConfianzaCastigada = Math.max(0, Number(rivalDB.confianza) - 1.0); 
 
       await supabase.from('Perfiles')
@@ -258,7 +284,6 @@ export default function App() {
 
       await supabase.from('partidos').update({ estado: 'wo', ganador_id: currentUser.id }).eq('id', partido.id);
 
-      // Refrescar mi usuario
       const { data: miPerfilFresquito } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
       setCurrentUser(miPerfilFresquito);
       localStorage.setItem('vad_session', JSON.stringify(miPerfilFresquito));
@@ -538,7 +563,7 @@ export default function App() {
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
-                  <input type="date" min="2026-04-10" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black uppercase focus:outline-none focus:border-[#29C454]" />
+                  <input type="date" min={initData.date} value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                 </div>
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Franja de Disponibilidad</label>
@@ -583,7 +608,7 @@ export default function App() {
             </div>
             <form onSubmit={handleBookSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
-                <input type="date" min="2026-04-10" value={bookDate} onChange={(e) => setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
+                <input type="date" min={initData.date} value={bookDate} onChange={(e) => setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                 <div className="grid grid-cols-2 gap-3 w-full">
                   <input type="time" value={bookStart} onChange={(e) => setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center" />
                   <input type="time" value={bookEnd} onChange={(e) => setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center" />
@@ -755,6 +780,7 @@ export default function App() {
             <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg' : 'text-[#1A1C1E]/40'}`}>
               <div className="relative">
                 <span className="text-xl">{item.icon}</span>
+                {/* NOTIFICACIÓN AZUL TENIS SI HAY PARTIDOS */}
                 {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser.id)) && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
