@@ -24,7 +24,7 @@ export default function App() {
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
-  // NUEVO: ESTADO PARA LOS PARTIDOS CONFIRMADOS
+  // ESTADO PARA LOS PARTIDOS CONFIRMADOS
   const [misPartidos, setMisPartidos] = useState([]);
 
   const [bookDate, setBookDate] = useState('2026-04-10');
@@ -41,7 +41,7 @@ export default function App() {
     }
   }, []);
 
-  // CARGAR BÚSQUEDAS ACTIVAS DESDE SUPABASE
+  // --- CARGAR BÚSQUEDAS ACTIVAS Y LIMPIAR EXPIRADAS ---
   useEffect(() => {
     if (currentUser) {
       const cargarBúsquedas = async () => {
@@ -51,8 +51,30 @@ export default function App() {
           .eq('jugador_id', currentUser.id)
           .order('fecha', { ascending: true });
         
-        if (data) setActiveSearches(data);
-        if (error) console.error("Error cargando búsquedas:", error);
+        if (error) {
+          console.error("Error cargando búsquedas:", error);
+          return;
+        }
+
+        if (data) {
+          const now = new Date();
+          const busquedasValidas = [];
+
+          for (let search of data) {
+            // Reconstruir fecha local para comparar
+            const searchStartObj = new Date(`${search.fecha}T${search.hora_inicio}:00`);
+            const diffInHours = (searchStartObj - now) / (1000 * 60 * 60);
+
+            // AUTO-CANCELAR: Si faltan menos de 2 horas (o es pasado)
+            if (diffInHours < 2) {
+              await supabase.from('buscar').delete().eq('id', search.id);
+              console.log(`Búsqueda expirada eliminada automáticamente.`);
+            } else {
+              busquedasValidas.push(search);
+            }
+          }
+          setActiveSearches(busquedasValidas);
+        }
       };
       cargarBúsquedas();
     } else {
@@ -89,7 +111,7 @@ export default function App() {
       };
       cargarPartidos();
     }
-  }, [currentUser]); // Ahora busca partidos en cuanto abres la app
+  }, [currentUser]);
 
   const formatTime = (time24) => {
     const [hourString, minute] = time24.split(':');
@@ -132,7 +154,6 @@ export default function App() {
     e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
-
     const fullPhone = `${phonePrefix}${phoneNumber}`;
 
     try {
@@ -158,7 +179,7 @@ export default function App() {
       }
     } catch (error) {
       console.error(error);
-      setAuthError('Error de conexión al circuito. Intenta de nuevo.');
+      setAuthError('Error de conexión al circuito.');
     } finally {
       setAuthLoading(false);
     }
@@ -166,10 +187,9 @@ export default function App() {
 
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
-    
     const nameParts = registrationName.trim().split(/\s+/);
     if (nameParts.length < 2) {
-      setAuthError('El anonimato no está permitido. Ingresa tu nombre y apellido reales.');
+      setAuthError('El anonimato no está permitido. Ingresa nombre y apellido.');
       return;
     }
     
@@ -201,7 +221,7 @@ export default function App() {
       localStorage.setItem('vad_session', JSON.stringify(newUser));
     } catch (error) {
       console.error(error);
-      setAuthError('Error al crear tu cuenta. Intenta de nuevo.');
+      setAuthError('Error al crear tu cuenta.');
     } finally {
       setAuthLoading(false);
     }
@@ -217,12 +237,23 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
+  // --- MOTOR DE MATCHMAKING (BLINDADO CON EDGE CASES) ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
     if (!isLoggedIn) { setTab('auth'); return; }
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
+    // REGLA: Mínimo 3 horas de anticipación
+    const now = new Date();
+    const searchStartObj = new Date(`${searchDate}T${startTime}:00`);
+    const diffInHoursNotice = (searchStartObj - now) / (1000 * 60 * 60);
+
+    if (diffInHoursNotice < 3) {
+      setSearchError('Debes programar tu búsqueda con al menos 3 horas de anticipación.');
+      return;
+    }
+
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
       return (startTime < search.hora_fin && endTime > search.hora_inicio);
@@ -232,12 +263,12 @@ export default function App() {
     try {
       const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
-        .select('*, Perfiles ( elo )')
+        .select('*')
         .eq('fecha', searchDate)
         .neq('jugador_id', currentUser.id)
         .eq('estado', 'activa');
 
-      if (fetchError) throw fetchError;
+      if (fetchError) throw new Error("Error al leer el radar: " + fetchError.message);
 
       let matchEncontrado = null;
       let matchInicio = '';
@@ -246,14 +277,33 @@ export default function App() {
       if (posiblesRivales && posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
           const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
-          const eloRival = rival.Perfiles?.elo || 1000;
-          const diferenciaElo = Math.abs(currentUser.elo - eloRival);
           
-          if (hayCruceHorario && diferenciaElo <= 200) {
-            matchEncontrado = rival;
-            matchInicio = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
-            matchFin = endTime < rival.hora_fin ? endTime : rival.hora_fin;
-            break;
+          if (hayCruceHorario) {
+            const inicioCruce = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
+            const finCruce = endTime < rival.hora_fin ? endTime : rival.hora_fin;
+            
+            const startObj = new Date(`2000-01-01T${inicioCruce}`);
+            const endObj = new Date(`2000-01-01T${finCruce}`);
+            const horasCruce = (endObj - startObj) / (1000 * 60 * 60);
+
+            const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
+            const eloRival = perfilRival?.elo || 1000;
+            const diferenciaElo = Math.abs(currentUser.elo - eloRival);
+            
+            // REGLA: Diferencia de ELO permitida y MÍNIMO 1 HORA de cruce
+            if (diferenciaElo <= 200 && horasCruce >= 1) {
+              matchEncontrado = rival;
+              matchInicio = inicioCruce;
+              
+              // REGLA: Topar el partido a MÁXIMO 2 horas
+              if (horasCruce > 2) {
+                startObj.setHours(startObj.getHours() + 2);
+                matchFin = startObj.toTimeString().substring(0,5); 
+              } else {
+                matchFin = finCruce;
+              }
+              break;
+            }
           }
         }
       }
@@ -277,6 +327,12 @@ export default function App() {
         alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado el ${searchDate} de ${formatTime(matchInicio)} a ${formatTime(matchFin)}.`);
         setTab('partidos');
         
+        // Refrescamos la lista local forzadamente
+        const { data: rivalData } = await supabase.from('Perfiles').select('nombre, elo').eq('id', matchEncontrado.jugador_id).single();
+        setMisPartidos(prev => [...prev, {
+          id: Date.now(), fecha: searchDate, hora_inicio: matchInicio, hora_fin: matchFin, rival: rivalData
+        }]);
+
       } else {
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
@@ -305,17 +361,12 @@ export default function App() {
 
   const handleCancelSearch = async (id) => {
     try {
-      const { error } = await supabase
-        .from('buscar')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('buscar').delete().eq('id', id);
       if (error) throw error; 
-
       setActiveSearches(prev => prev.filter(search => search.id !== id));
     } catch (error) {
       console.error('Error al cancelar en Supabase:', error);
-      alert('Error al eliminar de la base de datos. Verifica tus políticas RLS.');
+      alert('Error al eliminar de la base de datos.');
     }
   };
 
@@ -331,133 +382,97 @@ export default function App() {
     <div className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30">
       <main className="pt-10 px-6 max-w-lg mx-auto w-full flex flex-col items-center">
         
-        {/* VISTA HOME */}
         {tab === 'home' && (
           <div className="w-full space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center">
             <section className="flex flex-col items-center">
               <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[15px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
-              <h1 className="text-7xl font-black italic tracking-tighter leading-none uppercase mb-8 text-[#29C454]">
+              <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
                 "Matchmaking por ELO, ranking de confianza y reservas inteligentes. La comunidad que premia a los que sí aparecen."
               </p>
             </section>
-
-            <button 
-              onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')}
-              className="w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105"
-            >
+            <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
               {isLoggedIn ? "Buscar rival ➜" : "Únete ➜"}
             </button>
           </div>
         )}
 
-        {/* VISTA DE REGISTRO / AUTH */}
         {tab === 'auth' && (
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
-            
             {!isRegistering ? (
               <>
                 <div className="text-center">
                   <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2>
-                  <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad en el circuito.</p>
+                  <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad.</p>
                 </div>
-                
                 <form onSubmit={handleAuthSubmit} className="space-y-6">
                   <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular (WhatsApp / SMS)</label>
+                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular</label>
                     <div className="flex gap-2">
-                      <div className="relative w-1/3">
-                        <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-full h-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl pl-3 pr-2 py-4 text-[#1A1C1E] font-bold shadow-sm appearance-none cursor-pointer">
-                          <option value="+52">🇲🇽 +52</option>
-                          <option value="+1">🇺🇸 +1</option>
-                        </select>
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[10px]">▼</div>
-                      </div>
-                      <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest placeholder:text-[#1A1C1E]/20 focus:outline-none focus:border-[#29C454]" />
+                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-1/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-2 py-4 text-[#1A1C1E] font-bold">
+                        <option value="+52">🇲🇽 +52</option>
+                        <option value="+1">🇺🇸 +1</option>
+                      </select>
+                      <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest focus:outline-none focus:border-[#29C454]" />
                     </div>
                   </div>
-
                   <div className="space-y-2 text-left mt-2">
-                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Crea o ingresa tu PIN (4 dígitos)</label>
+                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">PIN (4 dígitos)</label>
                     <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
                   </div>
-
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
-
-                  <button type="submit" disabled={authLoading} className={`w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}>
-                    {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
+                  <button type="submit" className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">
+                    Entrar al Circuito ➜
                   </button>
                 </form>
-                <button onClick={() => { setTab('home'); setAuthError(''); }} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2 hover:text-[#1A1C1E] transition-colors">Cancelar</button>
+                <button onClick={() => setTab('home')} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2">Cancelar</button>
               </>
             ) : (
-              <div className="animate-in fade-in slide-in-from-right-4 duration-500 space-y-8">
+              <div className="animate-in fade-in space-y-8">
                 <div className="text-center">
                   <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2>
-                  <p className="text-[#1A1C1E]/60 text-sm">No encontramos tu número. ¡Crea tu perfil ahora!</p>
+                  <p className="text-[#1A1C1E]/60 text-sm">Crea tu perfil ahora.</p>
                 </div>
-                
                 <form onSubmit={handleCompleteRegistration} className="space-y-6">
-                  <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Nombre y Apellido</label>
-                    <input 
-                      type="text" required placeholder="Ej: Zael Rios" 
-                      value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} 
-                      className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-wider placeholder:text-[#1A1C1E]/20 focus:outline-none focus:border-[#29C454]" 
-                    />
-                  </div>
-
-                  {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
-
-                  <button type="submit" disabled={authLoading} className={`w-full bg-[#1A1C1E] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}>
-                    {authLoading ? 'Creando perfil...' : 'Completar Registro ➜'}
-                  </button>
+                  <input type="text" required placeholder="Nombre y Apellido" value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold focus:outline-none focus:border-[#29C454]" />
+                  <button type="submit" className="w-full bg-[#1A1C1E] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg">Completar Registro ➜</button>
                 </form>
-                
-                <button 
-                  onClick={() => { setIsRegistering(false); setAuthError(''); }} 
-                  className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2 hover:text-[#1A1C1E] transition-colors"
-                >
-                  ← Atrás
-                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* VISTA: BUSCAR RIVAL */}
         {tab === 'buscar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
             <form onSubmit={handleSearchSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
-                  <input type="date" min="2026-04-10" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                  <input type="date" min="2026-04-10" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black uppercase focus:outline-none focus:border-[#29C454]" />
                 </div>
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Franja de Disponibilidad</label>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    <div className="space-y-1 w-full min-w-0">
+                    <div className="space-y-1">
                       <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Desde</span>
-                      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
                     </div>
-                    <div className="space-y-1 w-full min-w-0">
+                    <div className="space-y-1">
                       <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Hasta</span>
-                      <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                      <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
                     </div>
                   </div>
                 </div>
                 {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
               <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all hover:brightness-105">
+                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all">
                   <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
                 </button>
               </div>
             </form>
-
             {isLoggedIn && activeSearches.length > 0 && (
               <div className="pt-8 space-y-4 animate-in fade-in slide-in-from-bottom-4 w-full">
                 <div className="flex items-center justify-between border-b border-[#1A1C1E]/10 pb-2">
@@ -465,23 +480,13 @@ export default function App() {
                 </div>
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
-                    <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden group">
+                    <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
                       <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
                       <div className="pl-2 text-left">
-                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">
-                          {new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
-                        </p>
-                        <p className="text-sm font-black text-[#1A1C1E] mt-1">
-                          {formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}
-                        </p>
+                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">{new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+                        <p className="text-sm font-black text-[#1A1C1E] mt-1">{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
                       </div>
-                      <button 
-                        onClick={() => handleCancelSearch(search.id)} 
-                        className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors"
-                        title="Eliminar búsqueda"
-                      >
-                        ✕
-                      </button>
+                      <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center hover:bg-red-50 hover:text-red-500">✕</button>
                     </div>
                   ))}
                 </div>
@@ -490,61 +495,39 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: RESERVAR CANCHA */}
         {tab === 'reservar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
             <div className="text-center">
               <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Reservar Cancha</h2>
-              <p className="text-[#1A1C1E]/60 text-sm">Asegura tu lugar. Pago requerido por anticipado.</p>
+              <p className="text-[#1A1C1E]/60 text-sm">Asegura tu lugar. Pago requerido.</p>
             </div>
             <form onSubmit={handleBookSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
-                <div className="space-y-3 text-left w-full">
-                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Reserva</label>
-                  <input type="date" min="2026-04-10" value={bookDate} onChange={(e) => setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                <input type="date" min="2026-04-10" value={bookDate} onChange={(e) => setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
+                <div className="grid grid-cols-2 gap-3 w-full">
+                  <input type="time" value={bookStart} onChange={(e) => setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center" />
+                  <input type="time" value={bookEnd} onChange={(e) => setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center" />
                 </div>
-                <div className="space-y-3 text-left w-full">
-                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Horario (Máx 3 hrs)</label>
-                  <div className="grid grid-cols-2 gap-3 w-full">
-                    <div className="space-y-1 w-full min-w-0">
-                      <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Inicio</span>
-                      <input type="time" value={bookStart} onChange={(e) => setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
-                    </div>
-                    <div className="space-y-1 w-full min-w-0">
-                      <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Fin</span>
-                      <input type="time" value={bookEnd} onChange={(e) => setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
-                    </div>
-                  </div>
-                </div>
-                {bookError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center mt-4">{bookError}</div>}
+                {bookError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{bookError}</div>}
               </div>
-              <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className="w-full flex items-center justify-center px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
-                  Pagar Reserva ➜
-                </button>
+              <div className="pt-6">
+                <button type="submit" className="w-full px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Pagar Reserva ➜</button>
               </div>
             </form>
           </div>
         )}
 
-        {/* VISTA: MIS PARTIDOS CONECTADA A SUPABASE */}
         {tab === 'partidos' && (
           <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto">
-            <div className="text-center relative">
-              {!isLoggedIn && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#29C454]/10 text-[#29C454] px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Vista de Ejemplo</div>}
-              <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mt-2">Tu Circuito</h2>
-            </div>
-            
+            <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight text-center">Tu Circuito</h2>
             <div className={`space-y-4 text-left ${!isLoggedIn && 'opacity-80'}`}>
-              
               {!isLoggedIn ? (
-                // Vista de ejemplo para usuarios no registrados
                 <div className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden">
                   <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
                   <div className="relative z-10">
                     <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Jueves, 16 Abril</p>
-                    <h4 className="text-3xl font-black italic mb-4">6:00 PM</h4>
-                    <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20">
+                    <h4 className="text-3xl font-black italic mb-4">6:00 PM - 8:00 PM</h4>
+                    <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl border border-white/20">
                       <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic">MC</div>
                       <div>
                         <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
@@ -554,16 +537,14 @@ export default function App() {
                   </div>
                 </div>
               ) : misPartidos.length === 0 ? (
-                // Vista cuando no hay partidos
                 <div className="text-center bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
                   <p className="text-4xl mb-4 opacity-50">🕸️</p>
                   <p className="text-[#1A1C1E]/60 font-bold text-sm">Aún no tienes partidos programados.</p>
-                  <button onClick={() => setTab('buscar')} className="mt-6 px-6 py-3 bg-[#F8F7F2] text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10 transition-colors">
+                  <button onClick={() => setTab('buscar')} className="mt-6 px-6 py-3 bg-[#F8F7F2] text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10">
                     Buscar Rival
                   </button>
                 </div>
               ) : (
-                // Renderizado real de los partidos confirmados
                 misPartidos.map((partido) => (
                   <div key={partido.id} className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden group">
                     <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4 transition-transform group-hover:scale-110">🎾</div>
@@ -579,7 +560,7 @@ export default function App() {
                           {getInitials(partido.rival.nombre)}
                         </div>
                         <div>
-                          <p className="text-[9px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
+                          <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
                           <p className="font-black italic">{partido.rival.nombre} ({partido.rival.elo} Pts)</p>
                         </div>
                       </div>
@@ -588,75 +569,48 @@ export default function App() {
                 ))
               )}
             </div>
-
             {!isLoggedIn && (
-              <button onClick={() => setTab('auth')} className="w-full mt-6 bg-[#29C454] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg shadow-[#29C454]/30 animate-bounce hover:brightness-105">
+              <button onClick={() => setTab('auth')} className="w-full mt-6 bg-[#29C454] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg animate-bounce">
                 Únete para ver tu circuito
               </button>
             )}
           </div>
         )}
 
-        {/* VISTA: PERFIL */}
         {tab === 'perfil' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
             <div className={`bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden w-full ${!isLoggedIn && 'opacity-80'}`}>
-              
-              {!isLoggedIn && <div className="absolute top-4 bg-[#1A1C1E]/5 text-[#1A1C1E]/50 px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Perfil de Ejemplo</div>}
-
-              <div className="w-24 h-24 bg-[#F8F7F2] rounded-full border-4 border-[#29C454] flex items-center justify-center text-[#1A1C1E] font-black italic text-4xl mb-4 shadow-sm mt-4 uppercase">
+              <div className="w-24 h-24 bg-[#F8F7F2] rounded-full border-4 border-[#29C454] flex items-center justify-center text-[#1A1C1E] font-black italic text-4xl mb-4 uppercase">
                 {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
               </div>
-              
               <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight">
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
-
-              <p className="text-[#1A1C1E]/50 font-bold tracking-widest mt-1 text-sm mb-6">
-                {isLoggedIn && currentUser ? currentUser.telefono : 'Regístrate para entrar'}
+              <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-sm mb-6">
+                {isLoggedIn && currentUser ? currentUser.telefono : 'Regístrate'}
               </p>
-
-              {/* RENDERIZADOR DE PELOTAS */}
               {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
-
-              <div className="flex gap-4 w-full mt-6 border-t border-[#1A1C1E]/10 pt-6 justify-center">
+              <div className="flex gap-4 w-full mt-6 border-t border-[#1A1C1E]/10 pt-6">
                 <div className="flex-1 text-center">
                   <p className="text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Tu ELO</p>
-                  <p className="text-3xl font-black italic text-[#29C454]">
-                    {isLoggedIn && currentUser ? currentUser.elo : '1,000'}
-                  </p>
+                  <p className="text-3xl font-black italic text-[#29C454]">{isLoggedIn && currentUser ? currentUser.elo : '1,000'}</p>
                 </div>
               </div>
             </div>
-
-            {isLoggedIn ? (
-              <button 
-                onClick={handleLogout}
-                className="w-full bg-[#F8F7F2] border border-red-500/20 text-red-500 py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-red-50 transition-colors"
-              >
-                Cerrar Sesión
-              </button>
-            ) : (
-              <button onClick={() => setTab('auth')} className="w-full bg-[#29C454] text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-[#29C454]/30 hover:brightness-105">
-                Crear Cuenta / Iniciar Sesión
-              </button>
+            {isLoggedIn && (
+              <button onClick={handleLogout} className="w-full bg-[#F8F7F2] border border-red-500/20 text-red-500 py-4 rounded-2xl font-black uppercase text-xs hover:bg-red-50 transition-colors">Cerrar Sesión</button>
             )}
           </div>
         )}
-
       </main>
 
-      {/* --- MENÚ INFERIOR --- */}
       <nav className="fixed bottom-0 left-0 w-full z-50 bg-[#F8F7F2]/90 backdrop-blur-lg border-t border-[#1A1C1E]/5 px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         <div className="flex justify-between items-center max-w-md mx-auto">
           {[{ id: 'home', icon: '🏠' }, { id: 'buscar', icon: '🔍' }, { id: 'reservar', icon: '📅' }, { id: 'partidos', icon: '🎾' }, { id: 'perfil', icon: '👤' }].map((item) => (
-            <button
-              key={item.id} onClick={() => setTab(item.id)}
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/30' : 'text-[#1A1C1E]/40 active:bg-[#1A1C1E]/5 hover:text-[#1A1C1E]/60'}`}
-            >
+            <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg' : 'text-[#1A1C1E]/40'}`}>
               <div className="relative">
                 <span className="text-xl">{item.icon}</span>
-                {/* NOTIFICACIÓN AZUL TENIS SI HAY PARTIDOS */}
+                {/* LA NOTIFICACIÓN AZUL TENIS QUE PEDISTE */}
                 {item.id === 'partidos' && misPartidos.length > 0 && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
