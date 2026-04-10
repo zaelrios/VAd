@@ -154,8 +154,8 @@ export default function App() {
             pin: pin, 
             nombre: registrationName.trim(),
             elo: 1000, 
-            confianza: 5.0, // Entran con 5 pelotas
-            racha_asistencia: 0 // Inician con racha de cero
+            confianza: 5.0,
+            racha_asistencia: 0 
         }])
         .select()
         .single();
@@ -186,14 +186,13 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
-  // --- MOTOR DE MATCHMAKING (VAd. Core) ---
+  // --- MOTOR DE MATCHMAKING (CON RAYOS X DE ERRORES) ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
     if (!isLoggedIn) { setTab('auth'); return; }
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
-    // 1. Evitar que se empalme con mis propias búsquedas activas
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
       return (startTime < search.hora_fin && endTime > search.hora_inicio);
@@ -201,48 +200,49 @@ export default function App() {
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     try {
-      // 2. BUSCAR POSIBLES RIVALES EN LA BASE DE DATOS
-      // Traemos las búsquedas del mismo día y cruzamos (join) con Perfiles para ver el ELO
+      // Traemos las búsquedas activas de forma segura
       const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
-        .select(`
-          *,
-          Perfiles ( elo )
-        `)
+        .select('*')
         .eq('fecha', searchDate)
         .neq('jugador_id', currentUser.id)
         .eq('estado', 'activa');
 
-      if (fetchError) throw fetchError;
+      if (fetchError) throw new Error("Error al leer el radar: " + fetchError.message);
 
       let matchEncontrado = null;
       let matchInicio = '';
       let matchFin = '';
 
-      // 3. FILTRAR POR HORARIO Y RANGO DE ELO (+/- 200)
       if (posiblesRivales && posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
-          // Verificar si chocan los horarios
           const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
           
-          // Calcular la diferencia de nivel (ELO)
-          const eloRival = rival.Perfiles?.elo || 1000;
-          const diferenciaElo = Math.abs(currentUser.elo - eloRival);
-          
-          if (hayCruceHorario && diferenciaElo <= 200) {
-            matchEncontrado = rival;
-            // Definimos la franja exacta en la que ambos coinciden para el partido
-            matchInicio = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
-            matchFin = endTime < rival.hora_fin ? endTime : rival.hora_fin;
-            break; // ¡Boom! Match encontrado, detenemos la búsqueda
+          if (hayCruceHorario) {
+            // Extraer ELO del rival de forma individual a prueba de fallos
+            const { data: perfilRival, error: eloError } = await supabase
+              .from('Perfiles')
+              .select('elo')
+              .eq('id', rival.jugador_id)
+              .single();
+
+            if (eloError) console.warn("No se pudo obtener ELO del rival:", eloError);
+
+            const eloRival = perfilRival?.elo || 1000;
+            const diferenciaElo = Math.abs(currentUser.elo - eloRival);
+            
+            if (diferenciaElo <= 200) {
+              matchEncontrado = rival;
+              matchInicio = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
+              matchFin = endTime < rival.hora_fin ? endTime : rival.hora_fin;
+              break;
+            }
           }
         }
       }
 
       if (matchEncontrado) {
-        // --- ¡HAY PARTIDO! ---
-        
-        // A. Insertamos el partido oficial en la tabla
+        // --- MATCH ENCONTRADO - CREANDO PARTIDO ---
         const { error: insertMatchError } = await supabase
           .from('partidos')
           .insert([{
@@ -254,16 +254,17 @@ export default function App() {
             estado: 'confirmado'
           }]);
         
-        if (insertMatchError) throw insertMatchError;
+        // Si Supabase bloquea crear el partido, lanzamos el error exacto
+        if (insertMatchError) throw new Error("Error Supabase al crear partido. Asegúrate de tener la tabla 'partidos' creada y con políticas RLS en 'true'. Detalle: " + insertMatchError.message);
 
-        // B. Destruimos la búsqueda del rival porque ya lo atrapamos
+        // Borramos la búsqueda original del rival
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
 
         alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado el ${searchDate} de ${formatTime(matchInicio)} a ${formatTime(matchFin)}.`);
-        setTab('partidos'); // Redirigimos al jugador a su calendario de partidos
+        setTab('partidos');
         
       } else {
-        // --- NO HAY RIVAL, ENTRAR AL TABLERO PÚBLICO ---
+        // --- SIN RIVAL - PUBLICANDO ---
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
           .insert([{
@@ -277,14 +278,16 @@ export default function App() {
           .select()
           .single();
 
-        if (insertError) throw insertError;
+        if (insertError) throw new Error("Error al guardar búsqueda: " + insertError.message);
+        
         setActiveSearches([...activeSearches, nuevaBusqueda]); 
         alert('Búsqueda publicada. Te avisaremos en cuanto alguien de tu nivel haga match.');
       }
 
     } catch (error) {
       console.error(error);
-      setSearchError('Hubo un error en el circuito. Intenta de nuevo.');
+      // Imprimimos el error EXACTO en la pantalla roja
+      setSearchError(error.message || 'Hubo un error en el circuito. Intenta de nuevo.');
     }
   };
 
@@ -434,7 +437,8 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{searchError}</div>}
+                {/* ESTA ES LA CAJA ROJA QUE AHORA MOSTRARÁ EL ERROR EXACTO DE SUPABASE */}
+                {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
               <div className="pt-6 flex flex-col items-center">
                 <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all">
