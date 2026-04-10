@@ -74,7 +74,7 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // --- NUEVO: RENDERIZADOR VISUAL DE PELOTAS DE CONFIANZA ---
+  // --- RENDERIZADOR VISUAL DE PELOTAS DE CONFIANZA ---
   const renderBalls = (score) => {
     const numericScore = Number(score) || 5;
     return (
@@ -186,13 +186,14 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
-  // --- BUSCAR RIVAL (GUARDAR EN SUPABASE) ---
+  // --- MOTOR DE MATCHMAKING (VAd. Core) ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
     if (!isLoggedIn) { setTab('auth'); return; }
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
+    // 1. Evitar que se empalme con mis propias búsquedas activas
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
       return (startTime < search.hora_fin && endTime > search.hora_inicio);
@@ -200,24 +201,90 @@ export default function App() {
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     try {
-      const { data, error } = await supabase
+      // 2. BUSCAR POSIBLES RIVALES EN LA BASE DE DATOS
+      // Traemos las búsquedas del mismo día y cruzamos (join) con Perfiles para ver el ELO
+      const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
-        .insert([{
-          jugador_id: currentUser.id,
-          nombre: currentUser.nombre,
-          fecha: searchDate,
-          hora_inicio: startTime,
-          hora_fin: endTime,
-          estado: 'activa'
-        }])
-        .select()
-        .single();
+        .select(`
+          *,
+          Perfiles ( elo )
+        `)
+        .eq('fecha', searchDate)
+        .neq('jugador_id', currentUser.id)
+        .eq('estado', 'activa');
 
-      if (error) throw error;
-      setActiveSearches([...activeSearches, data]); 
+      if (fetchError) throw fetchError;
+
+      let matchEncontrado = null;
+      let matchInicio = '';
+      let matchFin = '';
+
+      // 3. FILTRAR POR HORARIO Y RANGO DE ELO (+/- 200)
+      if (posiblesRivales && posiblesRivales.length > 0) {
+        for (let rival of posiblesRivales) {
+          // Verificar si chocan los horarios
+          const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
+          
+          // Calcular la diferencia de nivel (ELO)
+          const eloRival = rival.Perfiles?.elo || 1000;
+          const diferenciaElo = Math.abs(currentUser.elo - eloRival);
+          
+          if (hayCruceHorario && diferenciaElo <= 200) {
+            matchEncontrado = rival;
+            // Definimos la franja exacta en la que ambos coinciden para el partido
+            matchInicio = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
+            matchFin = endTime < rival.hora_fin ? endTime : rival.hora_fin;
+            break; // ¡Boom! Match encontrado, detenemos la búsqueda
+          }
+        }
+      }
+
+      if (matchEncontrado) {
+        // --- ¡HAY PARTIDO! ---
+        
+        // A. Insertamos el partido oficial en la tabla
+        const { error: insertMatchError } = await supabase
+          .from('partidos')
+          .insert([{
+            jugador1_id: matchEncontrado.jugador_id,
+            jugador2_id: currentUser.id,
+            fecha: searchDate,
+            hora_inicio: matchInicio,
+            hora_fin: matchFin,
+            estado: 'confirmado'
+          }]);
+        
+        if (insertMatchError) throw insertMatchError;
+
+        // B. Destruimos la búsqueda del rival porque ya lo atrapamos
+        await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
+
+        alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado el ${searchDate} de ${formatTime(matchInicio)} a ${formatTime(matchFin)}.`);
+        setTab('partidos'); // Redirigimos al jugador a su calendario de partidos
+        
+      } else {
+        // --- NO HAY RIVAL, ENTRAR AL TABLERO PÚBLICO ---
+        const { data: nuevaBusqueda, error: insertError } = await supabase
+          .from('buscar')
+          .insert([{
+            jugador_id: currentUser.id,
+            nombre: currentUser.nombre,
+            fecha: searchDate,
+            hora_inicio: startTime,
+            hora_fin: endTime,
+            estado: 'activa'
+          }])
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        setActiveSearches([...activeSearches, nuevaBusqueda]); 
+        alert('Búsqueda publicada. Te avisaremos en cuanto alguien de tu nivel haga match.');
+      }
+
     } catch (error) {
       console.error(error);
-      setSearchError('Error al publicar tu búsqueda.');
+      setSearchError('Hubo un error en el circuito. Intenta de nuevo.');
     }
   };
 
@@ -304,7 +371,7 @@ export default function App() {
 
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
 
-                  <button type="submit" disabled={authLoading} className={`w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}>
+                  <button type="submit" disabled={authLoading} className={`w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}>
                     {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
                   </button>
                 </form>
@@ -370,7 +437,7 @@ export default function App() {
                 {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{searchError}</div>}
               </div>
               <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
+                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all">
                   <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
                 </button>
               </div>
