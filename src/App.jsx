@@ -790,12 +790,17 @@ export default function App() {
                       </div>
 
                       {/* --- ESTADOS DEL PARTIDO --- */}
-                      {partido.estado === 'confirmado' && (
-                        <>
-                          {obtenerEstadoTiempo(partido) === 'futuro' ? (
+                      {obtenerEstadoTiempo(partido) === 'futuro' ? (
                             <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
-                              <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1">El partido inicia en</p>
-                              <p className="text-2xl font-black italic tracking-widest font-mono text-[#007AFF] shadow-sm">{getCountdown(partido)}</p>
+                              <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">El partido inicia en</p>
+                              
+                              {/* --- NUEVO DISEÑO DEL TEMPORIZADOR (Pastilla difuminada) --- */}
+                              <div className="mx-auto w-fit bg-[#F8F7F2]/95 px-5 py-2 rounded-xl border border-[#007AFF]/40 shadow-[0_0_12px_rgba(0,122,255,0.25)]">
+                                <p className="text-xl font-black italic tracking-widest font-mono text-[#1A1C1E]/80">
+                                  {getCountdown(partido)}
+                                </p>
+                              </div>
+                              
                             </div>
                           ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
                             <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
