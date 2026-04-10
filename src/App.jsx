@@ -6,7 +6,7 @@ export default function App() {
   const getInitialTimes = () => {
     const now = new Date();
     
-    // Redondear a la siguiente hora en punto (ej. 12:37 -> 13:00)
+    // Redondear a la siguiente hora en punto
     now.setMinutes(0, 0, 0);
     now.setHours(now.getHours() + 1);
 
@@ -18,9 +18,7 @@ export default function App() {
     const endObj = new Date(startObj);
     endObj.setHours(endObj.getHours() + 2);
 
-    // Formatear a 'HH:MM'
     const formatTime = (dateObj) => dateObj.toTimeString().substring(0, 5);
-    // Formatear a 'YYYY-MM-DD' ajustando zona horaria local
     const formatDate = (dateObj) => {
       const offset = dateObj.getTimezoneOffset() * 60000;
       return new Date(dateObj - offset).toISOString().split('T')[0];
@@ -33,7 +31,6 @@ export default function App() {
     };
   };
 
-  // Guardamos la configuración inicial para que no cambie mientras el usuario usa la app
   const [initData] = useState(getInitialTimes);
 
   const [tab, setTab] = useState('home');
@@ -47,14 +44,14 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   
-  // ESTADOS PARA REGISTRO DE 2 PASOS
   const [isRegistering, setIsRegistering] = useState(false);
   const [registrationName, setRegistrationName] = useState('');
 
-  // ESTADOS PARA BÚSQUEDA DE RIVAL (AQUÍ ENTRA LA HORA INTELIGENTE)
+  // ESTADOS PARA BÚSQUEDA DE RIVAL Y CANCHAS
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
   const [endTime, setEndTime] = useState(initData.end);
+  const [superficie, setSuperficie] = useState('Dura'); // RE-AGREGADO
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
@@ -64,7 +61,6 @@ export default function App() {
   const [marcador, setMarcador] = useState('');
   const [ganadorId, setGanadorId] = useState('');
 
-  // ESTADOS PARA RESERVAS (AQUÍ TAMBIÉN ENTRA LA HORA INTELIGENTE)
   const [bookDate, setBookDate] = useState(initData.date);
   const [bookStart, setBookStart] = useState(initData.start);
   const [bookEnd, setBookEnd] = useState(initData.end);
@@ -120,7 +116,7 @@ export default function App() {
         .from('partidos')
         .select('*')
         .or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`)
-        .order('fecha', { ascending: false }); // Los más recientes primero
+        .order('fecha', { ascending: false });
 
       if (error) throw error;
 
@@ -180,7 +176,7 @@ export default function App() {
     );
   };
 
-  // --- MOTOR MATEMÁTICO: ELO Y CONFIANZA ---
+  // --- MOTOR MATEMÁTICO ---
   const calculateElo = (miElo, rivalElo, gane) => {
     const K = 40;
     const expectedScore = 1 / (1 + Math.pow(10, (rivalElo - miElo) / 400));
@@ -191,14 +187,13 @@ export default function App() {
   const calcularNuevaConfianza = (confianzaActual, rachaActual) => {
     let nuevaConfianza = Number(confianzaActual);
     let nuevaRacha = rachaActual + 1;
-
     if (nuevaRacha === 5 || nuevaRacha === 8 || nuevaRacha === 10 || nuevaRacha > 10) {
        nuevaConfianza = Math.min(5.0, nuevaConfianza + 0.5);
     }
     return { nuevaConfianza, nuevaRacha };
   };
 
-  // --- FLUJO DE REPORTE (JUEZ DE SILLA) ---
+  // --- JUEZ DE SILLA ---
   const handleSubmitReport = async (partido) => {
     if (!marcador.trim() || !ganadorId) {
       alert('Ingresa el marcador y selecciona al ganador.');
@@ -207,22 +202,14 @@ export default function App() {
     try {
       const { error } = await supabase
         .from('partidos')
-        .update({ 
-          estado: 'en_revision', 
-          marcador: marcador, 
-          ganador_id: ganadorId, 
-          reportado_por: currentUser.id 
-        })
+        .update({ estado: 'en_revision', marcador: marcador, ganador_id: ganadorId, reportado_por: currentUser.id })
         .eq('id', partido.id);
 
       if (error) throw error;
-      setReportingMatch(null);
-      setMarcador('');
-      setGanadorId('');
+      setReportingMatch(null); setMarcador(''); setGanadorId('');
       fetchPartidos(); 
       alert('Reporte enviado. Esperando confirmación del rival.');
     } catch (error) {
-      console.error("Error al reportar:", error);
       alert('Hubo un error al enviar el reporte.');
     }
   };
@@ -234,14 +221,12 @@ export default function App() {
       const yoGane = partido.ganador_id === currentUser.id;
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, yoGane);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, !yoGane);
-
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
       const rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
 
       const { data: miPerfilActualizado } = await supabase.from('Perfiles')
         .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
-        .eq('id', currentUser.id)
-        .select().single();
+        .eq('id', currentUser.id).select().single();
       
       await supabase.from('Perfiles')
         .update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha })
@@ -251,14 +236,9 @@ export default function App() {
 
       setCurrentUser(miPerfilActualizado);
       localStorage.setItem('vad_session', JSON.stringify(miPerfilActualizado));
-      
       fetchPartidos();
       alert(`¡Partido finalizado!\nTu nuevo ELO es: ${miNuevoElo}`);
-
-    } catch (error) {
-      console.error(error);
-      alert('Error al confirmar el partido.');
-    }
+    } catch (error) { alert('Error al confirmar el partido.'); }
   };
 
   const handleWO = async (partido) => {
@@ -267,111 +247,58 @@ export default function App() {
 
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
-      
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, true);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, false);
-
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
       const rivalConfianzaCastigada = Math.max(0, Number(rivalDB.confianza) - 1.0); 
 
-      await supabase.from('Perfiles')
-        .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
-        .eq('id', currentUser.id);
-      
-      await supabase.from('Perfiles')
-        .update({ elo: rivalNuevoElo, confianza: rivalConfianzaCastigada, racha_asistencia: 0 })
-        .eq('id', rivalDB.id);
-
+      await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
+      await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalConfianzaCastigada, racha_asistencia: 0 }).eq('id', rivalDB.id);
       await supabase.from('partidos').update({ estado: 'wo', ganador_id: currentUser.id }).eq('id', partido.id);
 
       const { data: miPerfilFresquito } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
       setCurrentUser(miPerfilFresquito);
       localStorage.setItem('vad_session', JSON.stringify(miPerfilFresquito));
-      
       fetchPartidos();
-      alert('Reporte por W.O. procesado. El sistema ha ajustado las puntuaciones.');
-    } catch (error) {
-      console.error(error);
-    }
+      alert('Reporte por W.O. procesado.');
+    } catch (error) { console.error(error); }
   };
 
-  // --- AUTENTICACIÓN BÁSICA ---
   const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    setAuthLoading(true);
+    e.preventDefault(); setAuthError(''); setAuthLoading(true);
     const fullPhone = `${phonePrefix}${phoneNumber}`;
-
     try {
-      const { data: existingUser, error: searchError } = await supabase
-        .from('Perfiles') 
-        .select('*')
-        .eq('telefono', fullPhone)
-        .maybeSingle();
-
-      if (searchError) throw searchError;
-
+      const { data: existingUser, error } = await supabase.from('Perfiles').select('*').eq('telefono', fullPhone).maybeSingle();
+      if (error) throw error;
       if (existingUser) {
         if (existingUser.pin === pin) {
-          setCurrentUser(existingUser);
-          setIsLoggedIn(true);
-          setTab('home');
+          setCurrentUser(existingUser); setIsLoggedIn(true); setTab('home');
           localStorage.setItem('vad_session', JSON.stringify(existingUser));
-        } else {
-          setAuthError('PIN incorrecto para este número.');
-        }
-      } else {
-        setIsRegistering(true);
-      }
-    } catch (error) {
-      setAuthError('Error de conexión al circuito.');
-    } finally {
-      setAuthLoading(false);
-    }
+        } else { setAuthError('PIN incorrecto.'); }
+      } else { setIsRegistering(true); }
+    } catch { setAuthError('Error de conexión al circuito.'); } finally { setAuthLoading(false); }
   };
 
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
-    const nameParts = registrationName.trim().split(/\s+/);
-    if (nameParts.length < 2) {
-      setAuthError('El anonimato no está permitido. Ingresa nombre y apellido.');
-      return;
-    }
-    setAuthError('');
-    setAuthLoading(true);
+    if (registrationName.trim().split(/\s+/).length < 2) { setAuthError('Ingresa nombre y apellido.'); return; }
+    setAuthError(''); setAuthLoading(true);
     const fullPhone = `${phonePrefix}${phoneNumber}`;
-
     try {
-      const { data: newUser, error: insertError } = await supabase
-        .from('Perfiles')
+      const { data: newUser, error } = await supabase.from('Perfiles')
         .insert([{ telefono: fullPhone, pin: pin, nombre: registrationName.trim(), elo: 1000, confianza: 5.0, racha_asistencia: 0 }])
         .select().single();
-
-      if (insertError) throw insertError;
-      setCurrentUser(newUser);
-      setIsLoggedIn(true);
-      setIsRegistering(false); 
-      setRegistrationName('');
-      setTab('home');
+      if (error) throw error;
+      setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegistrationName(''); setTab('home');
       localStorage.setItem('vad_session', JSON.stringify(newUser));
-    } catch (error) {
-      setAuthError('Error al crear tu cuenta.');
-    } finally {
-      setAuthLoading(false);
-    }
+    } catch { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
-    setCurrentUser(null);
-    setTab('home');
-    setPhoneNumber('');
-    setPin('');
-    setIsRegistering(false); 
-    localStorage.removeItem('vad_session');
+    setIsLoggedIn(false); setCurrentUser(null); setTab('home'); setPhoneNumber(''); setPin(''); setIsRegistering(false); localStorage.removeItem('vad_session');
   };
 
-  // --- BÚSQUEDA ---
+  // --- MOTOR DE MATCHMAKING BLINDADO ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
@@ -387,21 +314,40 @@ export default function App() {
       return;
     }
 
-    const hasOverlap = activeSearches.some(search => {
-      if (search.fecha !== searchDate) return false; 
-      return (startTime < search.hora_fin && endTime > search.hora_inicio);
-    });
+    const hasOverlap = activeSearches.some(search => search.fecha === searchDate && (startTime < search.hora_fin && endTime > search.hora_inicio));
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     try {
+      // 1. ESCANEAR CANCHAS OCUPADAS EN ESE HORARIO
+      const { data: partidosOcupados } = await supabase
+        .from('partidos')
+        .select('cancha_numero, superficie')
+        .eq('fecha', searchDate)
+        .or(`hora_inicio.lt.${endTime},hora_fin.gt.${startTime}`);
+
+      const canchasOcupadasEnSuperficie = partidosOcupados
+        ? partidosOcupados.filter(p => p.superficie === superficie).map(p => p.cancha_numero)
+        : [];
+
+      // INVENTARIO DEL CLUB
+      const inventario = { 'Sacate': [1], 'Arcilla': [2], 'Dura': [3, 4] };
+      const canchaDisponible = inventario[superficie].find(n => !canchasOcupadasEnSuperficie.includes(n));
+
+      if (!canchaDisponible) {
+        setSearchError(`No hay canchas de ${superficie} disponibles en ese horario.`);
+        return;
+      }
+
+      // 2. BUSCAR RIVAL
       const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
         .select('*')
         .eq('fecha', searchDate)
+        .eq('superficie', superficie) // DEBE COINCIDIR SUPERFICIE
         .neq('jugador_id', currentUser.id)
         .eq('estado', 'activa');
 
-      if (fetchError) throw new Error("Error al leer el radar: " + fetchError.message);
+      if (fetchError) throw new Error("Error al leer el radar.");
 
       let matchEncontrado = null;
       let matchInicio = '';
@@ -448,22 +394,32 @@ export default function App() {
             fecha: searchDate,
             hora_inicio: matchInicio,
             hora_fin: matchFin,
+            superficie: superficie, // RE-AGREGADO AL GUARDAR EL PARTIDO
+            cancha_numero: canchaDisponible,
             estado: 'confirmado'
           }]);
         
-        if (insertMatchError) throw new Error("Error Supabase al crear partido. Detalle: " + insertMatchError.message);
+        if (insertMatchError) throw new Error("Error al crear partido en Supabase.");
 
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
-        alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado el ${searchDate} de ${formatTime(matchInicio)} a ${formatTime(matchFin)}.`);
+        alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado en Cancha ${canchaDisponible} (${superficie}).`);
         setTab('partidos');
         fetchPartidos();
       } else {
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
-          .insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, estado: 'activa' }])
+          .insert([{ 
+            jugador_id: currentUser.id, 
+            nombre: currentUser.nombre, 
+            fecha: searchDate, 
+            hora_inicio: startTime, 
+            hora_fin: endTime, 
+            superficie: superficie, // RE-AGREGADO AL GUARDAR LA BÚSQUEDA
+            estado: 'activa' 
+          }])
           .select().single();
 
-        if (insertError) throw new Error("Error al guardar búsqueda: " + insertError.message);
+        if (insertError) throw new Error(insertError.message);
         setActiveSearches([...activeSearches, nuevaBusqueda]); 
         alert('Búsqueda publicada. Te avisaremos en cuanto alguien de tu nivel haga match.');
       }
@@ -473,19 +429,10 @@ export default function App() {
   };
 
   const handleCancelSearch = async (id) => {
-    try {
-      await supabase.from('buscar').delete().eq('id', id);
-      setActiveSearches(prev => prev.filter(search => search.id !== id));
-    } catch (error) {
-      alert('Error al eliminar de la base de datos.');
-    }
+    try { await supabase.from('buscar').delete().eq('id', id); setActiveSearches(prev => prev.filter(search => search.id !== id)); } catch { alert('Error al cancelar.'); }
   };
 
-  const handleBookSubmit = (e) => {
-    e.preventDefault();
-    if (!isLoggedIn) { setTab('auth'); return; }
-    alert(`Redirigiendo al pago...`);
-  };
+  const handleBookSubmit = (e) => { e.preventDefault(); if (!isLoggedIn) { setTab('auth'); return; } alert(`Redirigiendo al pago...`); };
 
   return (
     <div className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30">
@@ -514,18 +461,12 @@ export default function App() {
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
             {!isRegistering ? (
               <>
-                <div className="text-center">
-                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2>
-                  <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad.</p>
-                </div>
+                <div className="text-center"><h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2></div>
                 <form onSubmit={handleAuthSubmit} className="space-y-6">
                   <div className="space-y-2 text-left">
                     <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular</label>
                     <div className="flex gap-2">
-                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-1/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-2 py-4 text-[#1A1C1E] font-bold">
-                        <option value="+52">🇲🇽 +52</option>
-                        <option value="+1">🇺🇸 +1</option>
-                      </select>
+                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-1/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-2 py-4 text-[#1A1C1E] font-bold"><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option></select>
                       <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest focus:outline-none focus:border-[#29C454]" />
                     </div>
                   </div>
@@ -534,18 +475,13 @@ export default function App() {
                     <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
                   </div>
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
-                  <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">
-                    {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
-                  </button>
+                  <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">{authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}</button>
                 </form>
                 <button onClick={() => setTab('home')} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2">Cancelar</button>
               </>
             ) : (
               <div className="animate-in fade-in space-y-8">
-                <div className="text-center">
-                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2>
-                  <p className="text-[#1A1C1E]/60 text-sm">Crea tu perfil ahora.</p>
-                </div>
+                <div className="text-center"><h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2></div>
                 <form onSubmit={handleCompleteRegistration} className="space-y-6">
                   <input type="text" required placeholder="Nombre y Apellido" value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold focus:outline-none focus:border-[#29C454]" />
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{authError}</div>}
@@ -561,10 +497,22 @@ export default function App() {
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
             <form onSubmit={handleSearchSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
+                
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
                   <input type="date" min={initData.date} value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                 </div>
+                
+                {/* SELECTOR DE SUPERFICIE RE-INYECTADO */}
+                <div className="space-y-3 text-left w-full">
+                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Superficie Preferida</label>
+                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none">
+                    <option value="Dura">Cancha Dura (Rápida)</option>
+                    <option value="Arcilla">Arcilla (Tierra Batida)</option>
+                    <option value="Sacate">Sacate (Césped)</option>
+                  </select>
+                </div>
+
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Franja de Disponibilidad</label>
                   <div className="grid grid-cols-2 gap-3 w-full">
@@ -580,6 +528,7 @@ export default function App() {
                 </button>
               </div>
             </form>
+            
             {isLoggedIn && activeSearches.length > 0 && (
               <div className="pt-8 space-y-4 animate-in fade-in w-full">
                 <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Búsquedas Activas</h3>
@@ -588,7 +537,10 @@ export default function App() {
                     <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
                       <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
                       <div className="pl-2 text-left">
-                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">{new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">
+                          {new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} 
+                          {search.superficie && ` • ${search.superficie}`}
+                        </p>
                         <p className="text-sm font-black text-[#1A1C1E] mt-1">{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
                       </div>
                       <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full hover:bg-red-50 hover:text-red-500">✕</button>
@@ -655,9 +607,16 @@ export default function App() {
                   <div key={partido.id} className={`${partido.estado === 'confirmado' ? 'bg-[#29C454]' : partido.estado === 'en_revision' ? 'bg-[#E5B824]' : 'bg-[#1A1C1E]'} text-white rounded-[2rem] p-6 shadow-lg shadow-[#1A1C1E]/10 relative overflow-hidden transition-colors`}>
                     <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
                     <div className="relative z-10">
-                      <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">
-                        {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
-                      </p>
+                      <div className="flex justify-between items-start mb-1">
+                        <p className="text-xs font-bold uppercase tracking-widest opacity-80">
+                          {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                        </p>
+                        {partido.cancha_numero && (
+                          <span className="bg-white/20 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                            Cancha {partido.cancha_numero} ({partido.superficie})
+                          </span>
+                        )}
+                      </div>
                       <h4 className="text-3xl font-black italic mb-4">
                         {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
                       </h4>
