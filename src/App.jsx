@@ -29,7 +29,7 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState('18:00');
   const [bookError, setBookError] = useState('');
 
-  // MEMORIA PERMANENTE
+  // MEMORIA PERMANENTE (Cargar sesión al abrir)
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
     if (savedUser) {
@@ -37,6 +37,25 @@ export default function App() {
       setIsLoggedIn(true);
     }
   }, []);
+
+  // CARGAR BÚSQUEDAS ACTIVAS DESDE SUPABASE
+  useEffect(() => {
+    if (currentUser) {
+      const cargarBúsquedas = async () => {
+        const { data, error } = await supabase
+          .from('buscar')
+          .select('*')
+          .eq('jugador_id', currentUser.id)
+          .order('fecha', { ascending: true });
+        
+        if (data) setActiveSearches(data);
+        if (error) console.error("Error cargando búsquedas:", error);
+      };
+      cargarBúsquedas();
+    } else {
+      setActiveSearches([]); 
+    }
+  }, [currentUser]);
 
   const formatTime = (time24) => {
     const [hourString, minute] = time24.split(':');
@@ -46,7 +65,7 @@ export default function App() {
     return `${hour}:${minute} ${ampm}`;
   };
 
-  // FUNCIÓN INTELIGENTE PARA INICIALES
+  // FUNCIÓN INTELIGENTE PARA INICIALES (Primer letra Nombre + Primer letra Apellido)
   const getInitials = (fullName) => {
     if (!fullName) return '🎾';
     const names = fullName.trim().split(/\s+/); // Soporta múltiples espacios
@@ -98,7 +117,7 @@ export default function App() {
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     
-    // Filtro: Debe tener al menos dos palabras
+    // Filtro Profesional: Debe tener al menos dos palabras
     const nameParts = registrationName.trim().split(/\s+/);
     if (nameParts.length < 2) {
       setAuthError('El anonimato no está permitido. Ingresa tu nombre y apellido reales.');
@@ -148,25 +167,6 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
-  // --- CARGAR BUSQUEDAS ACTIVAS DESDE SUPABASE ---
-  useEffect(() => {
-    if (currentUser) {
-      const cargarBúsquedas = async () => {
-        const { data, error } = await supabase
-          .from('buscar')
-          .select('*')
-          .eq('jugador_id', currentUser.id)
-          .order('fecha', { ascending: true });
-        
-        if (data) setActiveSearches(data);
-        if (error) console.error("Error cargando búsquedas:", error);
-      };
-      cargarBúsquedas();
-    } else {
-      setActiveSearches([]); 
-    }
-  }, [currentUser]);
-
   // --- BUSCAR RIVAL (GUARDAR EN SUPABASE) ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
@@ -174,6 +174,7 @@ export default function App() {
     if (!isLoggedIn) { setTab('auth'); return; }
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
+    // Verificamos que no se empalme con otra búsqueda activa
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
       return (startTime < search.hora_fin && endTime > search.hora_inicio);
@@ -185,7 +186,6 @@ export default function App() {
         .from('buscar')
         .insert([{
           jugador_id: currentUser.id,
-          nombre: currentUser.nombre, // Se envía el nombre a la columna 'nombre'
           fecha: searchDate,
           hora_inicio: startTime,
           hora_fin: endTime,
@@ -195,14 +195,14 @@ export default function App() {
         .single();
 
       if (error) throw error;
-      setActiveSearches([...activeSearches, data]); 
+      setActiveSearches([...activeSearches, data]); // Agregamos a la pantalla
     } catch (error) {
       console.error(error);
       setSearchError('Error al publicar tu búsqueda.');
     }
   };
 
-  // --- CANCELAR BÚSQUEDA (BORRADO REAL) ---
+  // --- CANCELAR BÚSQUEDA (BORRADO REAL DB) ---
   const handleCancelSearch = async (id) => {
     try {
       // Primero intentamos borrar en Supabase
@@ -211,15 +211,14 @@ export default function App() {
         .delete()
         .eq('id', id);
 
-      if (error) throw error; // Si hay error, saltamos al catch
+      if (error) throw error; // Si hay error en DB, saltamos al catch
 
       // Si el borrado en DB tuvo éxito, lo quitamos de la pantalla
       setActiveSearches(prev => prev.filter(search => search.id !== id));
       console.log("Búsqueda eliminada correctamente de Supabase");
     } catch (error) {
       console.error('Error al cancelar en Supabase:', error);
-      // Opcional: mostrar alerta si falla el borrado real
-      alert('No se pudo eliminar de la base de datos. Verifica tus políticas RLS.');
+      alert('Error al eliminar de la base de datos. Verifica tus políticas RLS.');
     }
   };
 
@@ -299,7 +298,7 @@ export default function App() {
                   </button>
                 </form>
                 <button onClick={() => { setTab('home'); setAuthError(''); }} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2 hover:text-[#1A1C1E] transition-colors">Cancelar</button>
-              </{`>`} {/* Corrección de tag abierto */}
+              </>
             ) : (
               <div className="animate-in fade-in slide-in-from-right-4 duration-500 space-y-8">
                 <div className="text-center">
@@ -337,9 +336,9 @@ export default function App() {
 
         {/* VISTA: BUSCAR RIVAL */}
         {tab === 'buscar' && (
-          {/* CORRECCIÓN: Agregado max-w-sm mx-auto para centrado perfecto en móvil */}
-          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4">
-            <form onSubmit={handleSearchSubmit}>
+          {/* CORRECCIÓN: Agregado max-w-sm mx-auto y flex flex-col items-center para centrado perfecto */}
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
+            <form onSubmit={handleSearchSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
@@ -362,22 +361,22 @@ export default function App() {
               </div>
               <div className="pt-6 flex flex-col items-center">
                 <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
-                  Buscar rival ➜
+                  {/* CORRECCIÓN: Punto parpadeante blanco hueso (#F8F7F2) y terminología corregida */}
+                  <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
                 </button>
               </div>
             </form>
 
             {isLoggedIn && activeSearches.length > 0 && (
-              <div className="pt-8 space-y-4 animate-in fade-in slide-in-from-bottom-4">
+              <div className="pt-8 space-y-4 animate-in fade-in slide-in-from-bottom-4 w-full">
                 <div className="flex items-center justify-between border-b border-[#1A1C1E]/10 pb-2">
-                  {/* TERMINOLOGÍA CORREGIDA */}
                   <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase">Búsquedas Activas</h3>
                 </div>
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
                     <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden group">
                       <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
-                      <div className="pl-2">
+                      <div className="pl-2 text-left">
                         <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">
                           {new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
                         </p>
@@ -402,13 +401,13 @@ export default function App() {
 
         {/* VISTA: RESERVAR CANCHA */}
         {tab === 'reservar' && (
-          {/* CORRECCIÓN: Agregado max-w-sm mx-auto para centrado perfecto en móvil */}
-          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4">
+          {/* CORRECCIÓN: Agregado max-w-sm mx-auto y flex flex-col items-center para centrado perfecto */}
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
             <div className="text-center">
               <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Reservar Cancha</h2>
               <p className="text-[#1A1C1E]/60 text-sm">Asegura tu lugar. Pago requerido por anticipado.</p>
             </div>
-            <form onSubmit={handleBookSubmit}>
+            <form onSubmit={handleBookSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Reserva</label>
@@ -422,7 +421,7 @@ export default function App() {
                       <input type="time" value={bookStart} onChange={(e) => setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                     </div>
                     <div className="space-y-1 w-full min-w-0">
-                      <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Fin</span>
+                      <span className="text-[9px] font-bold text-[#1A1C1E]/40 uppercase ml-2">Hasta</span>
                       <input type="time" value={bookEnd} onChange={(e) => setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                     </div>
                   </div>
@@ -440,13 +439,13 @@ export default function App() {
 
         {/* VISTA: MIS PARTIDOS */}
         {tab === 'partidos' && (
-          <div className="w-full space-y-8 animate-in fade-in duration-500">
+          <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto">
             <div className="text-center relative">
               {!isLoggedIn && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#29C454]/10 text-[#29C454] px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Vista de Ejemplo</div>}
               <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mt-2">Tu Circuito</h2>
             </div>
             
-            <div className={`space-y-3 ${!isLoggedIn && 'opacity-80'}`}>
+            <div className={`space-y-3 ${!isLoggedIn && 'opacity-80'} text-left`}>
               <h3 className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Próximo Encuentro</h3>
               <div className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden">
                 <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
@@ -474,8 +473,8 @@ export default function App() {
 
         {/* VISTA: PERFIL */}
         {tab === 'perfil' && (
-          <div className="w-full space-y-6 animate-in slide-in-from-right-8 duration-500">
-            <div className={`bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden ${!isLoggedIn && 'opacity-80'}`}>
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
+            <div className={`bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden w-full ${!isLoggedIn && 'opacity-80'}`}>
               
               {!isLoggedIn && <div className="absolute top-4 bg-[#1A1C1E]/5 text-[#1A1C1E]/50 px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Perfil de Ejemplo</div>}
 
