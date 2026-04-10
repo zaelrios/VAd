@@ -579,7 +579,7 @@ export default function App() {
                           {getInitials(partido.rival.nombre)}
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
+                          <p className="text-[9px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
                           <p className="font-black italic">{partido.rival.nombre} ({partido.rival.elo} Pts)</p>
                         </div>
                       </div>
