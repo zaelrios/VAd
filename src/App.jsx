@@ -347,7 +347,7 @@ export default function App() {
         .neq('jugador_id', currentUser.id)
         .eq('estado', 'activa');
 
-      if (fetchError) throw new Error("Error al leer el radar.");
+      if (fetchError) throw new Error("Error al leer el radar: " + fetchError.message);
 
       let matchEncontrado = null;
       let matchInicio = '';
@@ -394,12 +394,13 @@ export default function App() {
             fecha: searchDate,
             hora_inicio: matchInicio,
             hora_fin: matchFin,
-            superficie: superficie, // RE-AGREGADO AL GUARDAR EL PARTIDO
+            superficie: superficie, 
             cancha_numero: canchaDisponible,
             estado: 'confirmado'
           }]);
         
-        if (insertMatchError) throw new Error("Error al crear partido en Supabase.");
+        // ¡AQUÍ ESTÁ EL PARCHE DE RAYOS X!
+        if (insertMatchError) throw new Error("Error Supabase: " + insertMatchError.message);
 
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
         alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado en Cancha ${canchaDisponible} (${superficie}).`);
@@ -414,12 +415,12 @@ export default function App() {
             fecha: searchDate, 
             hora_inicio: startTime, 
             hora_fin: endTime, 
-            superficie: superficie, // RE-AGREGADO AL GUARDAR LA BÚSQUEDA
+            superficie: superficie, 
             estado: 'activa' 
           }])
           .select().single();
 
-        if (insertError) throw new Error(insertError.message);
+        if (insertError) throw new Error("Error Supabase al publicar: " + insertError.message);
         setActiveSearches([...activeSearches, nuevaBusqueda]); 
         alert('Búsqueda publicada. Te avisaremos en cuanto alguien de tu nivel haga match.');
       }
