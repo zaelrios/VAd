@@ -66,6 +66,13 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState(initData.end);
   const [bookError, setBookError] = useState('');
 
+  // --- RELOJ EN VIVO PARA EL TEMPORIZADOR ---
+  const [currentTime, setCurrentTime] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
@@ -163,12 +170,27 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // Función para saber si el partido ya terminó cronológicamente
-  const yaTerminoElTiempo = (partido) => {
-    const now = new Date();
-    // Forzamos la interpretación local de la fecha y hora
+  // Función para saber en qué etapa cronológica está el partido
+  const obtenerEstadoTiempo = (partido) => {
+    const inicioPartido = new Date(`${partido.fecha}T${partido.hora_inicio}:00`);
     const finPartido = new Date(`${partido.fecha}T${partido.hora_fin}:00`);
-    return now >= finPartido;
+
+    if (currentTime < inicioPartido) return 'futuro'; 
+    if (currentTime >= inicioPartido && currentTime < finPartido) return 'en_curso'; 
+    return 'terminado'; 
+  };
+
+  // Función para calcular la cuenta regresiva
+  const getCountdown = (partido) => {
+    const inicioPartido = new Date(`${partido.fecha}T${partido.hora_inicio}:00`);
+    const diff = inicioPartido - currentTime;
+    if (diff <= 0) return "00:00:00";
+    
+    const h = Math.floor(diff / (1000 * 60 * 60));
+    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const s = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   const renderBalls = (score) => {
@@ -752,10 +774,15 @@ export default function App() {
                       {/* --- ESTADOS DEL PARTIDO --- */}
                       {partido.estado === 'confirmado' && (
                         <>
-                          {!yaTerminoElTiempo(partido) ? (
+                          {obtenerEstadoTiempo(partido) === 'futuro' ? (
                             <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
-                              <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Partido en curso...</p>
-                              <p className="text-[9px] opacity-60 mt-1">El reporte se habilita al terminar la hora.</p>
+                              <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1">El partido inicia en</p>
+                              <p className="text-2xl font-black italic tracking-widest font-mono">{getCountdown(partido)}</p>
+                            </div>
+                          ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
+                            <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
+                              <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-[#E5B824]">Partido en curso 🔥</p>
+                              <p className="text-[9px] opacity-60 mt-1">El reporte se habilitará al terminar el tiempo.</p>
                             </div>
                           ) : reportingMatch === partido.id ? (
                             <div className="mt-4 bg-white/20 p-4 rounded-xl space-y-3 animate-in fade-in">
