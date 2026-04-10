@@ -140,22 +140,67 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
-  const handleSearchSubmit = (e) => {
+  // --- NUEVO: CARGAR RADARES DESDE SUPABASE ---
+  useEffect(() => {
+    if (currentUser) {
+      const cargarRadares = async () => {
+        const { data, error } = await supabase
+          .from('buscar')
+          .select('*')
+          .eq('jugador_id', currentUser.id)
+          .order('fecha', { ascending: true });
+        
+        if (data) setActiveSearches(data);
+      };
+      cargarRadares();
+    } else {
+      setActiveSearches([]); // Limpiamos si cierra sesión
+    }
+  }, [currentUser]);
+
+  // --- NUEVO: GUARDAR BÚSQUEDA EN SUPABASE ---
+  const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
     if (!isLoggedIn) { setTab('auth'); return; }
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
+    
+    // Verificamos que no se empalme con otra búsqueda del mismo día
     const hasOverlap = activeSearches.some(search => {
-      if (search.date !== searchDate) return false; 
-      return (startTime < search.endTime && endTime > search.startTime);
+      if (search.fecha !== searchDate) return false; 
+      return (startTime < search.hora_fin && endTime > search.hora_inicio);
     });
     if (hasOverlap) { setSearchError('Ya tienes un radar escaneando en este rango.'); return; }
 
-    setActiveSearches([...activeSearches, { id: Date.now(), date: searchDate, startTime, endTime }]);
+    try {
+      const { data, error } = await supabase
+        .from('buscar')
+        .insert([{
+          jugador_id: currentUser.id,
+          fecha: searchDate,
+          hora_inicio: startTime,
+          hora_fin: endTime,
+          estado: 'activa'
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      setActiveSearches([...activeSearches, data]); // Agregamos a la pantalla
+    } catch (error) {
+      console.error(error);
+      setSearchError('Hubo un error al activar el radar.');
+    }
   };
 
-  const handleCancelSearch = (id) => {
-    setActiveSearches(activeSearches.filter(search => search.id !== id));
+  // --- NUEVO: CANCELAR BÚSQUEDA EN SUPABASE ---
+  const handleCancelSearch = async (id) => {
+    try {
+      await supabase.from('buscar').delete().eq('id', id);
+      setActiveSearches(activeSearches.filter(search => search.id !== id));
+    } catch (error) {
+      console.error('Error al cancelar', error);
+    }
   };
 
   const handleBookSubmit = (e) => {
@@ -271,13 +316,14 @@ export default function App() {
         )}
 
         {/* VISTA: ENCONTRAR RIVAL (RADAR) */}
+        {/* VISTA: ENCONTRAR RIVAL (RADAR) */}
         {tab === 'buscar' && (
           <div className="w-full space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4">
             <form onSubmit={handleSearchSubmit}>
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
-                  <input type="date" min="2026-04-10" max="2026-04-24" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                  <input type="date" min="2026-04-10" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-4 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                 </div>
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Franja de Disponibilidad</label>
@@ -295,8 +341,8 @@ export default function App() {
                 {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{searchError}</div>}
               </div>
               <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">
-                  <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
+                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
+                  <span className="text-[#F8F7F2] animate-pulse">●</span> Activar Radar
                 </button>
               </div>
             </form>
@@ -304,17 +350,27 @@ export default function App() {
             {isLoggedIn && activeSearches.length > 0 && (
               <div className="pt-8 space-y-4 animate-in fade-in slide-in-from-bottom-4">
                 <div className="flex items-center justify-between border-b border-[#1A1C1E]/10 pb-2">
-                  <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase">Búsquedas Activas</h3>
+                  <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase">Radares Activos</h3>
                 </div>
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
-                    <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
+                    <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden group">
                       <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
                       <div className="pl-2">
-                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">{new Date(search.date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
-                        <p className="text-sm font-black text-[#1A1C1E] mt-1">{formatTime(search.startTime)} - {formatTime(search.endTime)}</p>
+                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">
+                          {new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </p>
+                        <p className="text-sm font-black text-[#1A1C1E] mt-1">
+                          {formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}
+                        </p>
                       </div>
-                      <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center">✕</button>
+                      <button 
+                        onClick={() => handleCancelSearch(search.id)} 
+                        className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors"
+                        title="Cancelar radar"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
