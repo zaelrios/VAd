@@ -238,7 +238,7 @@ export default function App() {
           <div className="w-full space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center">
             <section className="flex flex-col items-center">
               <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[15px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
-              <h1 className="text-7xl font-black italic tracking-tighter leading-[0.8] uppercase mb-8 text-[#29C454]">
+              <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
