@@ -790,7 +790,9 @@ export default function App() {
                       </div>
 
                       {/* --- ESTADOS DEL PARTIDO --- */}
-                      {obtenerEstadoTiempo(partido) === 'futuro' ? (
+                      {partido.estado === 'confirmado' && (
+                        <>
+                          {obtenerEstadoTiempo(partido) === 'futuro' ? (
                             <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
                               <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">El partido inicia en</p>
                               
