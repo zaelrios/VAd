@@ -172,12 +172,34 @@ export default function App() {
 
   // Función para saber en qué etapa cronológica está el partido
   const obtenerEstadoTiempo = (partido) => {
-    const inicioPartido = new Date(`${partido.fecha}T${partido.hora_inicio}:00`);
-    const finPartido = new Date(`${partido.fecha}T${partido.hora_fin}:00`);
+    // Dividimos el texto para que iPhone no se confunda con la zona horaria
+    const [year, month, day] = partido.fecha.split('-');
+    const [startH, startM] = partido.hora_inicio.split(':');
+    const [endH, endM] = partido.hora_fin.split(':');
+
+    // Creamos la fecha local exacta (el mes empieza en 0, por eso month - 1)
+    const inicioPartido = new Date(year, month - 1, day, startH, startM);
+    const finPartido = new Date(year, month - 1, day, endH, endM);
 
     if (currentTime < inicioPartido) return 'futuro'; 
     if (currentTime >= inicioPartido && currentTime < finPartido) return 'en_curso'; 
     return 'terminado'; 
+  };
+
+  // Función para calcular la cuenta regresiva
+  const getCountdown = (partido) => {
+    const [year, month, day] = partido.fecha.split('-');
+    const [startH, startM] = partido.hora_inicio.split(':');
+    const inicioPartido = new Date(year, month - 1, day, startH, startM);
+    
+    const diff = inicioPartido - currentTime;
+    if (diff <= 0) return "00:00:00";
+    
+    const h = Math.floor(diff / (1000 * 60 * 60));
+    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const s = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   // Función para calcular la cuenta regresiva
