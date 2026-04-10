@@ -1,32 +1,47 @@
-import React, { useState } from 'react'
-import { supabase } from './supabase' // ¡El puente a tu base de datos!
+import React, { useState, useEffect } from 'react'
+import { supabase } from './supabase' 
 
 export default function App() {
   const [tab, setTab] = useState('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
-  const [currentUser, setCurrentUser] = useState(null); // Guardará tus datos reales
+  const [currentUser, setCurrentUser] = useState(null); 
   
+  // ESTADOS PARA EDITAR NOMBRE
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [updateLoading, setUpdateLoading] = useState(false);
+
   // ESTADOS DEL LOGIN / REGISTRO
   const [phonePrefix, setPhonePrefix] = useState('+52');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pin, setPin] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  
+  // NUEVO: ESTADOS PARA REGISTRO DE 2 PASOS
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registrationName, setRegistrationName] = useState('');
 
-  // ESTADOS PARA EL RADAR DE BÚSQUEDA
   const [searchDate, setSearchDate] = useState('2026-04-10');
   const [startTime, setStartTime] = useState('05:00');
   const [endTime, setEndTime] = useState('13:00');
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
-  // ESTADOS PARA RESERVA DE CANCHAS
   const [bookDate, setBookDate] = useState('2026-04-10');
   const [bookStart, setBookStart] = useState('16:00');
   const [bookEnd, setBookEnd] = useState('18:00');
   const [bookError, setBookError] = useState('');
 
-  // Traductor de hora militar a formato 12h (AM/PM)
+  // MEMORIA PERMANENTE (Revisa el gafete al abrir la app)
+  useEffect(() => {
+    const savedUser = localStorage.getItem('vad_session');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+      setIsLoggedIn(true);
+    }
+  }, []);
+
   const formatTime = (time24) => {
     const [hourString, minute] = time24.split(':');
     let hour = parseInt(hourString, 10);
@@ -35,7 +50,7 @@ export default function App() {
     return `${hour}:${minute} ${ampm}`;
   };
 
-  // --- LÓGICA DE SUPABASE: REGISTRO / LOGIN REAL ---
+  // --- PASO 1: VERIFICAR SI EXISTE EL JUGADOR ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -44,9 +59,8 @@ export default function App() {
     const fullPhone = `${phonePrefix}${phoneNumber}`;
 
     try {
-      // 1. Buscamos si el jugador ya existe en la tabla "Perfiles"
       const { data: existingUser, error: searchError } = await supabase
-        .from('Perfiles')
+        .from('Perfiles') 
         .select('*')
         .eq('telefono', fullPhone)
         .maybeSingle();
@@ -54,33 +68,18 @@ export default function App() {
       if (searchError) throw searchError;
 
       if (existingUser) {
-        // 2A. ¡El jugador existe! Verificamos su PIN
+        // El usuario ya existe, comprobamos PIN
         if (existingUser.pin === pin) {
           setCurrentUser(existingUser);
           setIsLoggedIn(true);
           setTab('home');
+          localStorage.setItem('vad_session', JSON.stringify(existingUser));
         } else {
           setAuthError('PIN incorrecto para este número.');
         }
       } else {
-        // 2B. ¡Jugador Nuevo! Lo registramos
-        const { data: newUser, error: insertError } = await supabase
-          .from('Perfiles')
-          .insert([
-            {
-              telefono: fullPhone,
-              pin: pin,
-              nombre: 'Jugador Pro' // Nombre por defecto, luego haremos que lo editen
-            }
-          ])
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-
-        setCurrentUser(newUser);
-        setIsLoggedIn(true);
-        setTab('home');
+        // ¡NUEVO! El usuario NO existe, pasamos a la pantalla de pedir nombre
+        setIsRegistering(true);
       }
     } catch (error) {
       console.error(error);
@@ -90,7 +89,80 @@ export default function App() {
     }
   };
 
-  // LOGICA DEL RADAR (Tripwire de Auth)
+  // --- PASO 2: COMPLETAR REGISTRO CON NOMBRE ---
+  const handleCompleteRegistration = async (e) => {
+    e.preventDefault();
+    if (!registrationName.trim()) {
+      setAuthError('Por favor ingresa tu nombre y apellido.');
+      return;
+    }
+    
+    setAuthError('');
+    setAuthLoading(true);
+    const fullPhone = `${phonePrefix}${phoneNumber}`;
+
+    try {
+      const { data: newUser, error: insertError } = await supabase
+        .from('Perfiles')
+        .insert([{ telefono: fullPhone, pin: pin, nombre: registrationName }])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      setCurrentUser(newUser);
+      setIsLoggedIn(true);
+      setIsRegistering(false); // Reseteamos la pantalla de registro
+      setRegistrationName('');
+      setTab('home');
+      localStorage.setItem('vad_session', JSON.stringify(newUser));
+    } catch (error) {
+      console.error(error);
+      setAuthError('Error al crear tu cuenta. Intenta de nuevo.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setTab('home');
+    setPhoneNumber('');
+    setPin('');
+    setIsRegistering(false); // Por si acaso
+    localStorage.removeItem('vad_session');
+  };
+
+  // FUNCIÓN PARA ACTUALIZAR EL NOMBRE EN SUPABASE DESDE EL PERFIL
+  const handleNameUpdate = async () => {
+    if (!newName.trim()) {
+      setIsEditingName(false);
+      return;
+    }
+    
+    setUpdateLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('Perfiles')
+        .update({ nombre: newName })
+        .eq('id', currentUser.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setCurrentUser(data);
+      localStorage.setItem('vad_session', JSON.stringify(data));
+      setIsEditingName(false);
+    } catch (error) {
+      console.error("Error al actualizar nombre:", error);
+      alert("No se pudo actualizar el nombre.");
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setSearchError(''); 
@@ -109,7 +181,6 @@ export default function App() {
     setActiveSearches(activeSearches.filter(search => search.id !== id));
   };
 
-  // LOGICA DE RESERVAS
   const handleBookSubmit = (e) => {
     e.preventDefault();
     setBookError('');
@@ -143,7 +214,7 @@ export default function App() {
               onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')}
               className="w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105"
             >
-              {isLoggedIn ? "Encuentra rival ➜" : "Únete ➜"}
+              {isLoggedIn ? "Buscar rival ➜" : "Únete ➜"}
             </button>
           </div>
         )}
@@ -151,58 +222,76 @@ export default function App() {
         {/* VISTA DE REGISTRO / AUTH */}
         {tab === 'auth' && (
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
-            <div className="text-center">
-              <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2>
-              <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad en el circuito.</p>
-            </div>
             
-            <form onSubmit={handleAuthSubmit} className="space-y-6">
-              <div className="space-y-2 text-left">
-                <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular (WhatsApp / SMS)</label>
-                <div className="flex gap-2">
-                  <div className="relative w-1/3">
-                    <select 
-                      value={phonePrefix}
-                      onChange={(e) => setPhonePrefix(e.target.value)}
-                      className="w-full h-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl pl-3 pr-2 py-4 text-[#1A1C1E] font-bold shadow-sm appearance-none cursor-pointer"
-                    >
-                      <option value="+52">🇲🇽 +52</option>
-                      <option value="+1">🇺🇸 +1</option>
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[10px]">▼</div>
+            {/* PANTALLA 1: PEDIR CELULAR Y PIN */}
+            {!isRegistering ? (
+              <>
+                <div className="text-center">
+                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2>
+                  <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad en el circuito.</p>
+                </div>
+                
+                <form onSubmit={handleAuthSubmit} className="space-y-6">
+                  <div className="space-y-2 text-left">
+                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular (WhatsApp / SMS)</label>
+                    <div className="flex gap-2">
+                      <div className="relative w-1/3">
+                        <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-full h-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl pl-3 pr-2 py-4 text-[#1A1C1E] font-bold shadow-sm appearance-none cursor-pointer">
+                          <option value="+52">🇲🇽 +52</option>
+                          <option value="+1">🇺🇸 +1</option>
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[10px]">▼</div>
+                      </div>
+                      <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest placeholder:text-[#1A1C1E]/20 focus:outline-none focus:border-[#29C454]" />
+                    </div>
                   </div>
-                  <input 
-                    type="tel" required maxLength="10" placeholder="123 456 7890" 
-                    value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} // Solo permite números
-                    className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest placeholder:text-[#1A1C1E]/20 focus:outline-none focus:border-[#29C454]" 
-                  />
+
+                  <div className="space-y-2 text-left mt-2">
+                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Crea o ingresa tu PIN (4 dígitos)</label>
+                    <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
+                  </div>
+
+                  {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
+
+                  <button type="submit" disabled={authLoading} className={`w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}>
+                    {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
+                  </button>
+                </form>
+                <button onClick={() => { setTab('home'); setAuthError(''); }} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2 hover:text-[#1A1C1E] transition-colors">Cancelar</button>
+              </>
+            ) : (
+              /* PANTALLA 2: PEDIR NOMBRE (Solo para usuarios nuevos) */
+              <div className="animate-in fade-in slide-in-from-right-4 duration-500 space-y-8">
+                <div className="text-center">
+                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2>
+                  <p className="text-[#1A1C1E]/60 text-sm">No encontramos tu número. ¡Crea tu perfil ahora!</p>
                 </div>
+                
+                <form onSubmit={handleCompleteRegistration} className="space-y-6">
+                  <div className="space-y-2 text-left">
+                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Nombre y Apellido</label>
+                    <input 
+                      type="text" required placeholder="Ej: Zael Rios" 
+                      value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} 
+                      className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-wider placeholder:text-[#1A1C1E]/20 focus:outline-none focus:border-[#29C454]" 
+                    />
+                  </div>
+
+                  {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
+
+                  <button type="submit" disabled={authLoading} className={`w-full bg-[#1A1C1E] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}>
+                    {authLoading ? 'Creando perfil...' : 'Completar Registro ➜'}
+                  </button>
+                </form>
+                
+                <button 
+                  onClick={() => { setIsRegistering(false); setAuthError(''); }} 
+                  className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2 hover:text-[#1A1C1E] transition-colors"
+                >
+                  ← Atrás
+                </button>
               </div>
-
-              <div className="space-y-2 text-left mt-2">
-                <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">PIN de Acceso (4 dígitos)</label>
-                <input 
-                  type="password" inputMode="numeric" required maxLength="4" placeholder="••••" 
-                  value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} // Solo permite números
-                  className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" 
-                />
-              </div>
-
-              {authError && (
-                <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">
-                  {authError}
-                </div>
-              )}
-
-              <button 
-                type="submit" 
-                disabled={authLoading}
-                className={`w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all mt-4 ${authLoading ? 'opacity-50' : 'hover:brightness-105'}`}
-              >
-                {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
-              </button>
-            </form>
-            <button onClick={() => setTab('home')} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2">Cancelar</button>
+            )}
           </div>
         )}
 
@@ -247,9 +336,7 @@ export default function App() {
                     <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
                       <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
                       <div className="pl-2">
-                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">
-                          {new Date(search.date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
-                        </p>
+                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">{new Date(search.date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
                         <p className="text-sm font-black text-[#1A1C1E] mt-1">{formatTime(search.startTime)} - {formatTime(search.endTime)}</p>
                       </div>
                       <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center">✕</button>
@@ -332,7 +419,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: PERFIL CON DATOS REALES DE SUPABASE */}
+        {/* VISTA: PERFIL */}
         {tab === 'perfil' && (
           <div className="w-full space-y-6 animate-in slide-in-from-right-8 duration-500">
             <div className={`bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden ${!isLoggedIn && 'opacity-80'}`}>
@@ -342,9 +429,44 @@ export default function App() {
               <div className="w-24 h-24 bg-[#F8F7F2] rounded-full border-4 border-[#29C454] flex items-center justify-center text-[#1A1C1E] font-black italic text-4xl mb-4 shadow-sm mt-4 uppercase">
                 {isLoggedIn && currentUser ? currentUser.nombre.substring(0, 2) : '🎾'}
               </div>
-              <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight">
-                {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
-              </h2>
+              
+              {/* Lógica de Edición de Nombre */}
+              {isLoggedIn && currentUser ? (
+                isEditingName ? (
+                  <div className="flex items-center gap-2 mt-2 z-10">
+                    <input 
+                      type="text" 
+                      value={newName} 
+                      onChange={(e) => setNewName(e.target.value)} 
+                      placeholder="Tu Nombre"
+                      className="bg-[#F8F7F2] border border-[#1A1C1E]/20 text-[#1A1C1E] font-bold px-4 py-2 rounded-xl focus:outline-none focus:border-[#29C454] text-center w-40"
+                    />
+                    <button 
+                      onClick={handleNameUpdate} 
+                      disabled={updateLoading}
+                      className="bg-[#29C454] text-white px-4 py-2 rounded-xl font-bold uppercase text-xs hover:brightness-105 transition-all"
+                    >
+                      {updateLoading ? '...' : '✓'}
+                    </button>
+                  </div>
+                ) : (
+                  <h2 
+                    onClick={() => {
+                      setNewName(currentUser.nombre);
+                      setIsEditingName(true);
+                    }}
+                    className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-2 z-10"
+                    title="Toca para editar"
+                  >
+                    {currentUser.nombre} <span className="text-sm not-italic opacity-30">✏️</span>
+                  </h2>
+                )
+              ) : (
+                <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight">
+                  Jugador Pro
+                </h2>
+              )}
+
               <p className="text-[#1A1C1E]/50 font-bold tracking-widest mt-1 text-sm">
                 {isLoggedIn && currentUser ? currentUser.telefono : 'Regístrate para entrar'}
               </p>
@@ -368,11 +490,7 @@ export default function App() {
 
             {isLoggedIn ? (
               <button 
-                onClick={() => {
-                  setIsLoggedIn(false);
-                  setCurrentUser(null);
-                  setTab('home');
-                }}
+                onClick={handleLogout}
                 className="w-full bg-[#F8F7F2] border border-red-500/20 text-red-500 py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-red-50 transition-colors"
               >
                 Cerrar Sesión
