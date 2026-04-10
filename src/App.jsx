@@ -51,7 +51,7 @@ export default function App() {
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
   const [endTime, setEndTime] = useState(initData.end);
-  const [superficie, setSuperficie] = useState('Dura'); // RE-AGREGADO
+  const [superficie, setSuperficie] = useState('Dura');
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
@@ -170,14 +170,12 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // Función para saber en qué etapa cronológica está el partido
+  // Función para saber en qué etapa cronológica está el partido (Fix Safari/iPhone)
   const obtenerEstadoTiempo = (partido) => {
-    // Dividimos el texto para que iPhone no se confunda con la zona horaria
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
     const [endH, endM] = partido.hora_fin.split(':');
 
-    // Creamos la fecha local exacta (el mes empieza en 0, por eso month - 1)
     const inicioPartido = new Date(year, month - 1, day, startH, startM);
     const finPartido = new Date(year, month - 1, day, endH, endM);
 
@@ -186,25 +184,12 @@ export default function App() {
     return 'terminado'; 
   };
 
-  // Función para calcular la cuenta regresiva
+  // Función para calcular la cuenta regresiva (Fix Safari/iPhone)
   const getCountdown = (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
     const inicioPartido = new Date(year, month - 1, day, startH, startM);
     
-    const diff = inicioPartido - currentTime;
-    if (diff <= 0) return "00:00:00";
-    
-    const h = Math.floor(diff / (1000 * 60 * 60));
-    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    const s = Math.floor((diff % (1000 * 60)) / 1000);
-    
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  // Función para calcular la cuenta regresiva
-  const getCountdown = (partido) => {
-    const inicioPartido = new Date(`${partido.fecha}T${partido.hora_inicio}:00`);
     const diff = inicioPartido - currentTime;
     if (diff <= 0) return "00:00:00";
     
@@ -216,7 +201,6 @@ export default function App() {
   };
 
   const renderBalls = (score) => {
-    // CANDADO PARA EVITAR NÚMEROS LOCOS EN LA BD
     let rawScore = Number(score);
     if (isNaN(rawScore) || rawScore === 0) rawScore = 5.0;
     const numericScore = Math.min(5.0, rawScore); // Topamos visualmente a 5.0 máximo
