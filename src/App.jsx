@@ -444,6 +444,14 @@ export default function App() {
       if (search.fecha !== searchDate) return false; 
       return (startTime < search.hora_fin && endTime > search.hora_inicio);
     });
+    // VALIDACIÓN NUEVA: Revisar si ya tienes un partido programado a esa hora
+    const hasMatchOverlap = misPartidos.some(partido => {
+      if (partido.fecha !== searchDate) return false; 
+      // Solo nos importan los partidos que se van a jugar
+      if (partido.estado === 'finalizado' || partido.estado === 'wo') return false; 
+      return (startTime < partido.hora_fin && endTime > partido.hora_inicio);
+    });
+    if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     try {
@@ -787,7 +795,7 @@ export default function App() {
                           {obtenerEstadoTiempo(partido) === 'futuro' ? (
                             <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
                               <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1">El partido inicia en</p>
-                              <p className="text-2xl font-black italic tracking-widest font-mono">{getCountdown(partido)}</p>
+                              <p className="text-2xl font-black italic tracking-widest font-mono text-[#007AFF] shadow-sm">{getCountdown(partido)}</p>
                             </div>
                           ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
                             <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
