@@ -51,7 +51,7 @@ export default function App() {
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
   const [endTime, setEndTime] = useState(initData.end);
-  const [superficie, setSuperficie] = useState('Dura');
+  const [superficie, setSuperficie] = useState('Dura'); // RE-AGREGADO
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
@@ -194,7 +194,11 @@ export default function App() {
   };
 
   const renderBalls = (score) => {
-    const numericScore = Number(score) || 5;
+    // CANDADO PARA EVITAR NÚMEROS LOCOS EN LA BD
+    let rawScore = Number(score);
+    if (isNaN(rawScore) || rawScore === 0) rawScore = 5.0;
+    const numericScore = Math.min(5.0, rawScore); // Topamos visualmente a 5.0 máximo
+
     return (
       <div className="flex flex-col items-center gap-1">
         <div className="flex gap-1">
