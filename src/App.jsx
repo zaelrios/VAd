@@ -6,11 +6,6 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
   const [currentUser, setCurrentUser] = useState(null); 
   
-  // ESTADOS PARA EDITAR NOMBRE
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [updateLoading, setUpdateLoading] = useState(false);
-
   // ESTADOS DEL LOGIN / REGISTRO
   const [phonePrefix, setPhonePrefix] = useState('+52');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -18,7 +13,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   
-  // NUEVO: ESTADOS PARA REGISTRO DE 2 PASOS
+  // ESTADOS PARA REGISTRO DE 2 PASOS
   const [isRegistering, setIsRegistering] = useState(false);
   const [registrationName, setRegistrationName] = useState('');
 
@@ -33,7 +28,7 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState('18:00');
   const [bookError, setBookError] = useState('');
 
-  // MEMORIA PERMANENTE (Revisa el gafete al abrir la app)
+  // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
     if (savedUser) {
@@ -48,6 +43,16 @@ export default function App() {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     hour = hour % 12 || 12; 
     return `${hour}:${minute} ${ampm}`;
+  };
+
+  // FUNCIÓN INTELIGENTE PARA INICIALES
+  const getInitials = (fullName) => {
+    if (!fullName) return '🎾';
+    const names = fullName.trim().split(' ');
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
+    }
+    return fullName.substring(0, 2).toUpperCase();
   };
 
   // --- PASO 1: VERIFICAR SI EXISTE EL JUGADOR ---
@@ -68,7 +73,6 @@ export default function App() {
       if (searchError) throw searchError;
 
       if (existingUser) {
-        // El usuario ya existe, comprobamos PIN
         if (existingUser.pin === pin) {
           setCurrentUser(existingUser);
           setIsLoggedIn(true);
@@ -78,7 +82,6 @@ export default function App() {
           setAuthError('PIN incorrecto para este número.');
         }
       } else {
-        // ¡NUEVO! El usuario NO existe, pasamos a la pantalla de pedir nombre
         setIsRegistering(true);
       }
     } catch (error) {
@@ -89,11 +92,14 @@ export default function App() {
     }
   };
 
-  // --- PASO 2: COMPLETAR REGISTRO CON NOMBRE ---
+  // --- PASO 2: COMPLETAR REGISTRO CON NOMBRE (FILTRO ESTRICTO) ---
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
-    if (!registrationName.trim()) {
-      setAuthError('Por favor ingresa tu nombre y apellido.');
+    
+    // Filtro: Debe tener al menos dos palabras
+    const nameParts = registrationName.trim().split(/\s+/);
+    if (nameParts.length < 2) {
+      setAuthError('El anonimato no está permitido. Ingresa tu nombre y apellido reales.');
       return;
     }
     
@@ -104,7 +110,7 @@ export default function App() {
     try {
       const { data: newUser, error: insertError } = await supabase
         .from('Perfiles')
-        .insert([{ telefono: fullPhone, pin: pin, nombre: registrationName }])
+        .insert([{ telefono: fullPhone, pin: pin, nombre: registrationName.trim() }])
         .select()
         .single();
 
@@ -112,7 +118,7 @@ export default function App() {
 
       setCurrentUser(newUser);
       setIsLoggedIn(true);
-      setIsRegistering(false); // Reseteamos la pantalla de registro
+      setIsRegistering(false); 
       setRegistrationName('');
       setTab('home');
       localStorage.setItem('vad_session', JSON.stringify(newUser));
@@ -130,37 +136,8 @@ export default function App() {
     setTab('home');
     setPhoneNumber('');
     setPin('');
-    setIsRegistering(false); // Por si acaso
+    setIsRegistering(false); 
     localStorage.removeItem('vad_session');
-  };
-
-  // FUNCIÓN PARA ACTUALIZAR EL NOMBRE EN SUPABASE DESDE EL PERFIL
-  const handleNameUpdate = async () => {
-    if (!newName.trim()) {
-      setIsEditingName(false);
-      return;
-    }
-    
-    setUpdateLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('Perfiles')
-        .update({ nombre: newName })
-        .eq('id', currentUser.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setCurrentUser(data);
-      localStorage.setItem('vad_session', JSON.stringify(data));
-      setIsEditingName(false);
-    } catch (error) {
-      console.error("Error al actualizar nombre:", error);
-      alert("No se pudo actualizar el nombre.");
-    } finally {
-      setUpdateLoading(false);
-    }
   };
 
   const handleSearchSubmit = (e) => {
@@ -223,7 +200,6 @@ export default function App() {
         {tab === 'auth' && (
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
             
-            {/* PANTALLA 1: PEDIR CELULAR Y PIN */}
             {!isRegistering ? (
               <>
                 <div className="text-center">
@@ -260,7 +236,6 @@ export default function App() {
                 <button onClick={() => { setTab('home'); setAuthError(''); }} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2 hover:text-[#1A1C1E] transition-colors">Cancelar</button>
               </>
             ) : (
-              /* PANTALLA 2: PEDIR NOMBRE (Solo para usuarios nuevos) */
               <div className="animate-in fade-in slide-in-from-right-4 duration-500 space-y-8">
                 <div className="text-center">
                   <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2>
@@ -427,45 +402,12 @@ export default function App() {
               {!isLoggedIn && <div className="absolute top-4 bg-[#1A1C1E]/5 text-[#1A1C1E]/50 px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Perfil de Ejemplo</div>}
 
               <div className="w-24 h-24 bg-[#F8F7F2] rounded-full border-4 border-[#29C454] flex items-center justify-center text-[#1A1C1E] font-black italic text-4xl mb-4 shadow-sm mt-4 uppercase">
-                {isLoggedIn && currentUser ? currentUser.nombre.substring(0, 2) : '🎾'}
+                {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
               </div>
               
-              {/* Lógica de Edición de Nombre */}
-              {isLoggedIn && currentUser ? (
-                isEditingName ? (
-                  <div className="flex items-center gap-2 mt-2 z-10">
-                    <input 
-                      type="text" 
-                      value={newName} 
-                      onChange={(e) => setNewName(e.target.value)} 
-                      placeholder="Tu Nombre"
-                      className="bg-[#F8F7F2] border border-[#1A1C1E]/20 text-[#1A1C1E] font-bold px-4 py-2 rounded-xl focus:outline-none focus:border-[#29C454] text-center w-40"
-                    />
-                    <button 
-                      onClick={handleNameUpdate} 
-                      disabled={updateLoading}
-                      className="bg-[#29C454] text-white px-4 py-2 rounded-xl font-bold uppercase text-xs hover:brightness-105 transition-all"
-                    >
-                      {updateLoading ? '...' : '✓'}
-                    </button>
-                  </div>
-                ) : (
-                  <h2 
-                    onClick={() => {
-                      setNewName(currentUser.nombre);
-                      setIsEditingName(true);
-                    }}
-                    className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-2 z-10"
-                    title="Toca para editar"
-                  >
-                    {currentUser.nombre} <span className="text-sm not-italic opacity-30">✏️</span>
-                  </h2>
-                )
-              ) : (
-                <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight">
-                  Jugador Pro
-                </h2>
-              )}
+              <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight">
+                {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
+              </h2>
 
               <p className="text-[#1A1C1E]/50 font-bold tracking-widest mt-1 text-sm">
                 {isLoggedIn && currentUser ? currentUser.telefono : 'Regístrate para entrar'}
