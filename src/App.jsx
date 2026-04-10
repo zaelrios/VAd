@@ -29,7 +29,7 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState('18:00');
   const [bookError, setBookError] = useState('');
 
-  // MEMORIA PERMANENTE (Cargar sesión al abrir)
+  // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
     if (savedUser) {
@@ -65,7 +65,6 @@ export default function App() {
     return `${hour}:${minute} ${ampm}`;
   };
 
-  // FUNCIÓN INTELIGENTE PARA INICIALES (Primer letra Nombre + Primer letra Apellido)
   const getInitials = (fullName) => {
     if (!fullName) return '🎾';
     const names = fullName.trim().split(/\s+/);
@@ -73,6 +72,27 @@ export default function App() {
       return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
     }
     return fullName.substring(0, 2).toUpperCase();
+  };
+
+  // --- NUEVO: RENDERIZADOR VISUAL DE PELOTAS DE CONFIANZA ---
+  const renderBalls = (score) => {
+    const numericScore = Number(score) || 5;
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex gap-1">
+          {[1, 2, 3, 4, 5].map((ball) => {
+            let opacityClass = "opacity-20 grayscale"; // Vacía
+            if (numericScore >= ball) opacityClass = "opacity-100"; // Llena
+            else if (numericScore >= ball - 0.5) opacityClass = "opacity-50 scale-75"; // Media pelota
+            
+            return (
+              <span key={ball} className={`text-2xl transition-all ${opacityClass}`}>🎾</span>
+            );
+          })}
+        </div>
+        <span className="text-[10px] font-black italic text-[#1A1C1E]/60 tracking-widest">{numericScore.toFixed(1)} / 5.0</span>
+      </div>
+    );
   };
 
   // --- PASO 1: VERIFICAR SI EXISTE EL JUGADOR ---
@@ -112,7 +132,7 @@ export default function App() {
     }
   };
 
-  // --- PASO 2: COMPLETAR REGISTRO CON NOMBRE (FILTRO ESTRICTO) ---
+  // --- PASO 2: COMPLETAR REGISTRO ---
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     
@@ -134,7 +154,8 @@ export default function App() {
             pin: pin, 
             nombre: registrationName.trim(),
             elo: 1000, 
-            confianza: 100
+            confianza: 5.0, // Entran con 5 pelotas
+            racha_asistencia: 0 // Inician con racha de cero
         }])
         .select()
         .single();
@@ -200,7 +221,6 @@ export default function App() {
     }
   };
 
-  // --- CANCELAR BÚSQUEDA (BORRADO REAL DB) ---
   const handleCancelSearch = async (id) => {
     try {
       const { error } = await supabase
@@ -222,11 +242,7 @@ export default function App() {
     setBookError('');
     if (!isLoggedIn) { setTab('auth'); return; }
     if (bookStart >= bookEnd) { setBookError('La hora de fin debe ser mayor a la de inicio.'); return; }
-    const startObj = new Date(`2000-01-01T${bookStart}`);
-    const endObj = new Date(`2000-01-01T${bookEnd}`);
-    const diffHours = (endObj - startObj) / (1000 * 60 * 60);
-    if (diffHours > 3) { setBookError('El límite máximo de reserva es de 3 horas por día.'); return; }
-    alert(`Redirigiendo al pago por ${diffHours} hora(s)...`);
+    alert(`Redirigiendo al pago...`);
   };
 
   return (
@@ -238,7 +254,7 @@ export default function App() {
           <div className="w-full space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center">
             <section className="flex flex-col items-center">
               <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[15px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
-              <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
+              <h1 className="text-7xl font-black italic tracking-tighter leading-none uppercase mb-8 text-[#29C454]">
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
@@ -478,22 +494,18 @@ export default function App() {
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
 
-              <p className="text-[#1A1C1E]/50 font-bold tracking-widest mt-1 text-sm">
+              <p className="text-[#1A1C1E]/50 font-bold tracking-widest mt-1 text-sm mb-6">
                 {isLoggedIn && currentUser ? currentUser.telefono : 'Regístrate para entrar'}
               </p>
 
-              <div className="flex gap-4 w-full mt-8 border-t border-[#1A1C1E]/10 pt-6">
-                <div className="flex-1">
+              {/* RENDERIZADOR DE PELOTAS */}
+              {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
+
+              <div className="flex gap-4 w-full mt-6 border-t border-[#1A1C1E]/10 pt-6 justify-center">
+                <div className="flex-1 text-center">
                   <p className="text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Tu ELO</p>
-                  <p className="text-2xl font-black italic text-[#29C454]">
+                  <p className="text-3xl font-black italic text-[#29C454]">
                     {isLoggedIn && currentUser ? currentUser.elo : '1,000'}
-                  </p>
-                </div>
-                <div className="w-px bg-[#1A1C1E]/10"></div>
-                <div className="flex-1">
-                  <p className="text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Confianza</p>
-                  <p className="text-2xl font-black italic text-[#1A1C1E]">
-                    {isLoggedIn && currentUser ? `${currentUser.confianza}%` : '100%'}
                   </p>
                 </div>
               </div>
