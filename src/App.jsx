@@ -920,9 +920,9 @@ export default function App() {
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Superficie Preferida</label>
                   <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none">
-                    <option value="Dura">Cancha Dura (Rápida)</option>
-                    <option value="Arcilla">Arcilla (Tierra Batida)</option>
-                    <option value="Sacate">Sacate (Césped)</option>
+                    <option value="Dura">Cancha Dura</option>
+                    <option value="Arcilla">Arcilla</option>
+                    <option value="Sacate">Césped</option>
                   </select>
                 </div>
 
