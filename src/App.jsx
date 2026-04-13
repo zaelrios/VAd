@@ -254,24 +254,39 @@ export default function App() {
     );
   };
 
-  // --- MOTOR MATEMÁTICO: LÓGICA ALCARAZ (K=60 Y LECTURA DE SETS) ---
+  // --- MOTOR MATEMÁTICO VAd: PROBABILIDAD LINEAL Y PISO DE 1000 ---
   const calculateElo = (miElo, rivalElo, marcador, yoGane) => {
-    const K = 60; // Constante aceleradora
-    const expectedScore = 1 / (1 + Math.pow(10, (rivalElo - miElo) / 400));
+    const K = 60; // Puntos máximos en juego
     
-    // Leemos el marcador (ej: "6-4, 6-2" tiene 2 sets. "6-4, 3-6, 6-2" tiene 3 sets)
+    // 1. Calculamos la diferencia y la limitamos a +/- 200
+    let diff = rivalElo - miElo;
+    if (diff > 200) diff = 200;
+    if (diff < -200) diff = -200;
+
+    // 2. Probabilidad Lineal VAd (Base 500 para dar un rango de 10% a 90%)
+    // Si diff es 0 = 0.5 (50%). Si diff es 200 = 0.1 (10%). Si diff es -200 = 0.9 (90%)
+    const expectedScore = 0.5 - (diff / 500);
+    
+    // 3. Multiplicador de Sets
     const setsJugados = marcador ? marcador.split(',').length : 2; 
     const fueBarrida = setsJugados === 2;
 
-    // Asignamos el valor S dependiendo si fue 2-0 o 2-1
     let S = 0;
     if (yoGane) {
-      S = fueBarrida ? 1.0 : 0.85; // Ganar sobrado vs ganar sufriendo
+      S = fueBarrida ? 1.0 : 0.85; // Ganar 2-0 da el botín completo
     } else {
-      S = fueBarrida ? 0.0 : 0.15; // Perder feo vs perder peleando
+      S = fueBarrida ? 0.0 : 0.15; // Si lograste sacar 1 set, duele menos
     }
 
-    return Math.round(miElo + K * (S - expectedScore));
+    // 4. Cálculo final redondeado
+    let nuevoElo = Math.round(miElo + K * (S - expectedScore));
+
+    // 5. PISO DE CONCRETO: Nadie cae a los abismos de la depresión
+    if (nuevoElo < 1000) {
+      nuevoElo = 1000;
+    }
+
+    return nuevoElo;
   };
 
   const calcularNuevaConfianza = (confianzaActual, rachaActual) => {
@@ -476,7 +491,7 @@ export default function App() {
           telefono: fullPhone, 
           pin: pin, 
           nombre: registrationName.trim(), 
-          elo: 1000, 
+          elo: 1200, 
           confianza: 5.0, 
           racha_asistencia: 0 
         }])
@@ -673,67 +688,153 @@ export default function App() {
     <div className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30">
       <main className="pt-10 px-6 max-w-lg mx-auto w-full flex flex-col items-center">
         
-        {/* VISTA HOME */}
+        {/* VISTA HOME - DISEÑO UNIFICADO PREMIUM */}
         {tab === 'home' && (
-          <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10">
+          <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10 px-2">
             
-            {/* 1. HERO ORIGINAL */}
+            {/* 1. HERO ORIGINAL Y BOTÓN PRINCIPAL */}
             <section className="flex flex-col items-center">
-              <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[15px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
+              <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
                 Matchmaking inteligente, ranking ELO y torneos en vivo. La comunidad que premia a los que sí aparecen.
               </p>
-              <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
+              <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
                 {isLoggedIn ? "Buscar rival ➜" : "Únete al Circuito ➜"}
               </button>
             </section>
 
-            {/* 2. CÓMO FUNCIONA (BUSCADOR) */}
+            {/* SECCIONES DE EXPLICACIÓN (DISEÑO BLANCO Y HUESO) */}
             <section className="w-full text-left space-y-6">
+              
+              {/* 2. CÓMO FUNCIONA (BUSCADOR) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 opacity-5 text-9xl">🔍</div>
-                <h3 className="text-2xl font-black italic uppercase text-[#1A1C1E] mb-4 relative z-10">El buscador</h3>
-                <p className="text-[#1A1C1E]/70 text-sm font-bold mb-5 relative z-10">No más grupos de WhatsApp interminables. Así te encontramos rival:</p>
-                <ul className="space-y-4 relative z-10">
-                  <li className="flex gap-4">
-                    <span className="text-[#007AFF] font-black text-lg leading-none">1</span>
-                    <span className="text-sm font-bold text-[#1A1C1E]">Pides tu horario y superficie con al menos 3 horas de anticipación.</span>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">El Buscador</h3>
+                <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">El buscador mas sencillo para encontrar con quien jugar tennis.</p>
+                <ul className="space-y-4 relative z-10 text-xs font-bold text-[#1A1C1E]/80">
+                  <li className="flex gap-3">
+                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda con al menos 3 horas de anticipacion.</span>
                   </li>
-                  <li className="flex gap-4">
-                    <span className="text-[#007AFF] font-black text-lg leading-none">2</span>
-                    <span className="text-sm font-bold text-[#1A1C1E]">El sistema busca jugadores activos que estén a máximo <span className="text-[#007AFF]">±200 puntos</span> de tu nivel.</span>
+                  <li className="flex gap-3">
+                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda activa con hasta 1 semana de anticipación.</span>
                   </li>
-                  <li className="flex gap-4">
-                    <span className="text-[#007AFF] font-black text-lg leading-none">3</span>
-                    <span className="text-sm font-bold text-[#1A1C1E]">Si hay match, el partido se confirma, la cancha se aparta y ambos reciben la alerta.</span>
+                  <li className="flex gap-3">
+                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Emparejamiento por diferencia de puntos:<span className="text-[#29C454]"> +/-200 puntos </span>.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">3 Cancelaciones al mes sin afectar ELO y confiabilidad.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#29C454]">Si te cancelan el buscador se reactivara por ti.</span></span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#F50514]">Las cancelaciones deben de ser maximo 30 minutos antes del encuentro, de lo contrario se tomara como Walkover.</span></span>
                   </li>
                 </ul>
               </div>
 
-              {/* 3. SISTEMA ELO (ALCARAZ LOGIC) */}
-              <div className="bg-[#1A1C1E] text-white border border-[#007AFF]/30 rounded-[2.5rem] p-8 shadow-xl relative overflow-hidden">
-                <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#007AFF]/20 rounded-full blur-3xl"></div>
-                <h3 className="text-2xl font-black italic uppercase text-[#007AFF] mb-4 relative z-10">Motor ELO</h3>
-                <p className="text-white/70 text-sm font-bold mb-6 relative z-10">Inspirado en el ajedrez, calibrado para el tenis.</p>
-                <div className="space-y-4 relative z-10">
-                  <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#007AFF] mb-2">Justicia Dinámica</p>
-                    <p className="text-xs font-bold text-white/90 leading-relaxed">Ganarle a un gigante te da más puntos que vencer a un novato. Si barres 2-0 te llevas el máximo; si ganas sufriendo (2-1), el sistema te da un poco menos.</p>
-                  </div>
-                  <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#007AFF] mb-2">Fuerzas Competitivas</p>
-                    <p className="text-xs font-bold text-white/90 leading-relaxed">Las categorías cambian cada 200 puntos. Empiezas en 6ta (1,000 pts) y puedes llegar a la Élite (2,000+ pts). Siete victorias perfectas te ascienden de nivel.</p>
+              {/* 3. SISTEMA ELO (MOTOR MATEMÁTICO VAd.) */}
+              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
+                <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#29C454]/10 rounded-full blur-3xl"></div>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Motor ELO</h3>
+                <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">Transparencia total. Un sistema diseñado para que tu ascenso dependa de tu nivel real en la cancha.</p>
+                
+                <div className="space-y-6 relative z-10 text-xs text-[#1A1C1E]">
+                  <div className="bg-[#F8F7F2] p-5 rounded-2xl border border-[#1A1C1E]/5 shadow-inner space-y-5">
+                    
+                    <div>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#29C454]">1.</span> Inicio y Fuerzas</p>
+                      <p className="font-bold leading-relaxed opacity-70">Todos inician en <span className="text-[#29C454]">5ta Fuerza (1,200 pts)</span>. El sistema te empareja con rivales en un rango de ±200 puntos. El piso mínimo es de 1,000 pts (6ta Fuerza) para proteger tu progreso.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#29C454]">2.</span> Velocidad K-Max (60)</p>
+                      <p className="font-bold leading-relaxed opacity-70">El 'Factor K' es la potencia de ascenso. Si juegas contra alguien de tu nivel, K es 40. Si el rival te supera por el límite de <span className="text-[#29C454]">200 puntos</span>, K sube a <span className="text-[#29C454]">60</span> para acelerar tu subida.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#29C454]">3.</span> Probabilidad Lineal VAd.</p>
+                      <p className="font-bold leading-relaxed opacity-70">A diferencia de otros sistemas, usamos un cálculo lineal: contra un rival 200 pts arriba, tu probabilidad de ganar es del 10%. Dar la sorpresa ahí te da el premio máximo de puntos.</p>
+                    </div>
+
+                    {/* Punto 4: Desglose Técnico */}
+                    <div className="pt-2 border-t border-[#1A1C1E]/10">
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">4.</span> Desglose de la Fórmula</p>
+                      <div className="bg-[#1A1C1E] p-4 rounded-xl shadow-lg border border-[#29C454]/30 text-left">
+                        <p className="font-mono text-[#F8F7F2] text-[13px] tracking-widest text-center mb-3">
+                          R' = R + <span className="text-[#29C454] font-black">K</span> × (S - E)
+                        </p>
+                        <ul className="space-y-1.5 text-[9px] font-bold text-[#F8F7F2]/60 uppercase tracking-tighter">
+                          <li><span className="text-[#29C454]">R':</span> Tu nuevo puntaje tras el partido.</li>
+                          <li><span className="text-[#29C454]">R:</span> Tus puntos actuales.</li>
+                          <li><span className="text-[#29C454]">K:</span> Constante de cambio = 60.</li>
+                          <li><span className="text-[#29C454]">S:</span> Resultado (1.0 si ganas 2-0 / 0.85 si ganas 2-1).</li>
+                          <li><span className="text-[#29C454]">E:</span> Probabilidad (de 0.1 a 0.9 según la brecha).</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Punto 5: Ejemplos Prácticos */}
+                    <div className="pt-2 border-t border-[#1A1C1E]/10">
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">5.</span> Ejemplos (Victoria 2-0)</p>
+                      <div className="space-y-2">
+                        
+                        <div className="bg-white p-3 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm">
+                          <div className="max-w-[70%]">
+                            <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">La Gran Sorpresa (K=60)</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight">Tienes 1000 pts vs Rival de 1200 pts</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="bg-[#29C454] text-white px-2 py-1.5 rounded-lg font-black text-xs shadow-md">
+                              +54 Pts
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm">
+                          <div className="max-w-[70%]">
+                            <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Duelo Equilibrado (K=60)</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight">Tienes 1200 pts vs Rival de 1200 pts</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="bg-[#29C454]/10 text-[#29C454] px-2 py-1.5 rounded-lg font-black text-xs border border-[#29C454]/20">
+                              +30 Pts
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm">
+                          <div className="max-w-[70%]">
+                            <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Favorito (K=60)</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight">Tienes 1200 pts vs Rival de 1000 pts</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="bg-[#F8F7F2] text-[#1A1C1E]/60 px-2 py-1.5 rounded-lg font-black text-xs border border-[#1A1C1E]/10">
+                              +6 Pts
+                            </span>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
                   </div>
                 </div>
               </div>
 
               {/* 4. BUZÓN DE SUGERENCIAS */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
-                <h3 className="text-xl font-black italic uppercase text-[#1A1C1E] mb-2">Construyamos el Club</h3>
-                <p className="text-[#1A1C1E]/60 text-xs font-bold mb-5">¿Qué te gustaría ver en la app? Déjanos tus ideas, reportes de error o sugerencias de torneos.</p>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Buzón</h3>
+                <p className="text-[#1A1C1E]/70 text-sm font-bold mb-5 leading-relaxed">¿Ideas, reportes de error o sugerencias? Háznoslo saber.</p>
                 <div className="space-y-3">
                   <textarea 
                     placeholder="Escribe tu comentario aquí..." 
@@ -745,11 +846,10 @@ export default function App() {
                     onClick={(e) => {
                       e.preventDefault();
                       if(!comentario.trim()) return;
-                      // Aquí después conectaremos a una tabla de 'feedback' en Supabase
                       alert('¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario.');
                       setComentario('');
                     }}
-                    className="w-full bg-[#1A1C1E] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg active:scale-95 transition-all hover:bg-[#29C454]"
+                    className="w-full bg-[#29C454] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-105"
                   >
                     Enviar Sugerencia
                   </button>
