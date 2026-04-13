@@ -36,6 +36,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
   const [currentUser, setCurrentUser] = useState(null); 
+  const [comentario, setComentario] = useState('');
   
   // ESTADOS DEL LOGIN / REGISTRO
   const [phonePrefix, setPhonePrefix] = useState('+52');
@@ -674,19 +675,87 @@ export default function App() {
         
         {/* VISTA HOME */}
         {tab === 'home' && (
-          <div className="w-full space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center">
+          <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10">
+            
+            {/* 1. HERO ORIGINAL */}
             <section className="flex flex-col items-center">
               <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[15px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
-                "Matchmaking por ELO, ranking de confianza y reservas inteligentes. La comunidad que premia a los que sí aparecen."
+                Matchmaking inteligente, ranking ELO y torneos en vivo. La comunidad que premia a los que sí aparecen.
               </p>
+              <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
+                {isLoggedIn ? "Buscar rival ➜" : "Únete al Circuito ➜"}
+              </button>
             </section>
-            <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
-              {isLoggedIn ? "Buscar rival ➜" : "Únete ➜"}
-            </button>
+
+            {/* 2. CÓMO FUNCIONA (BUSCADOR) */}
+            <section className="w-full text-left space-y-6">
+              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
+                <div className="absolute -right-4 -top-4 opacity-5 text-9xl">🔍</div>
+                <h3 className="text-2xl font-black italic uppercase text-[#1A1C1E] mb-4 relative z-10">El buscador</h3>
+                <p className="text-[#1A1C1E]/70 text-sm font-bold mb-5 relative z-10">No más grupos de WhatsApp interminables. Así te encontramos rival:</p>
+                <ul className="space-y-4 relative z-10">
+                  <li className="flex gap-4">
+                    <span className="text-[#007AFF] font-black text-lg leading-none">1</span>
+                    <span className="text-sm font-bold text-[#1A1C1E]">Pides tu horario y superficie con al menos 3 horas de anticipación.</span>
+                  </li>
+                  <li className="flex gap-4">
+                    <span className="text-[#007AFF] font-black text-lg leading-none">2</span>
+                    <span className="text-sm font-bold text-[#1A1C1E]">El sistema busca jugadores activos que estén a máximo <span className="text-[#007AFF]">±200 puntos</span> de tu nivel.</span>
+                  </li>
+                  <li className="flex gap-4">
+                    <span className="text-[#007AFF] font-black text-lg leading-none">3</span>
+                    <span className="text-sm font-bold text-[#1A1C1E]">Si hay match, el partido se confirma, la cancha se aparta y ambos reciben la alerta.</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* 3. SISTEMA ELO (ALCARAZ LOGIC) */}
+              <div className="bg-[#1A1C1E] text-white border border-[#007AFF]/30 rounded-[2.5rem] p-8 shadow-xl relative overflow-hidden">
+                <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#007AFF]/20 rounded-full blur-3xl"></div>
+                <h3 className="text-2xl font-black italic uppercase text-[#007AFF] mb-4 relative z-10">Motor ELO</h3>
+                <p className="text-white/70 text-sm font-bold mb-6 relative z-10">Inspirado en el ajedrez, calibrado para el tenis.</p>
+                <div className="space-y-4 relative z-10">
+                  <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#007AFF] mb-2">Justicia Dinámica</p>
+                    <p className="text-xs font-bold text-white/90 leading-relaxed">Ganarle a un gigante te da más puntos que vencer a un novato. Si barres 2-0 te llevas el máximo; si ganas sufriendo (2-1), el sistema te da un poco menos.</p>
+                  </div>
+                  <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#007AFF] mb-2">Fuerzas Competitivas</p>
+                    <p className="text-xs font-bold text-white/90 leading-relaxed">Las categorías cambian cada 200 puntos. Empiezas en 6ta (1,000 pts) y puedes llegar a la Élite (2,000+ pts). Siete victorias perfectas te ascienden de nivel.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. BUZÓN DE SUGERENCIAS */}
+              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
+                <h3 className="text-xl font-black italic uppercase text-[#1A1C1E] mb-2">Construyamos el Club</h3>
+                <p className="text-[#1A1C1E]/60 text-xs font-bold mb-5">¿Qué te gustaría ver en la app? Déjanos tus ideas, reportes de error o sugerencias de torneos.</p>
+                <div className="space-y-3">
+                  <textarea 
+                    placeholder="Escribe tu comentario aquí..." 
+                    value={comentario}
+                    onChange={(e) => setComentario(e.target.value)}
+                    className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold text-sm focus:outline-none focus:border-[#29C454] resize-none h-28 shadow-inner"
+                  />
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if(!comentario.trim()) return;
+                      // Aquí después conectaremos a una tabla de 'feedback' en Supabase
+                      alert('¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario.');
+                      setComentario('');
+                    }}
+                    className="w-full bg-[#1A1C1E] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg active:scale-95 transition-all hover:bg-[#29C454]"
+                  >
+                    Enviar Sugerencia
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
         )}
 
