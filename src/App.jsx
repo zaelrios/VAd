@@ -73,12 +73,15 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // MEMORIA PERMANENTE
+ // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
-    if (savedUser) {
+    // Bloqueamos que se cuele un "null" literal
+    if (savedUser && savedUser !== 'null') {
       setCurrentUser(JSON.parse(savedUser));
       setIsLoggedIn(true);
+    } else {
+      localStorage.removeItem('vad_session');
     }
   }, []);
 
@@ -334,8 +337,17 @@ export default function App() {
 
       await supabase.from('partidos').update({ estado: 'finalizado' }).eq('id', partido.id);
 
-      setCurrentUser(miPerfilActualizado);
-      localStorage.setItem('vad_session', JSON.stringify(miPerfilActualizado));
+      // PARCHE FANTASMA: Si Supabase no devuelve el perfil, usamos los datos calculados
+      const perfilSeguro = miPerfilActualizado || { 
+        ...currentUser, 
+        elo: miNuevoElo, 
+        confianza: misNuevosDatos.nuevaConfianza, 
+        racha_asistencia: misNuevosDatos.nuevaRacha 
+      };
+
+      // Guardamos la sesión segura una sola vez
+      setCurrentUser(perfilSeguro);
+      localStorage.setItem('vad_session', JSON.stringify(perfilSeguro));
       
       fetchPartidos();
       alert(`¡Partido finalizado!\nTu nuevo ELO es: ${miNuevoElo}`);
@@ -499,7 +511,16 @@ export default function App() {
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
-    if (!isLoggedIn) { setTab('auth'); return; }
+    
+    // CANDADO DOBLE: Si su perfil es fantasma, limpiamos y mandamos al login
+    if (!isLoggedIn || !currentUser) { 
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+      localStorage.removeItem('vad_session');
+      setTab('auth'); 
+      return; 
+    }
+    
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
     const now = new Date();
