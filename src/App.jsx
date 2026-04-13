@@ -118,7 +118,7 @@ export default function App() {
     } else {
       setActiveSearches([]); 
     }
-  }, [currentUser]);
+  }, [currentUser, tab]);
 
   // --- CARGAR PARTIDOS CONFIRMADOS Y SINCRONIZAR ELO ---
   const fetchPartidos = async () => {
@@ -158,6 +158,27 @@ export default function App() {
   useEffect(() => {
     fetchPartidos();
   }, [currentUser, tab]);
+
+  // --- ESCUCHA EN TIEMPO REAL (NOTIFICACIONES MÁGICAS) ---
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const canalActualizaciones = supabase.channel('alertas-vad')
+      // Escuchar si alguien CANCELA (borra) un partido
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, (payload) => {
+        fetchPartidos(); // Refresca la pantalla al instante
+        alert('🚨 Atención: Tu rival ha cancelado el partido. Te hemos regresado a la sala de búsqueda automáticamente.');
+      })
+      // Escuchar si alguien REPORTA un resultado (para que se actualice solo)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, (payload) => {
+        fetchPartidos(); 
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canalActualizaciones);
+    };
+  }, [currentUser]);
 
   // --- UTILIDADES ---
   const formatTime = (time24) => {
@@ -778,7 +799,7 @@ export default function App() {
         {/* VISTA: MIS PARTIDOS Y JUEZ DE SILLA */}
         {tab === 'partidos' && (
           <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto">
-            <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight text-center">Tu Circuito</h2>
+            <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight text-center">Partidos</h2>
             <div className={`space-y-4 text-left ${!isLoggedIn && 'opacity-80'}`}>
               
               {!isLoggedIn ? (
@@ -853,25 +874,25 @@ export default function App() {
                           {partido.estado === 'confirmado' && (
                             <>
                               {obtenerEstadoTiempo(partido) === 'futuro' ? (
-                                <div className="text-center py-5 bg-gradient-to-br from-[#1A1C1E]/95 to-[#1A1C1E]/90 rounded-2xl border border-[#E5B824]/40 shadow-[0_8px_20px_rgba(0,0,0,0.15)] relative overflow-hidden">
-                                  {/* --- BRILLO DORADO DE FONDO --- */}
-                                  <div className="absolute -top-10 -left-10 w-32 h-32 bg-[#E5B824]/20 rounded-full blur-3xl"></div>
+                                <div className="text-center py-5 bg-[#1A1C1E] rounded-[1.8rem] border border-[#007AFF]/40 shadow-2xl relative overflow-hidden">
+                                  {/* --- BRILLO AZUL DE FONDO --- */}
+                                  <div className="absolute -top-10 -left-10 w-32 h-32 bg-[#007AFF]/20 rounded-full blur-3xl"></div>
                                   
                                   {/* --- BOTÓN DE CANCELAR --- */}
                                   <button 
                                     onClick={() => handleCancelMatch(partido)}
-                                    className="absolute top-3 right-3 w-8 h-8 bg-white/5 text-[#F8F7F2]/40 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-10"
+                                    className="absolute top-3 right-4 w-8 h-8 bg-white/5 text-[#007AFF] rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20"
                                     title="Cancelar Partido"
                                   >
                                     ✕
                                   </button>
                                   
-                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#E5B824] mb-3 relative z-10 drop-shadow-sm">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#007AFF] mb-3 relative z-10 drop-shadow-sm">
                                     El partido inicia en
                                   </p>
                                   
-                                  <div className="mx-auto w-fit bg-[#1A1C1E] px-6 py-2.5 rounded-xl border border-[#E5B824]/30 shadow-[0_0_15px_rgba(229,184,36,0.15)] relative z-10">
-                                    <p className="text-2xl font-black italic tracking-widest font-mono text-[#F8F7F2]">
+                                  <div className="mx-auto w-fit bg-[#F8F7F2]/5 px-7 py-2 rounded-xl border border-[#007AFF]/20 relative z-10 shadow-inner">
+                                    <p className="text-2xl font-black italic tracking-[0.2em] font-mono text-white drop-shadow-[0_0_8px_rgba(0,122,255,0.4)]">
                                       {getCountdown(partido)}
                                     </p>
                                   </div>
