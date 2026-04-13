@@ -265,7 +265,8 @@ export default function App() {
       alert('Reporte enviado. Esperando confirmación del rival.');
     } catch (error) {
       console.error("Error al reportar:", error);
-      alert('Hubo un error al enviar el reporte.');
+      // 🔥 RAYOS X ACTIVADOS AQUÍ 🔥
+      alert('Error Supabase: ' + error.message);
     }
   };
 
