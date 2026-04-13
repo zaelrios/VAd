@@ -360,6 +360,33 @@ export default function App() {
     }
   };
 
+  const handleCancelMatch = async (partido) => {
+    const confirmar = window.confirm("¿Estás seguro de cancelar este partido? Recuerda que solo tienes 3 cancelaciones gratis al mes antes de empezar a perder pelotas de confianza.");
+    if (!confirmar) return;
+
+    try {
+      // 1. Eliminamos el partido para liberar la cancha y tu agenda
+      await supabase.from('partidos').delete().eq('id', partido.id);
+      
+      // 2. Devolvemos al rival automáticamente al radar de búsquedas para no dejarlo colgado
+      await supabase.from('buscar').insert([{
+        jugador_id: partido.rival.id,
+        nombre: partido.rival.nombre,
+        fecha: partido.fecha,
+        hora_inicio: partido.hora_inicio,
+        hora_fin: partido.hora_fin,
+        superficie: partido.superficie,
+        estado: 'activa'
+      }]);
+
+      fetchPartidos();
+      alert('Partido cancelado. Hemos regresado a tu rival a la sala de espera para buscarle otro match.');
+    } catch (error) {
+      console.error(error);
+      alert('Hubo un error al cancelar el partido.');
+    }
+  };
+
   // --- AUTENTICACIÓN BÁSICA ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -826,10 +853,25 @@ export default function App() {
                           {partido.estado === 'confirmado' && (
                             <>
                               {obtenerEstadoTiempo(partido) === 'futuro' ? (
-                                <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
-                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">El partido inicia en</p>
-                                  <div className="mx-auto w-fit bg-[#F8F7F2]/95 px-5 py-2 rounded-xl border border-[#007AFF]/40 shadow-[0_0_12px_rgba(0,122,255,0.25)]">
-                                    <p className="text-xl font-black italic tracking-widest font-mono text-[#1A1C1E]/80">
+                                <div className="text-center py-5 bg-gradient-to-br from-[#1A1C1E]/95 to-[#1A1C1E]/90 rounded-2xl border border-[#E5B824]/40 shadow-[0_8px_20px_rgba(0,0,0,0.15)] relative overflow-hidden">
+                                  {/* --- BRILLO DORADO DE FONDO --- */}
+                                  <div className="absolute -top-10 -left-10 w-32 h-32 bg-[#E5B824]/20 rounded-full blur-3xl"></div>
+                                  
+                                  {/* --- BOTÓN DE CANCELAR --- */}
+                                  <button 
+                                    onClick={() => handleCancelMatch(partido)}
+                                    className="absolute top-3 right-3 w-8 h-8 bg-white/5 text-[#F8F7F2]/40 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-10"
+                                    title="Cancelar Partido"
+                                  >
+                                    ✕
+                                  </button>
+                                  
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#E5B824] mb-3 relative z-10 drop-shadow-sm">
+                                    El partido inicia en
+                                  </p>
+                                  
+                                  <div className="mx-auto w-fit bg-[#1A1C1E] px-6 py-2.5 rounded-xl border border-[#E5B824]/30 shadow-[0_0_15px_rgba(229,184,36,0.15)] relative z-10">
+                                    <p className="text-2xl font-black italic tracking-widest font-mono text-[#F8F7F2]">
                                       {getCountdown(partido)}
                                     </p>
                                   </div>
