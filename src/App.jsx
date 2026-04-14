@@ -101,7 +101,6 @@ export default function App() {
  // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
-    // Bloqueamos que se cuele un "null" literal
     if (savedUser && savedUser !== 'null') {
       setCurrentUser(JSON.parse(savedUser));
       setIsLoggedIn(true);
@@ -170,7 +169,6 @@ export default function App() {
       if (matches && matches.length > 0) {
         const partidosConRivales = await Promise.all(matches.map(async (partido) => {
           const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
-          // Antes decía select('id, nombre, elo')
           const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
           return { ...partido, rival: rivalData || { id: '?', nombre: 'Jugador Desconocido', elo: '?' } };
         }));
@@ -211,12 +209,10 @@ export default function App() {
     if (!currentUser) return;
 
     const canalActualizaciones = supabase.channel('alertas-vad')
-      // Escuchar si alguien CANCELA (borra) un partido
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, (payload) => {
-        fetchPartidos(); // Refresca la pantalla al instante
+        fetchPartidos(); 
         alert('🚨 Atención: Tu rival ha cancelado el partido. Te hemos regresado a la sala de búsqueda automáticamente.');
       })
-      // Escuchar si alguien REPORTA un resultado (para que se actualice solo)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, (payload) => {
         fetchPartidos(); 
       })
@@ -246,7 +242,7 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // Traductor de ELO a Categoría (Fuerza) - AHORA EN EL LUGAR CORRECTO
+  // Traductor de ELO a Categoría (Fuerza)
   const getFuerza = (elo) => {
     const pts = Number(elo);
     if (pts >= 2000) return '1ra Fuerza (Élite)';
@@ -369,6 +365,150 @@ export default function App() {
     return { nuevaConfianza, nuevaRacha };
   };
 
+
+  // --- FLUJO DE W.O. EN MI CONTRA (ME RINDO) ---
+  const processSelfWO = async (partido, miPerfil) => {
+    const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
+    
+    // El sistema me castiga asumiendo que perdí 0-6, 0-6
+    const miNuevoElo = calculateElo(miPerfil.elo, rivalDB.elo, "0-6, 0-6", false);
+    const rivalNuevoElo = calculateElo(rivalDB.elo, miPerfil.elo, "6-0, 6-0", true);
+    
+    const miConfianzaCastigada = Math.max(0, Number(miPerfil.confianza) - 1.0);
+
+    // Actualizo mi perfil (pierdo ELO, pierdo 1 bola, pierdo racha)
+    await supabase.from('Perfiles').update({ 
+        elo: miNuevoElo, 
+        confianza: miConfianzaCastigada, 
+        racha_asistencia: 0 
+    }).eq('id', miPerfil.id);
+    
+    // Actualizo rival (gana ELO)
+    await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
+
+    // Marco el partido como W.O. ganado por el rival
+    await supabase.from('partidos').update({ estado: 'wo', ganador_id: rivalDB.id, marcador: "W.O." }).eq('id', partido.id);
+
+    alert(`W.O. Procesado. Tu nuevo ELO es ${miNuevoElo} y perdiste Confiabilidad.`);
+  };
+
+  const handleSelfWO = async (partido) => {
+    const confirmar = window.confirm("🚨 Faltan menos de 30 minutos. NO PUEDES CANCELAR.\n\n¿Deseas declarar W.O. asumiendo la derrota (-ELO, -1 Confiabilidad)?");
+    if (!confirmar) return;
+    try {
+        const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
+        await processSelfWO(partido, perfil);
+        
+        // Actualizamos sesión local
+        const updatedUser = { 
+          ...perfil, 
+          confianza: Math.max(0, perfil.confianza - 1.0), 
+          elo: calculateElo(perfil.elo, partido.rival.elo, "0-6, 0-6", false), 
+          racha_asistencia: 0 
+        };
+        setCurrentUser(updatedUser);
+        localStorage.setItem('vad_session', JSON.stringify(updatedUser));
+        
+        fetchPartidos();
+    } catch (error) {
+         console.error(error);
+    }
+  };
+
+
+  // --- CANCELACIONES CON LÓGICA DE TIEMPO (CORREGIDO) ---
+  const handleCancelMatch = async (partido) => {
+    // 1. Calculamos el tiempo que falta con precisión
+    const [year, month, day] = partido.fecha.split('-');
+    const [startH, startM] = partido.hora_inicio.split(':');
+    const inicioPartido = new Date(year, month - 1, day, startH, startM);
+    const now = new Date();
+    
+    // Calculamos la diferencia en horas exactas
+    const diffHoras = (inicioPartido - now) / (1000 * 60 * 60);
+
+    // Protección extra por si el botón sigue visible por error
+    if (diffHoras <= 0.5) {
+        alert("Faltan menos de 30 minutos. Usa el botón rojo de 'Declarar W.O.'");
+        return;
+    }
+
+    try {
+        // Traemos perfil fresco para leer los comodines
+        const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
+        
+        let comodines = perfil.comodines !== undefined && perfil.comodines !== null ? perfil.comodines : 2;
+        let nuevaConfianza = Number(perfil.confianza);
+        let msj = "";
+        let penalizacionWODirecto = false;
+
+        // 🟢 ZONA VERDE: Más de 24 hrs
+        if (diffHoras >= 24) {
+            msj = "✅ ZONA VERDE: Faltan más de 24 horas. Esta cancelación es LIBRE y no gasta tus comodines.\n\n¿Estás seguro de cancelar el partido?";
+        } 
+        // 🟡 ZONA AMARILLA: Menos de 24h pero más de 3h (Usa 1 Comodín normal)
+        else if (diffHoras < 24 && diffHoras >= 3) {
+            if (comodines > 0) {
+                msj = `🟡 ZONA AMARILLA: Faltan menos de 24 hrs. Usarás 1 COMODÍN (Te quedan ${comodines}). Tu confianza quedará intacta.\n\n¿Confirmar cancelación?`;
+                comodines -= 1;
+            } else {
+                msj = "⚠️ ADVERTENCIA: Te quedaste sin comodines. Cancelar ahora te costará -0.5 Pelotas de Confiabilidad y perderás tu racha.\n\n¿Confirmar de todos modos?";
+                nuevaConfianza = Math.max(0, nuevaConfianza - 0.5);
+            }
+        } 
+        // 🟠 ZONA NARANJA (Emergencia crítica): Menos de 3h pero más de 30 min
+        else if (diffHoras < 3 && diffHoras > 0.5) {
+            if (comodines > 0) {
+                msj = `🟠 EMERGENCIA: Faltan menos de 3 hrs. Usarás 1 COMODÍN para salvarte del W.O. (Te quedan ${comodines}).\n\n¿Confirmar emergencia?`;
+                comodines -= 1;
+            } else {
+                msj = "🚨 PELIGRO: No tienes comodines y faltan menos de 3 hrs. Esto se marcará como W.O. EN TU CONTRA (-1 Confianza y pierdes ELO).\n\n¿Asumir la derrota y cancelar?";
+                penalizacionWODirecto = true;
+            }
+        }
+
+        if (!window.confirm(msj)) return;
+
+        // Ejecución
+        if (penalizacionWODirecto) {
+            await processSelfWO(partido, perfil);
+        } else {
+            // Cancelación normal o con multa de confianza
+            await supabase.from('Perfiles').update({ 
+                confianza: nuevaConfianza, 
+                comodines: comodines, 
+                racha_asistencia: 0 
+            }).eq('id', perfil.id);
+            
+            await supabase.from('partidos').delete().eq('id', partido.id);
+            
+            // Regresamos al rival al buscador
+            await supabase.from('buscar').insert([{
+                jugador_id: partido.rival.id,
+                nombre: partido.rival.nombre,
+                fecha: partido.fecha,
+                hora_inicio: partido.hora_inicio,
+                hora_fin: partido.hora_fin,
+                superficie: partido.superficie,
+                estado: 'activa'
+            }]);
+
+            // Actualizamos UI local
+            const updatedUser = { ...perfil, confianza: nuevaConfianza, comodines: comodines, racha_asistencia: 0 };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('vad_session', JSON.stringify(updatedUser));
+            
+            alert('Partido cancelado. Hemos regresado a tu rival a la sala de espera del Radar.');
+        }
+        
+        fetchPartidos();
+    } catch (error) {
+        console.error(error);
+        alert("Error al procesar la cancelación en el servidor.");
+    }
+  };
+
+
   // --- FLUJO DE REPORTE AUTOMATIZADO CON FRENO DE MANO ---
   const handleSubmitReport = async (partido) => {
     if (!s1Mi || !s1Rival || !s2Mi || !s2Rival) {
@@ -376,7 +516,6 @@ export default function App() {
       return;
     }
 
-    // Convertimos el texto a números reales
     const v1Mi = parseInt(s1Mi, 10);
     const v1Riv = parseInt(s1Rival, 10);
     const v2Mi = parseInt(s2Mi, 10);
@@ -399,19 +538,16 @@ export default function App() {
       return;
     }
 
-    // El sistema decide quién ganó
     const yoGane = setsMi > setsRiv;
     const ganadorIdCalculado = yoGane ? currentUser.id : partido.rival.id;
 
-    // 🚨 FRENO DE MANO: Le avisamos al usuario antes de mandarlo
     const nombreGanador = yoGane ? "TÚ" : partido.rival.nombre.toUpperCase();
     const mensajeConfirmacion = `Revisa bien:\n\nSegún los números que ingresaste, el ganador es: ${nombreGanador} 🏆\n\n¿Estás seguro de enviar este resultado a revisión?`;
     
     if (!window.confirm(mensajeConfirmacion)) {
-      return; // Si el usuario se da cuenta del error y le da a "Cancelar", detenemos todo.
+      return; 
     }
 
-    // Si acepta, ahora sí lo mandamos a Supabase
     try {
       const { error } = await supabase
         .from('partidos')
@@ -476,6 +612,7 @@ export default function App() {
     }
   };
 
+  // Esto es para reportar que el OTRO no llegó
   const handleWO = async (partido) => {
     const confirmar = window.confirm("¿Estás seguro de reportar que tu rival no se presentó? Esto penalizará fuertemente su ELO y Confianza.");
     if (!confirmar) return;
@@ -510,30 +647,6 @@ export default function App() {
     }
   };
 
-  const handleCancelMatch = async (partido) => {
-    const confirmar = window.confirm("¿Estás seguro de cancelar este partido? Recuerda que solo tienes 3 cancelaciones gratis al mes antes de empezar a perder pelotas de confianza.");
-    if (!confirmar) return;
-
-    try {
-      await supabase.from('partidos').delete().eq('id', partido.id);
-      
-      await supabase.from('buscar').insert([{
-        jugador_id: partido.rival.id,
-        nombre: partido.rival.nombre,
-        fecha: partido.fecha,
-        hora_inicio: partido.hora_inicio,
-        hora_fin: partido.hora_fin,
-        superficie: partido.superficie,
-        estado: 'activa'
-      }]);
-
-      fetchPartidos();
-      alert('Partido cancelado. Hemos regresado a tu rival a la sala de espera para buscarle otro match.');
-    } catch (error) {
-      console.error(error);
-      alert('Hubo un error al cancelar el partido.');
-    }
-  };
 
   // --- AUTENTICACIÓN BÁSICA ---
   const handleAuthSubmit = async (e) => {
@@ -592,7 +705,8 @@ export default function App() {
           nombre: registrationName.trim(), 
           elo: 1200, 
           confianza: 5.0, 
-          racha_asistencia: 0 
+          racha_asistencia: 0,
+          comodines: 2 // <--- AHORA NACEN CON SUS DOS COMODINES
         }])
         .select()
         .single();
@@ -622,7 +736,7 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
-  // --- MOTOR DE MATCHMAKING BLINDADO ---
+ // --- MOTOR DE MATCHMAKING BLINDADO ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
@@ -641,8 +755,9 @@ export default function App() {
     const searchStartObj = new Date(`${searchDate}T${startTime}:00`);
     const diffInHoursNotice = (searchStartObj - now) / (1000 * 60 * 60);
 
-    if (diffInHoursNotice < 3) {
-      setSearchError('Debes programar tu búsqueda con al menos 3 horas de anticipación.');
+    // 🚨 CAMBIO AQUÍ: Bajamos el límite a 2 horas de anticipación
+    if (diffInHoursNotice < 2) {
+      setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.');
       return;
     }
 
@@ -708,16 +823,14 @@ export default function App() {
             const eloRival = perfilRival?.elo || 1000;
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
-            if (diferenciaElo <= 200 && horasCruce >= 1) {
+            // 🚨 CAMBIO AQUÍ: Exigimos que tengan mínimo 2 horas en común
+            if (diferenciaElo <= 200 && horasCruce >= 2) {
               matchEncontrado = rival;
               matchInicio = inicioCruce;
               
-              if (horasCruce > 2) {
-                startObj.setHours(startObj.getHours() + 2);
-                matchFin = startObj.toTimeString().substring(0,5); 
-              } else {
-                matchFin = finCruce;
-              }
+              // Siempre extraemos bloques exactos de 2 horas para el partido
+              startObj.setHours(startObj.getHours() + 2);
+              matchFin = startObj.toTimeString().substring(0,5); 
               break;
             }
           }
@@ -827,7 +940,7 @@ export default function App() {
                   </li>
                   <li className="flex gap-3">
                     <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#29C454]">Si te cancelan el buscador se reactivara por ti.</span></span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#29C454]">Si el rival cancela, el buscador te reactivará automáticamente.</span></span>
                   </li>
                  </ul>
               </div>
@@ -860,11 +973,9 @@ export default function App() {
                     <div className="pt-2 border-t border-[#1A1C1E]/10">
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">4.</span> Desglose de la Fórmula</p>
                       
-                      {/* Recuadro Verde Tenis Unificado */}
                       <div className="bg-[#29C454] p-5 rounded-2xl shadow-lg shadow-[#29C454]/20 text-left relative overflow-hidden">
                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/20 rounded-full blur-xl"></div>
                         
-                        {/* El whitespace-nowrap evita que la fórmula se parta en dos líneas */}
                         <p className="font-mono text-white text-[14px] tracking-widest text-center mb-4 font-black whitespace-nowrap drop-shadow-sm">
                           R' = R + K × (S - E)
                         </p>
@@ -884,13 +995,11 @@ export default function App() {
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">5.</span> Ejemplos (Victoria 2-0)</p>
                       <div className="space-y-2">
                         
-                        {/* Ejemplo 1: Sorpresa */}
                         <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
                           <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">La Gran Sorpresa (K=60)</p>
                             <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1400 pts</p>
                           </div>
-                          {/* El shrink-0 protege a la pastilla de aplastarse */}
                           <div className="shrink-0 text-right">
                             <span className="bg-[#29C454] text-white px-3 py-1.5 rounded-lg font-black text-[11px] shadow-md shadow-[#29C454]/20 inline-block">
                               +54 Pts
@@ -898,7 +1007,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Ejemplo 2: Equilibrado */}
                         <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
                           <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Duelo Equilibrado (K=60)</p>
@@ -911,7 +1019,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Ejemplo 3: Favorito */}
                         <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
                           <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Favorito (K=60)</p>
@@ -934,7 +1041,7 @@ export default function App() {
               {/* 4. REGLAS DE CANCHA (CONFIABILIDAD) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#E5B824]/10 rounded-full blur-3xl"></div>
-                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Confiabilidad</h3>
+                <h3 className="text-2xl font-black italic uppercase text-[#1A1C1E] mb-2 tracking-tighter">Tu Palabra Vale</h3>
                 <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">En Ventaja Adentro respetamos el tiempo de todos. Tienes 5 Pelotas de Confiabilidad, protégelas:</p>
                 
                 <div className="space-y-4 relative z-10 text-xs text-[#1A1C1E]">
@@ -945,7 +1052,7 @@ export default function App() {
                       <span className="text-[#29C454] text-xl leading-none drop-shadow-sm">🟢</span>
                       <div>
                         <p className="font-black uppercase tracking-wider text-[11px] mb-1">Cancelación Libre (24h+)</p>
-                        <p className="font-bold leading-relaxed opacity-70">Avisar con más de un día de anticipación no tiene penalización. El buscador tiene tiempo para buscar otro rival.</p>
+                        <p className="font-bold leading-relaxed opacity-70">Avisar con más de un día de anticipación no tiene penalización. El buscador tiene tiempo para otro rival.</p>
                       </div>
                     </div>
 
@@ -963,7 +1070,7 @@ export default function App() {
                       <span className="text-red-500 text-xl leading-none drop-shadow-sm">🔴</span>
                       <div>
                         <p className="font-black uppercase tracking-wider text-[11px] mb-1">Walkover / W.O. (-30 mins)</p>
-                        <p className="font-bold leading-relaxed opacity-70">Faltar a la cancha o cancelar a menos de 30 minutos es castigo máximo. <span className="text-[#F50514]">Tu ELO caerá (como si perdieras 6-0, 6-0) y tu Confiabilidad se desplomará (-1 pelota)</span>.</p>
+                        <p className="font-bold leading-relaxed opacity-70">Faltar a la cancha o cancelar a menos de 30 mins es castigo máximo. <span className="text-[#F50514]">Tu ELO caerá (como perder 6-0, 6-0) y tu Confiabilidad se desplomará (-1 pelota)</span>.</p>
                       </div>
                     </div>
 
@@ -1067,7 +1174,13 @@ export default function App() {
                 </div>
 
                 <div className="space-y-3 text-left w-full">
-                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Franja de Disponibilidad</label>
+                  <div className="ml-2">
+                    <label className="text-[15px] font-black text-[#] uppercase tracking-widest">Franja de Disponibilidad</label>
+                    {/* --- TEXTO DE AYUDA EN VERDE TENIS --- */}
+                    <p className="text-[11px] font-bold text-[#29C454]/80 mt-1 leading-snug">
+                      Abre tu rango lo más posible (ej. de 4:00 PM a 9:00 PM) para tener más oportunidades de hacer match. El sistema siempre separará un bloque exacto de 2 horas para tu partido.
+                    </p>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
                     <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
                     <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
@@ -1140,17 +1253,13 @@ export default function App() {
                     <h4 className="text-3xl font-black italic mb-4">6:00 PM - 8:00 PM</h4>
                     <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20 mb-4">
                             <div 
-                              className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-black italic uppercase shadow-inner"
-                              style={{ color: partido.rival.color || '#29C454' }}
+                              className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-black italic uppercase shadow-inner text-[#29C454]"
                             >
-                              {getInitials(partido.rival.nombre)}
+                              MC
                             </div>
                             <div>
                               <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
-                              {/* Nombre pintado con el color del rival (si tiene), si no, blanco */}
-                              <p className="font-black italic text-lg" style={{ color: partido.rival.color || '#FFFFFF' }}>
-                                {partido.rival.nombre}
-                              </p>
+                              <p className="font-black italic text-lg">Mateo C.</p>
                             </div>
                           </div>
                   </div>
@@ -1173,7 +1282,6 @@ export default function App() {
                           <p className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-1">
                             {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} • {partido.estado === 'wo' ? 'W.O.' : 'Terminó'}
                           </p>
-                          {/* Historial Compacto: Mostrar si Ganó o Perdió usando el ID */}
                           <p className="font-black italic text-sm">
                             {partido.estado === 'wo' 
                               ? 'W.O. vs ' 
@@ -1209,99 +1317,117 @@ export default function App() {
                             {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
                           </h4>
                           <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20 mb-4">
-                            <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic uppercase shadow-inner">
+                            <div 
+                              className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-black italic uppercase shadow-inner"
+                              style={{ color: partido.rival.color || '#29C454' }}
+                            >
                               {getInitials(partido.rival.nombre)}
                             </div>
                             <div>
                               <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
-                              {/* ELO OCULTO PARA MANTENER LA TENSIÓN (FUNCIÓN PREMIUM) */}
-                              <p className="font-black italic text-lg">{partido.rival.nombre}</p>
+                              <p className="font-black italic text-lg" style={{ color: partido.rival.color || '#FFFFFF' }}>
+                                {partido.rival.nombre}
+                              </p>
                             </div>
                           </div>
 
                           {/* ESTADOS DEL PARTIDO */}
                           {partido.estado === 'confirmado' && (
                             <>
-                              {obtenerEstadoTiempo(partido) === 'futuro' ? (
-                                <div className="text-center py-6 bg-[#FFFFFF] rounded-[1.8rem] shadow-xl relative overflow-hidden border border-[#1A1C1E]/5">
-                                  
-                                  {/* --- BOTÓN DE CANCELAR --- */}
-                                  <button 
-                                    onClick={() => handleCancelMatch(partido)}
-                                    className="absolute top-3 right-4 w-8 h-8 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20"
-                                    title="Cancelar Partido"
-                                  >
-                                    ✕
-                                  </button>
-                                  
-                                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#29C454] mb-3 relative z-10">
-                                    El partido inicia en
-                                  </p>
-                                  
-                                  <div className="mx-auto w-fit bg-[#F8F7F2] px-7 py-2.5 rounded-xl border border-[#1A1C1E]/10 relative z-10 shadow-inner">
-                                    <p className="text-3xl font-black italic tracking-[0.1em] font-mono text-[#1A1C1E]">
-                                      {getCountdown(partido)}
+                              {(() => {
+                                const [y, m, d] = partido.fecha.split('-');
+                                const [sh, sm] = partido.hora_inicio.split(':');
+                                const start = new Date(y, m - 1, d, sh, sm);
+                                const diffHrs = (start - currentTime) / (1000 * 60 * 60);
+
+                                return diffHrs > 0 ? (
+                                  <div className="text-center py-6 bg-[#FFFFFF] rounded-[1.8rem] shadow-xl relative overflow-hidden border border-[#1A1C1E]/5">
+                                    
+                                    {/* LÓGICA DE BOTONES: Mostrar Cancelar (X) o W.O. (Rojo) */}
+                                    {diffHrs > 0.5 ? (
+                                      <button 
+                                        onClick={() => handleCancelMatch(partido)}
+                                        className="absolute top-3 right-4 w-8 h-8 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20"
+                                        title="Cancelar Partido"
+                                      >
+                                        ✕
+                                      </button>
+                                    ) : (
+                                      <button 
+                                        onClick={() => handleSelfWO(partido)}
+                                        className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all z-20"
+                                        title="Declarar W.O."
+                                      >
+                                        Me Rindo (W.O.)
+                                      </button>
+                                    )}
+                                    
+                                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#29C454] mb-3 relative z-10">
+                                      El partido inicia en
                                     </p>
+                                    
+                                    <div className="mx-auto w-fit bg-[#F8F7F2] px-7 py-2.5 rounded-xl border border-[#1A1C1E]/10 relative z-10 shadow-inner">
+                                      <p className="text-3xl font-black italic tracking-[0.1em] font-mono text-[#1A1C1E]">
+                                        {getCountdown(partido)}
+                                      </p>
+                                    </div>
                                   </div>
-                                </div>
-                              ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
-                                <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
-                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-white">Partido en curso 🔥</p>
-                                  <p className="text-[9px] opacity-60 mt-1">El reporte se habilitará al terminar el tiempo.</p>
-                                </div>
-                              ) : reportingMatch === partido.id ? (
-                                <div className="mt-4 bg-black/20 p-5 rounded-3xl space-y-5 animate-in fade-in border border-black/10">
-                                  <p className="text-xs font-black uppercase tracking-widest text-center">Reportar Resultado</p>
-                                  
-                                  {/* --- FORMULARIO DE SETS --- */}
-                                  <div className="space-y-3">
-                                    <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest opacity-60">
-                                      <span className="w-1/3 text-center">Mi Score</span>
-                                      <span className="w-1/3 text-center">Set</span>
-                                      <span className="w-1/3 text-center">Su Score</span>
-                                    </div>
+                                ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
+                                  <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-white">Partido en curso 🔥</p>
+                                    <p className="text-[9px] opacity-60 mt-1">El reporte se habilitará al terminar el tiempo.</p>
+                                  </div>
+                                ) : reportingMatch === partido.id ? (
+                                  <div className="mt-4 bg-black/20 p-5 rounded-3xl space-y-5 animate-in fade-in border border-black/10">
+                                    <p className="text-xs font-black uppercase tracking-widest text-center">Reportar Resultado</p>
                                     
-                                    {/* Set 1 */}
-                                    <div className="flex gap-2 items-center">
-                                      <input type="number" min="0" max="7" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                      <span className="w-1/3 text-center font-black text-xs opacity-50">1</span>
-                                      <input type="number" min="0" max="7" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                    </div>
-                                    
-                                    {/* Set 2 */}
-                                    <div className="flex gap-2 items-center">
-                                      <input type="number" min="0" max="7" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                      <span className="w-1/3 text-center font-black text-xs opacity-50">2</span>
-                                      <input type="number" min="0" max="7" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                    {/* --- FORMULARIO DE SETS --- */}
+                                    <div className="space-y-3">
+                                      <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest opacity-60">
+                                        <span className="w-1/3 text-center">Mi Score</span>
+                                        <span className="w-1/3 text-center">Set</span>
+                                        <span className="w-1/3 text-center">Su Score</span>
+                                      </div>
+                                      
+                                      <div className="flex gap-2 items-center">
+                                        <input type="number" min="0" max="7" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                        <span className="w-1/3 text-center font-black text-xs opacity-50">1</span>
+                                        <input type="number" min="0" max="7" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                      </div>
+                                      
+                                      <div className="flex gap-2 items-center">
+                                        <input type="number" min="0" max="7" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                        <span className="w-1/3 text-center font-black text-xs opacity-50">2</span>
+                                        <input type="number" min="0" max="7" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                      </div>
+
+                                      <div className="flex gap-2 items-center opacity-70 focus-within:opacity-100 transition-opacity">
+                                        <input type="number" min="0" max="7" placeholder="-" value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                        <span className="w-1/3 text-center font-black text-[9px] opacity-50">3 (Opc)</span>
+                                        <input type="number" min="0" max="7" placeholder="-" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                      </div>
                                     </div>
 
-                                    {/* Set 3 (Opcional) */}
-                                    <div className="flex gap-2 items-center opacity-70 focus-within:opacity-100 transition-opacity">
-                                      <input type="number" min="0" max="7" placeholder="-" value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
-                                      <span className="w-1/3 text-center font-black text-[9px] opacity-50">3 (Opc)</span>
-                                      <input type="number" min="0" max="7" placeholder="-" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                    <div className="flex gap-3 pt-2">
+                                      <button onClick={() => setReportingMatch(null)} className="flex-1 bg-black/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white hover:bg-black/20 transition-colors">Cancelar</button>
+                                      <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg hover:scale-95 transition-all">Enviar Final</button>
+                                    </div>
+                                    
+                                    <div className="pt-4 border-t border-white/10">
+                                      <button 
+                                        onClick={() => handleWO(partido)} 
+                                        className="w-full border-2 border-red-500/40 bg-red-500/10 text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
+                                      >
+                                        🚨 El rival no se presentó (W.O.)
+                                      </button>
                                     </div>
                                   </div>
-
-                                  <div className="flex gap-3 pt-2">
-                                    <button onClick={() => setReportingMatch(null)} className="flex-1 bg-black/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white hover:bg-black/20 transition-colors">Cancelar</button>
-                                    <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg hover:scale-95 transition-all">Enviar Final</button>
-                                  </div>
-                                  
-                                  <div className="pt-4 border-t border-white/10">
-                                    <button 
-                                      onClick={() => handleWO(partido)} 
-                                      className="w-full border-2 border-red-500/40 bg-red-500/10 text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
-                                    >
-                                      🚨 El rival no se presentó (W.O.)
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg active:scale-95 transition-all">
-                                  Reportar Resultado ➜
-                                </button>
-                              )}
+                                ) : (
+                                  <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg active:scale-95 transition-all">
+                                    Reportar Resultado ➜
+                                  </button>
+                                );
+                              })()}
                             </>
                           )}
 
@@ -1353,7 +1479,7 @@ export default function App() {
             
             <div className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
               
-              {/* Etiqueta de Nivel / Fuerza (AHORA GIGANTE) */}
+              {/* Etiqueta de Nivel / Fuerza */}
               <div 
                 className="absolute top-0 left-0 w-full py-4 shadow-md transition-colors duration-300"
                 style={{ backgroundColor: (isLoggedIn && currentUser?.color) ? currentUser.color : '#29C454' }}
@@ -1375,11 +1501,11 @@ export default function App() {
                   {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
                 </div>
                 
-                {/* Botón de Editar Color */}
+                {/* Botón de Editar Color (MÁS PEQUEÑO) */}
                 {isLoggedIn && (
                   <button 
                     onClick={() => setShowColorPicker(!showColorPicker)} 
-                    className="absolute bottom-0 right-0 bg-white p-0.5 rounded-full shadow-lg border border-[#1A1C1E]/10 text- hover:scale-110 transition-transform active:scale-95"
+                    className="absolute bottom-0 right-0 bg-white p-1.5 rounded-full shadow-md border border-[#1A1C1E]/10 text-sm hover:scale-110 transition-transform active:scale-95"
                     title="Cambiar Color"
                   >
                     🎨
@@ -1387,7 +1513,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Paleta de Colores (Se muestra al hacer clic en el 🎨) */}
+              {/* Paleta de Colores */}
               {showColorPicker && (
                 <div className="flex gap-3 mb-6 p-3 bg-[#F8F7F2] rounded-2xl shadow-inner border border-[#1A1C1E]/10 animate-in fade-in slide-in-from-top-2">
                   {['#29C454', '#007AFF', '#FF3B30', '#AF52DE', '#FF9500', '#1A1C1E'].map(colorHex => (
@@ -1408,12 +1534,19 @@ export default function App() {
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
               <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-xs mb-6 uppercase mt-1">
-                {isLoggedIn && currentUser ? '' : 'Regístrate para jugar'}
+                {isLoggedIn && currentUser ? 'Circuito Activo' : 'Regístrate para jugar'}
               </p>
               
-              {/* Confianza */}
+              {/* Confianza y Comodines */}
               <div className="bg-[#F8F7F2] w-full rounded-2xl p-4 border border-[#1A1C1E]/5 mb-6">
-                <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-2">Confiabilidad</p>
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest">Confiabilidad</p>
+                  {isLoggedIn && currentUser && (
+                    <span className="text-[9px] font-black text-[#E5B824] uppercase tracking-widest bg-[#E5B824]/10 px-2 py-0.5 rounded-md">
+                      Comodines: {currentUser.comodines !== undefined ? currentUser.comodines : 2}
+                    </span>
+                  )}
+                </div>
                 {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
               </div>
 
