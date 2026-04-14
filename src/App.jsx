@@ -374,6 +374,10 @@ export default function App() {
     const miNuevoElo = calculateElo(miPerfil.elo, rivalDB.elo, "0-6, 0-6", false);
     const rivalNuevoElo = calculateElo(rivalDB.elo, miPerfil.elo, "6-0, 6-0", true);
     
+    // --- CÁLCULO DE PUNTOS PERDIDOS/GANADOS ---
+    const deltaMi = miNuevoElo - miPerfil.elo;
+    const deltaRival = rivalNuevoElo - rivalDB.elo;
+
     const miConfianzaCastigada = Math.max(0, Number(miPerfil.confianza) - 1.0);
 
     // Actualizo mi perfil (pierdo ELO, pierdo 1 bola, pierdo racha)
@@ -386,10 +390,21 @@ export default function App() {
     // Actualizo rival (gana ELO)
     await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
 
-    // Marco el partido como W.O. ganado por el rival
-    await supabase.from('partidos').update({ estado: 'wo', ganador_id: rivalDB.id, marcador: "W.O." }).eq('id', partido.id);
+    // --- GUARDAMOS LOS PUNTOS EN EL PARTIDO ---
+    const dataUpdate = { estado: 'wo', ganador_id: rivalDB.id, marcador: "W.O." };
+    if (partido.jugador1_id === miPerfil.id) {
+      dataUpdate.puntos_j1 = deltaMi;
+      dataUpdate.puntos_j2 = deltaRival;
+    } else {
+      dataUpdate.puntos_j1 = deltaRival;
+      dataUpdate.puntos_j2 = deltaMi;
+    }
 
-    alert(`W.O. Procesado. Tu nuevo ELO es ${miNuevoElo} y perdiste Confiabilidad.`);
+    // Marco el partido como W.O. ganado por el rival con los puntos grabados
+    await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
+
+    // Alerta actualizada para mostrar cuántos puntos perdiste
+    alert(`W.O. Procesado. Tu nuevo ELO es ${miNuevoElo} (${deltaMi} pts) y perdiste Confiabilidad.`);
   };
 
   const handleSelfWO = async (partido) => {
@@ -573,78 +588,79 @@ export default function App() {
   const handleConfirmReport = async (partido) => {
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
-      
       const yoGane = partido.ganador_id === currentUser.id;
       
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, partido.marcador, yoGane);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, partido.marcador, !yoGane);
 
+      // --- CÁLCULO DE PUNTOS GANADOS/PERDIDOS ---
+      const deltaMi = miNuevoElo - currentUser.elo;
+      const deltaRival = rivalNuevoElo - rivalDB.elo;
+
       const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
       const rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
 
-      const { data: miPerfilActualizado } = await supabase.from('Perfiles')
-        .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
-        .eq('id', currentUser.id)
-        .select().single();
-      
-      await supabase.from('Perfiles')
-        .update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha })
-        .eq('id', rivalDB.id);
-
-      await supabase.from('partidos').update({ estado: 'finalizado' }).eq('id', partido.id);
-
-      const perfilSeguro = miPerfilActualizado || { 
-        ...currentUser, 
+      await supabase.from('Perfiles').update({ 
         elo: miNuevoElo, 
         confianza: misNuevosDatos.nuevaConfianza, 
         racha_asistencia: misNuevosDatos.nuevaRacha 
-      };
+      }).eq('id', currentUser.id);
+      
+      await supabase.from('Perfiles').update({ 
+        elo: rivalNuevoElo, 
+        confianza: rivalNuevosDatos.nuevaConfianza, 
+        racha_asistencia: rivalNuevosDatos.nuevaRacha 
+      }).eq('id', rivalDB.id);
 
+      // GUARDAMOS LOS PUNTOS EN EL PARTIDO (Sabiendo quién es J1 y quién es J2)
+      const dataUpdate = { estado: 'finalizado' };
+      if (partido.jugador1_id === currentUser.id) {
+        dataUpdate.puntos_j1 = deltaMi;
+        dataUpdate.puntos_j2 = deltaRival;
+      } else {
+        dataUpdate.puntos_j1 = deltaRival;
+        dataUpdate.puntos_j2 = deltaMi;
+      }
+
+      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
+
+      const perfilSeguro = { ...currentUser, elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha };
       setCurrentUser(perfilSeguro);
       localStorage.setItem('vad_session', JSON.stringify(perfilSeguro));
       
       fetchPartidos();
-      alert(`¡Partido finalizado!\nTu nuevo ELO es: ${miNuevoElo}`);
-
+      alert(`¡Partido finalizado!\nSumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts`);
     } catch (error) {
       console.error(error);
-      alert('Error al confirmar el partido.');
     }
   };
 
   // Esto es para reportar que el OTRO no llegó
-  const handleWO = async (partido) => {
-    const confirmar = window.confirm("¿Estás seguro de reportar que tu rival no se presentó? Esto penalizará fuertemente su ELO y Confianza.");
+ const handleWO = async (partido) => {
+    const confirmar = window.confirm("¿Estás seguro de reportar W.O.? penalizará fuertemente al rival.");
     if (!confirmar) return;
 
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
-      
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, "6-0, 6-0", true);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, "6-0, 6-0", false);
 
-      const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
-      const rivalConfianzaCastigada = Math.max(0, Number(rivalDB.confianza) - 1.0); 
+      const deltaMi = miNuevoElo - currentUser.elo;
+      const deltaRival = rivalNuevoElo - rivalDB.elo;
 
-      await supabase.from('Perfiles')
-        .update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha })
-        .eq('id', currentUser.id);
-      
-      await supabase.from('Perfiles')
-        .update({ elo: rivalNuevoElo, confianza: rivalConfianzaCastigada, racha_asistencia: 0 })
-        .eq('id', rivalDB.id);
+      await supabase.from('Perfiles').update({ elo: miNuevoElo }).eq('id', currentUser.id);
+      await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
 
-      await supabase.from('partidos').update({ estado: 'wo', ganador_id: currentUser.id }).eq('id', partido.id);
+      const dataUpdate = { estado: 'wo', ganador_id: currentUser.id };
+      if (partido.jugador1_id === currentUser.id) {
+        dataUpdate.puntos_j1 = deltaMi; dataUpdate.puntos_j2 = deltaRival;
+      } else {
+        dataUpdate.puntos_j1 = deltaRival; dataUpdate.puntos_j2 = deltaMi;
+      }
 
-      const { data: miPerfilFresquito } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
-      setCurrentUser(miPerfilFresquito);
-      localStorage.setItem('vad_session', JSON.stringify(miPerfilFresquito));
-      
+      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
       fetchPartidos();
-      alert('Reporte por W.O. procesado. El sistema ha ajustado las puntuaciones.');
-    } catch (error) {
-      console.error(error);
-    }
+    } catch (error) { console.error(error); }
   };
 
 
@@ -928,7 +944,7 @@ export default function App() {
                 <ul className="space-y-4 relative z-10 text-xs font-bold text-[#1A1C1E]/80">
                   <li className="flex gap-3">
                     <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda con al menos 3 horas de anticipacion.</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda desde 2 horas de anticipacion.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
@@ -1041,7 +1057,7 @@ export default function App() {
               {/* 4. REGLAS DE CANCHA (CONFIABILIDAD) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#E5B824]/10 rounded-full blur-3xl"></div>
-                <h3 className="text-2xl font-black italic uppercase text-[#1A1C1E] mb-2 tracking-tighter">Tu Palabra Vale</h3>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Confiabilidad</h3>
                 <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">En Ventaja Adentro respetamos el tiempo de todos. Tienes 5 Pelotas de Confiabilidad, protégelas:</p>
                 
                 <div className="space-y-4 relative z-10 text-xs text-[#1A1C1E]">
@@ -1289,6 +1305,18 @@ export default function App() {
                                 ? '🏆 W vs ' 
                                 : '❌ L vs '} 
                             {partido.rival.nombre}
+                            
+                            {/* --- MOSTRAR PUNTOS --- */}
+                            {((partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) !== undefined) && (
+                              <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-md font-black ${
+                                (partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 
+                                ? 'bg-white/20 text-white' 
+                                : 'bg-black/20 text-white'
+                              }`}>
+                                {(partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 ? '+' : ''}
+                                {partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2}
+                              </span>
+                            )}
                           </p>
                         </div>
                         <div className="text-right bg-white/10 px-3 py-2 rounded-xl border border-white/20">
