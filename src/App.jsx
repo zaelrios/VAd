@@ -242,6 +242,10 @@ export default function App() {
 
   useEffect(() => {
     fetchPartidos();
+    // --- NUEVO: Descargar buzón en silencio si eres admin ---
+    if (currentUser && ADMIN_IDS.includes(currentUser.id)) {
+      cargarSugerenciasAdmin();
+    }
   }, [currentUser, tab]);
 
   // --- ESCUCHA EN TIEMPO REAL (NOTIFICACIONES MÁGICAS) ---
@@ -255,6 +259,12 @@ export default function App() {
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, (payload) => {
         fetchPartidos(); 
+      })
+      // --- NUEVO: Escuchar el buzón en tiempo real ---
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sugerencias' }, (payload) => {
+        if (ADMIN_IDS.includes(currentUser.id)) {
+          cargarSugerenciasAdmin(); // Actualiza el globito de notificaciones al instante
+        }
       })
       .subscribe();
 
@@ -1703,47 +1713,56 @@ export default function App() {
             </div>
             
             <div className="space-y-4">
-              {listaSugerencias.map((sug) => (
-                <div key={sug.id} className={`bg-white border ${sug.estado === 'nueva' ? 'border-[#29C454]' : 'border-[#1A1C1E]/10'} p-5 rounded-[2rem] shadow-sm relative transition-all`}>
-                  
-                  {/* Badge de Estado */}
-                  <div className="flex justify-between items-start mb-3">
-                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
-                      sug.estado === 'nueva' ? 'bg-[#29C454] text-white' : 'bg-[#F8F7F2] text-[#1A1C1E]/40'
-                    }`}>
-                      {sug.estado}
-                    </span>
-                    <span className="text-[8px] font-bold opacity-30">{new Date(sug.created_at).toLocaleDateString()}</span>
-                  </div>
-
-                  <p className="font-black text-[11px] uppercase text-[#1A1C1E] mb-1">{sug.nombre}</p>
-                  <p className="text-sm font-bold text-[#1A1C1E]/70 leading-relaxed mb-5">{sug.comentario}</p>
-
-                  {/* ACCIONES */}
-                  <div className="flex gap-2 border-t border-[#1A1C1E]/5 pt-4">
-                    {sug.estado !== 'leida' && (
-                      <button 
-                        onClick={() => actualizarEstadoSugerencia(sug.id, 'leida')}
-                        className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-[#29C454]/10 hover:text-[#29C454] transition-colors"
-                      >
-                        ✓ Leída
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => actualizarEstadoSugerencia(sug.id, 'en proceso')}
-                      className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-blue-50 hover:text-blue-500 transition-colors"
-                    >
-                      ⚙️ Proceso
-                    </button>
-                    <button 
-                      onClick={() => actualizarEstadoSugerencia(sug.id, 'archivada')}
-                      className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-red-50 hover:text-red-500 transition-colors"
-                    >
-                      📁 Archivar
-                    </button>
-                  </div>
+              {/* Filtramos las que dicen 'archivada' para que desaparezcan de la pantalla */}
+              {listaSugerencias.filter(sug => sug.estado !== 'archivada').length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-[2rem] border border-[#1A1C1E]/10 shadow-sm">
+                  <p className="text-4xl mb-3">🍃</p>
+                  <p className="text-sm font-black text-[#1A1C1E] uppercase">Buzón Limpio</p>
+                  <p className="text-[10px] font-bold opacity-50 mt-1">Has atendido todos los mensajes.</p>
                 </div>
-              ))}
+              ) : (
+                listaSugerencias.filter(sug => sug.estado !== 'archivada').map((sug) => (
+                  <div key={sug.id} className={`bg-white border ${sug.estado === 'nueva' ? 'border-[#29C454]' : 'border-[#1A1C1E]/10'} p-5 rounded-[2rem] shadow-sm relative transition-all`}>
+                    
+                    {/* Badge de Estado */}
+                    <div className="flex justify-between items-start mb-3">
+                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
+                        sug.estado === 'nueva' ? 'bg-[#29C454] text-white' : 'bg-[#F8F7F2] text-[#1A1C1E]/40'
+                      }`}>
+                        {sug.estado}
+                      </span>
+                      <span className="text-[8px] font-bold opacity-30">{new Date(sug.created_at).toLocaleDateString()}</span>
+                    </div>
+
+                    <p className="font-black text-[11px] uppercase text-[#1A1C1E] mb-1">{sug.nombre}</p>
+                    <p className="text-sm font-bold text-[#1A1C1E]/70 leading-relaxed mb-5">{sug.comentario}</p>
+
+                    {/* ACCIONES */}
+                    <div className="flex gap-2 border-t border-[#1A1C1E]/5 pt-4">
+                      {sug.estado !== 'leida' && (
+                        <button 
+                          onClick={() => actualizarEstadoSugerencia(sug.id, 'leida')}
+                          className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-[#29C454]/10 hover:text-[#29C454] transition-colors"
+                        >
+                          ✓ Leída
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => actualizarEstadoSugerencia(sug.id, 'en proceso')}
+                        className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-blue-50 hover:text-blue-500 transition-colors"
+                      >
+                        ⚙️ Proceso
+                      </button>
+                      <button 
+                        onClick={() => actualizarEstadoSugerencia(sug.id, 'archivada')}
+                        className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-red-50 hover:text-red-500 transition-colors"
+                      >
+                        📁 Archivar
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
