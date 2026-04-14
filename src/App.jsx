@@ -1251,17 +1251,17 @@ export default function App() {
         {tab === 'jugar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center pb-20">
             
-            {/* INTERRUPTOR (TOGGLE) */}
+            {/* INTERRUPTOR (TOGGLE) CON COLORES DINÁMICOS */}
             <div className="bg-[#FFFFFF] p-1.5 rounded-2xl border border-[#1A1C1E]/10 shadow-sm flex w-full relative z-20">
               <button 
                 onClick={() => setModoCancha('match')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${modoCancha === 'match' ? 'bg-[#1A1C1E] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]'}`}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:bg-[#F8F7F2]'}`}
               >
                 🏆 Match (Puntos)
               </button>
               <button 
                 onClick={() => setModoCancha('libre')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${modoCancha === 'libre' ? 'bg-[#29C454] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]'}`}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:bg-[#F8F7F2]'}`}
               >
                 🎾 Reserva Libre
               </button>
@@ -1272,10 +1272,11 @@ export default function App() {
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 
                 <div className="text-center mb-2">
-                  <h2 className="text-2xl font-black italic uppercase text-[#1A1C1E]">
-                    {modoCancha === 'match' ? 'Buscar Rival' : 'Cancha Privada'}
+                  {/* TÍTULO DINÁMICO (Verde o Azul) */}
+                  <h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>
+                    {modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}
                   </h2>
-                  <p className="text-[10px] font-bold text-[#1A1C1E]/50">
+                  <p className="text-[10px] font-bold text-[#1A1C1E]/50 mt-1">
                     {modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}
                   </p>
                 </div>
@@ -1295,25 +1296,30 @@ export default function App() {
 
                 <div className="space-y-3 text-left w-full">
                   <div className="ml-2">
-                    <label className="text-[10px] font-black text-[#29C454] uppercase tracking-widest">Franja Horaria</label>
+                    {/* ETIQUETA DINÁMICA */}
+                    <label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>
+                      Franja Horaria
+                    </label>
                     {modoCancha === 'match' && (
-                      <p className="text-[9px] font-bold text-[#29C454]/80 mt-1 leading-snug">
+                      <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">
                         Abre tu rango lo más posible para hacer match. El sistema separará un bloque exacto de 2 horas.
                       </p>
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    <input type="time" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => modoCancha === 'match' ? setStartTime(e.target.value) : setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
-                    <input type="time" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
+                    {/* INPUTS QUE BRILLAN VERDE O AZUL AL TOCARLOS */}
+                    <input type="time" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => modoCancha === 'match' ? setStartTime(e.target.value) : setBookStart(e.target.value)} required className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
+                    <input type="time" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} required className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
                   </div>
                 </div>
                 {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
 
               <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all ${modoCancha === 'match' ? 'bg-[#1A1C1E]' : 'bg-[#29C454]'}`}>
+                {/* BOTÓN PRINCIPAL DINÁMICO */}
+                <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>
                   {modoCancha === 'match' ? (
-                    <><span className="text-[#29C454] animate-pulse">●</span> Buscar rival</>
+                    <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</>
                   ) : (
                     'Pagar Reserva ➜'
                   )}
@@ -1325,7 +1331,6 @@ export default function App() {
             {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
               <div className="pt-4 space-y-4 animate-in fade-in w-full">
                 <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Radar Activo</h3>
-                {/* ... (Aquí va tu código map de activeSearches que ya tenías) ... */}
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
                     <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
@@ -1337,7 +1342,7 @@ export default function App() {
                         </p>
                         <p className="text-sm font-black text-[#1A1C1E] mt-1">{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
                       </div>
-                      <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full hover:bg-red-50 hover:text-red-500">✕</button>
+                      <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">✕</button>
                     </div>
                   ))}
                 </div>
