@@ -1106,11 +1106,36 @@ export default function App() {
                     className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold text-sm focus:outline-none focus:border-[#29C454] resize-none h-28 shadow-inner"
                   />
                   <button 
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.preventDefault();
                       if(!comentario.trim()) return;
-                      alert('¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario.');
-                      setComentario('');
+
+                      // Cambiamos el texto temporalmente para mostrar que está cargando
+                      const btn = e.currentTarget;
+                      const textoOriginal = btn.innerText;
+                      btn.innerText = 'Enviando...';
+
+                      try {
+                        const { error } = await supabase
+                          .from('sugerencias')
+                          .insert([{ 
+                            // Si está logueado mandamos sus datos, si no, va como anónimo
+                            jugador_id: isLoggedIn && currentUser ? currentUser.id : null,
+                            nombre: isLoggedIn && currentUser ? currentUser.nombre : 'Anónimo',
+                            comentario: comentario.trim(),
+                            estado: 'nueva'
+                          }]);
+
+                        if (error) throw error;
+
+                        alert('¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto.');
+                        setComentario('');
+                      } catch (error) {
+                        console.error("Error al enviar sugerencia:", error);
+                        alert('Hubo un error al enviar el mensaje. Intenta de nuevo.');
+                      } finally {
+                        btn.innerText = textoOriginal;
+                      }
                     }}
                     className="w-full bg-[#29C454] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-105"
                   >
