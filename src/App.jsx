@@ -62,6 +62,14 @@ export default function App() {
   const [marcador, setMarcador] = useState('');
   const [ganadorId, setGanadorId] = useState('');
 
+  // ESTADOS DEL FORMULARIO DE REPORTE (NUEVO)
+  const [s1Mi, setS1Mi] = useState('');
+  const [s1Rival, setS1Rival] = useState('');
+  const [s2Mi, setS2Mi] = useState('');
+  const [s2Rival, setS2Rival] = useState('');
+  const [s3Mi, setS3Mi] = useState('');
+  const [s3Rival, setS3Rival] = useState('');
+
   const [bookDate, setBookDate] = useState(initData.date);
   const [bookStart, setBookStart] = useState(initData.start);
   const [bookEnd, setBookEnd] = useState(initData.end);
@@ -302,16 +310,27 @@ export default function App() {
 
   // --- FLUJO DE REPORTE (JUEZ DE SILLA) ---
   const handleSubmitReport = async (partido) => {
-    if (!marcador.trim() || !ganadorId) {
-      alert('Ingresa el marcador y selecciona al ganador.');
+    if (!ganadorId) {
+      alert('Selecciona al ganador del partido.');
       return;
     }
+    if (!s1Mi || !s1Rival || !s2Mi || !s2Rival) {
+      alert('Debes ingresar al menos los resultados de los 2 primeros sets.');
+      return;
+    }
+
+    // Armamos el texto perfecto para la base de datos
+    let marcadorFinal = `${s1Mi}-${s1Rival}, ${s2Mi}-${s2Rival}`;
+    if (s3Mi && s3Rival) {
+      marcadorFinal += `, ${s3Mi}-${s3Rival}`;
+    }
+
     try {
       const { error } = await supabase
         .from('partidos')
         .update({ 
           estado: 'en_revision', 
-          marcador: marcador, 
+          marcador: marcadorFinal, 
           ganador_id: ganadorId, 
           reportado_por: currentUser.id 
         })
@@ -319,8 +338,9 @@ export default function App() {
 
       if (error) throw error;
       setReportingMatch(null);
-      setMarcador('');
       setGanadorId('');
+      // Limpiamos el formulario
+      setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
       fetchPartidos(); 
       alert('Reporte enviado. Esperando confirmación del rival.');
     } catch (error) {
@@ -1025,7 +1045,15 @@ export default function App() {
                           <p className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-1">
                             {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} • {partido.estado === 'wo' ? 'W.O.' : 'Terminó'}
                           </p>
-                          <p className="font-black italic text-sm">vs {partido.rival.nombre}</p>
+                          {/* Historial Compacto: Mostrar si Ganó o Perdió */}
+                          <p className="font-black italic text-sm">
+                            {partido.estado === 'wo' 
+                              ? 'W.O. vs ' 
+                              : partido.ganador_id === currentUser.id 
+                                ? '🏆 W vs ' 
+                                : '❌ L vs '} 
+                            {partido.rival.nombre}
+                          </p>
                         </div>
                         <div className="text-right bg-white/10 px-3 py-2 rounded-xl border border-white/20">
                           <p className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Marcador</p>
@@ -1093,24 +1121,58 @@ export default function App() {
                                   <p className="text-[9px] opacity-60 mt-1">El reporte se habilitará al terminar el tiempo.</p>
                                 </div>
                               ) : reportingMatch === partido.id ? (
-                                <div className="mt-4 bg-white/20 p-4 rounded-xl space-y-3 animate-in fade-in">
-                                  <p className="text-xs font-bold uppercase tracking-widest">Reportar Resultado</p>
-                                  <input type="text" placeholder="Ej: 6-4, 6-3" value={marcador} onChange={(e) => setMarcador(e.target.value)} className="w-full bg-[#FFFFFF] border-none rounded-xl px-4 py-3 text-[#1A1C1E] font-bold focus:outline-none" />
-                                  <select value={ganadorId} onChange={(e) => setGanadorId(e.target.value)} className="w-full bg-[#FFFFFF] border-none rounded-xl px-4 py-3 text-[#1A1C1E] font-bold focus:outline-none appearance-none">
-                                    <option value="">¿Quién ganó?</option>
-                                    <option value={currentUser.id}>🏆 Yo gané</option>
+                                <div className="mt-4 bg-black/20 p-5 rounded-3xl space-y-5 animate-in fade-in border border-black/10">
+                                  <p className="text-xs font-black uppercase tracking-widest text-center">Reportar Resultado</p>
+                                  
+                                  {/* --- FORMULARIO DE SETS --- */}
+                                  <div className="space-y-3">
+                                    <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest opacity-60">
+                                      <span className="w-1/3 text-center">Mi Score</span>
+                                      <span className="w-1/3 text-center">Set</span>
+                                      <span className="w-1/3 text-center">Su Score</span>
+                                    </div>
+                                    
+                                    {/* Set 1 */}
+                                    <div className="flex gap-2 items-center">
+                                      <input type="number" min="0" max="7" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                      <span className="w-1/3 text-center font-black text-xs opacity-50">1</span>
+                                      <input type="number" min="0" max="7" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                    </div>
+                                    
+                                    {/* Set 2 */}
+                                    <div className="flex gap-2 items-center">
+                                      <input type="number" min="0" max="7" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                      <span className="w-1/3 text-center font-black text-xs opacity-50">2</span>
+                                      <input type="number" min="0" max="7" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
+                                    </div>
+
+                                    {/* Set 3 (Opcional) */}
+                                    <div className="flex gap-2 items-center opacity-70 focus-within:opacity-100 transition-opacity">
+                                      <input type="number" min="0" max="7" placeholder="-" value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                      <span className="w-1/3 text-center font-black text-[9px] opacity-50">3 (Opc)</span>
+                                      <input type="number" min="0" max="7" placeholder="-" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                    </div>
+                                  </div>
+
+                                  <select value={ganadorId} onChange={(e) => setGanadorId(e.target.value)} className="w-full bg-white border-none rounded-xl px-4 py-4 text-[#1A1C1E] font-black text-sm focus:outline-none appearance-none text-center shadow-md">
+                                    <option value="">¿Quién ganó el partido?</option>
+                                    <option value={currentUser.id}>🏆 Yo gané el partido</option>
                                     <option value={partido.rival.id}>🏆 {partido.rival.nombre} ganó</option>
                                   </select>
-                                  <div className="flex gap-2 pt-2">
-                                    <button onClick={() => setReportingMatch(null)} className="flex-1 bg-white/20 py-3 rounded-xl font-bold text-xs uppercase tracking-widest">Cancelar</button>
-                                    <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-3 rounded-xl font-bold text-xs uppercase tracking-widest">Enviar</button>
+
+                                  <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setReportingMatch(null)} className="flex-1 bg-black/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white hover:bg-black/20 transition-colors">Cancelar</button>
+                                    <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg hover:scale-95 transition-all">Enviar Final</button>
                                   </div>
-                                  <button 
-                                    onClick={() => handleWO(partido)} 
-                                    className="w-full mt-4 border-2 border-red-500/40 bg-red-500/10 text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
-                                  >
-                                    🚨 El rival no se presentó (W.O.)
-                                  </button>
+                                  
+                                  <div className="pt-4 border-t border-white/10">
+                                    <button 
+                                      onClick={() => handleWO(partido)} 
+                                      className="w-full border-2 border-red-500/40 bg-red-500/10 text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
+                                    >
+                                      🚨 El rival no se presentó (W.O.)
+                                    </button>
+                                  </div>
                                 </div>
                               ) : (
                                 <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg active:scale-95 transition-all">
@@ -1128,10 +1190,17 @@ export default function App() {
                           )}
 
                           {partido.estado === 'en_revision' && partido.reportado_por !== currentUser.id && (
-                            <div className="bg-white/20 p-4 rounded-xl text-center border border-white/30">
-                              <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-2">🚨 Acción Requerida</p>
-                              <p className="text-sm font-black mb-4">El rival reportó: "{partido.marcador}"</p>
-                              <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#1A1C1E] text-white py-3 rounded-xl font-black uppercase tracking-widest text-xs mb-2 shadow-lg active:scale-95 transition-all">
+                            <div className="bg-black/20 p-5 rounded-2xl text-center border border-black/10 shadow-inner">
+                              <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-3">🚨 Acción Requerida</p>
+                              <div className="bg-white/10 p-4 rounded-xl mb-5 border border-white/10">
+                                <p className="text-xs font-black mb-2 leading-snug">
+                                  {partido.ganador_id === currentUser.id 
+                                    ? `🏆 El rival reportó que TÚ ganaste:` 
+                                    : `🏆 El rival reportó que ÉL ganó:`}
+                                </p>
+                                <p className="text-2xl font-black italic tracking-widest font-mono text-white drop-shadow-md">{partido.marcador}</p>
+                              </div>
+                              <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs mb-3 shadow-xl active:scale-95 transition-all">
                                 ✅ Aceptar Resultado
                               </button>
                               <p className="text-[9px] opacity-60">Al aceptar, se ajustará el ELO de ambos.</p>
