@@ -56,6 +56,9 @@ export default function App() {
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
 
+  // ESTADO PARA EL INTERRUPTOR DE LA NUEVA PESTAÑA UNIFICADA
+  const [modoCancha, setModoCancha] = useState('match'); // 'match' o 'libre'
+
   // ESTADOS PARA LOS PARTIDOS Y REPORTES
   const [misPartidos, setMisPartidos] = useState([]);
   const [reportingMatch, setReportingMatch] = useState(null);
@@ -851,7 +854,7 @@ export default function App() {
         ? partidosOcupados.filter(p => p.superficie === superficie).map(p => p.cancha_numero)
         : [];
 
-      const inventario = { 'Sacate': [1], 'Arcilla': [2], 'Dura': [3, 4] };
+      const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
       const canchaDisponible = inventario[superficie].find(n => !canchasOcupadasEnSuperficie.includes(n));
 
       if (!canchaDisponible) {
@@ -1244,51 +1247,85 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: BUSCAR RIVAL */}
-        {tab === 'buscar' && (
-          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
-            <form onSubmit={handleSearchSubmit} className="w-full">
+        {/* VISTA UNIFICADA: JUGAR (MATCH O RESERVA) */}
+        {tab === 'jugar' && (
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center pb-20">
+            
+            {/* INTERRUPTOR (TOGGLE) */}
+            <div className="bg-[#FFFFFF] p-1.5 rounded-2xl border border-[#1A1C1E]/10 shadow-sm flex w-full relative z-20">
+              <button 
+                onClick={() => setModoCancha('match')}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${modoCancha === 'match' ? 'bg-[#1A1C1E] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]'}`}
+              >
+                🏆 Match (Puntos)
+              </button>
+              <button 
+                onClick={() => setModoCancha('libre')}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${modoCancha === 'libre' ? 'bg-[#29C454] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]'}`}
+              >
+                🎾 Reserva Libre
+              </button>
+            </div>
+
+            {/* FORMULARIO DINÁMICO */}
+            <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 
+                <div className="text-center mb-2">
+                  <h2 className="text-2xl font-black italic uppercase text-[#1A1C1E]">
+                    {modoCancha === 'match' ? 'Buscar Rival' : 'Cancha Privada'}
+                  </h2>
+                  <p className="text-[10px] font-bold text-[#1A1C1E]/50">
+                    {modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}
+                  </p>
+                </div>
+
                 <div className="space-y-3 text-left w-full">
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
-                  <input type="date" min={initData.date} value={searchDate} onChange={(e) => setSearchDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                  <input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
                 </div>
                 
                 <div className="space-y-3 text-left w-full">
-                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Superficie Preferida</label>
+                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Superficie</label>
                   <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none">
-                    <option value="Dura">Cancha Dura</option>
-                    <option value="Arcilla">Arcilla</option>
-                    <option value="Sacate">Césped</option>
+                    <option value="Dura">Cancha Dura (1 al 8)</option>
+                    <option value="Sacate">Césped (9 y 10)</option>
                   </select>
                 </div>
 
                 <div className="space-y-3 text-left w-full">
                   <div className="ml-2">
-                    <label className="text-[15px] font-black text-[#] uppercase tracking-widest">Franja de Disponibilidad</label>
-                    {/* --- TEXTO DE AYUDA EN VERDE TENIS --- */}
-                    <p className="text-[11px] font-bold text-[#29C454]/80 mt-1 leading-snug">
-                      Abre tu rango lo más posible (ej. de 4:00 PM a 9:00 PM) para tener más oportunidades de hacer match. El sistema siempre separará un bloque exacto de 2 horas para tu partido.
-                    </p>
+                    <label className="text-[10px] font-black text-[#29C454] uppercase tracking-widest">Franja Horaria</label>
+                    {modoCancha === 'match' && (
+                      <p className="text-[9px] font-bold text-[#29C454]/80 mt-1 leading-snug">
+                        Abre tu rango lo más posible para hacer match. El sistema separará un bloque exacto de 2 horas.
+                      </p>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
-                    <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
+                    <input type="time" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => modoCancha === 'match' ? setStartTime(e.target.value) : setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
+                    <input type="time" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:border-[#29C454]" />
                   </div>
                 </div>
-                {searchError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
+                {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
+
               <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className="w-fit flex items-center justify-center gap-2 px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all">
-                  <span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival
+                <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all ${modoCancha === 'match' ? 'bg-[#1A1C1E]' : 'bg-[#29C454]'}`}>
+                  {modoCancha === 'match' ? (
+                    <><span className="text-[#29C454] animate-pulse">●</span> Buscar rival</>
+                  ) : (
+                    'Pagar Reserva ➜'
+                  )}
                 </button>
               </div>
             </form>
             
-            {isLoggedIn && activeSearches.length > 0 && (
-              <div className="pt-8 space-y-4 animate-in fade-in w-full">
-                <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Búsquedas Activas</h3>
+            {/* BÚSQUEDAS ACTIVAS (Solo se ven en modo match) */}
+            {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
+              <div className="pt-4 space-y-4 animate-in fade-in w-full">
+                <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Radar Activo</h3>
+                {/* ... (Aquí va tu código map de activeSearches que ya tenías) ... */}
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
                     <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
@@ -1306,27 +1343,6 @@ export default function App() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* VISTA: RESERVAR CANCHA */}
-        {tab === 'reservar' && (
-          <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center">
-            <div className="text-center">
-              <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Reservar Cancha</h2>
-            </div>
-            <form onSubmit={handleBookSubmit} className="w-full">
-              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
-                <input type="date" min={initData.date} value={bookDate} onChange={(e) => setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
-                <div className="grid grid-cols-2 gap-3 w-full">
-                  <input type="time" value={bookStart} onChange={(e) => setBookStart(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center" />
-                  <input type="time" value={bookEnd} onChange={(e) => setBookEnd(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-sm text-center" />
-                </div>
-              </div>
-              <div className="pt-6">
-                <button type="submit" className="w-full px-8 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all">Pagar Reserva ➜</button>
-              </div>
-            </form>
           </div>
         )}
 
@@ -1769,11 +1785,22 @@ export default function App() {
       </main>
 
       <nav className="fixed bottom-0 left-0 w-full z-50 bg-[#F8F7F2]/90 backdrop-blur-lg border-t border-[#1A1C1E]/5 px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
-        <div className="flex justify-between items-center max-w-md mx-auto">
-          {[{ id: 'home', icon: '🏠' }, { id: 'buscar', icon: '🔍' }, { id: 'reservar', icon: '📅' }, { id: 'partidos', icon: '🎾' }, { id: 'perfil', icon: '👤' }].map((item) => (
-            <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg' : 'text-[#1A1C1E]/40'}`}>
-              <div className="relative">
-                <span className="text-xl">{item.icon}</span>
+        <div className="flex justify-between items-center max-w-sm mx-auto px-4">
+          {/* Quitamos 'reservar' y 'buscar', ahora solo usamos 'jugar' */}
+          {[
+            { id: 'home', icon: '🏠', label: 'Inicio' }, 
+            { id: 'jugar', icon: '🎾', label: 'Jugar' }, 
+            { id: 'partidos', icon: '📋', label: 'Partidos' }, 
+            { id: 'perfil', icon: '👤', label: 'Perfil' }
+          ].map((item) => (
+            <button 
+              key={item.id} 
+              onClick={() => setTab(item.id)} 
+              className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70'}`}
+            >
+              <div className="relative flex flex-col items-center gap-1">
+                <span className="text-xl mb-0.5">{item.icon}</span>
+                {/* Opcional: Mostrar el texto del tab si quieres, si no, se ve más limpio sin él */}
                 {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
