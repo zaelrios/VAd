@@ -73,6 +73,24 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState(initData.end);
   const [bookError, setBookError] = useState('');
 
+  // ESTADOS DE PERSONALIZACIÓN
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
+  const handleColorChange = async (newColor) => {
+    // Actualizamos la pantalla de inmediato
+    const updatedUser = { ...currentUser, color: newColor };
+    setCurrentUser(updatedUser);
+    localStorage.setItem('vad_session', JSON.stringify(updatedUser));
+    setShowColorPicker(false);
+
+    // Guardamos en Supabase
+    try {
+      await supabase.from('Perfiles').update({ color: newColor }).eq('id', currentUser.id);
+    } catch (error) {
+      console.error('Asegúrate de haber creado la columna "color" en Supabase');
+    }
+  };
+
   // --- RELOJ EN VIVO PARA EL TEMPORIZADOR ---
   const [currentTime, setCurrentTime] = useState(new Date());
   useEffect(() => {
@@ -141,7 +159,7 @@ export default function App() {
         localStorage.setItem('vad_session', JSON.stringify(freshUser));
       }
 
-      // 2. Cargar los partidos sin orden forzado desde Supabase (lo haremos acá)
+      // 2. Cargar los partidos sin orden forzado desde Supabase
       const { data: matches, error } = await supabase
         .from('partidos')
         .select('*')
@@ -152,7 +170,8 @@ export default function App() {
       if (matches && matches.length > 0) {
         const partidosConRivales = await Promise.all(matches.map(async (partido) => {
           const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
-          const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo').eq('id', rivalId).single();
+          // Antes decía select('id, nombre, elo')
+          const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
           return { ...partido, rival: rivalData || { id: '?', nombre: 'Jugador Desconocido', elo: '?' } };
         }));
 
@@ -225,6 +244,17 @@ export default function App() {
       return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
     }
     return fullName.substring(0, 2).toUpperCase();
+  };
+
+  // Traductor de ELO a Categoría (Fuerza) - AHORA EN EL LUGAR CORRECTO
+  const getFuerza = (elo) => {
+    const pts = Number(elo);
+    if (pts >= 2000) return '1ra Fuerza (Élite)';
+    if (pts >= 1800) return '2da Fuerza';
+    if (pts >= 1600) return '3ra Fuerza';
+    if (pts >= 1400) return '4ta Fuerza';
+    if (pts >= 1200) return '5ta Fuerza';
+    return '6ta Fuerza';
   };
 
   // Función ESPEJO: Siempre muestra "Mi Score - Su Score"
@@ -767,7 +797,7 @@ export default function App() {
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
-                Matchmaking inteligente, ranking ELO y torneos en vivo. La comunidad que premia a los que sí aparecen.
+                 La comunidad que premia a los que sí aparecen.<br/>Matchmaking inteligente con sistema ELO para un ranking justo y real.
               </p>
               <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
                 {isLoggedIn ? "Buscar rival ➜" : "Únete al Circuito ➜"}
@@ -780,7 +810,7 @@ export default function App() {
               {/* 2. CÓMO FUNCIONA (BUSCADOR) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 opacity-5 text-9xl">🔍</div>
-                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">El Buscador</h3>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">El Matchmaking</h3>
                 <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">El buscador mas sencillo para encontrar con quien jugar tennis.</p>
                 <ul className="space-y-4 relative z-10 text-xs font-bold text-[#1A1C1E]/80">
                   <li className="flex gap-3">
@@ -813,7 +843,7 @@ export default function App() {
               {/* 3. SISTEMA ELO (MOTOR MATEMÁTICO VAd.) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#29C454]/10 rounded-full blur-3xl"></div>
-                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Motor ELO</h3>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Ranking ELO</h3>
                 <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">Transparencia total. Un sistema diseñado para que tu ascenso dependa de tu nivel real en la cancha.</p>
                 
                 <div className="space-y-6 relative z-10 text-xs text-[#1A1C1E]">
@@ -866,7 +896,7 @@ export default function App() {
                         <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
                           <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">La Gran Sorpresa (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1000 pts vs Rival de 1200 pts</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1400 pts</p>
                           </div>
                           {/* El shrink-0 protege a la pastilla de aplastarse */}
                           <div className="shrink-0 text-right">
@@ -893,7 +923,7 @@ export default function App() {
                         <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
                           <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Favorito (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1000 pts</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1400 pts vs Rival de 1200 pts</p>
                           </div>
                           <div className="shrink-0 text-right">
                             <span className="bg-[#F8F7F2] text-[#1A1C1E]/60 px-3 py-1.5 rounded-lg font-black text-[11px] border border-[#1A1C1E]/10 inline-block">
@@ -1076,13 +1106,21 @@ export default function App() {
                   <div className="relative z-10">
                     <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Jueves, 16 Abril</p>
                     <h4 className="text-3xl font-black italic mb-4">6:00 PM - 8:00 PM</h4>
-                    <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl border border-white/20">
-                      <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic">MC</div>
-                      <div>
-                        <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
-                        <p className="font-black italic">Mateo C. (1,250 Pts)</p>
-                      </div>
-                    </div>
+                    <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20 mb-4">
+                            <div 
+                              className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-black italic uppercase shadow-inner"
+                              style={{ color: partido.rival.color || '#29C454' }}
+                            >
+                              {getInitials(partido.rival.nombre)}
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
+                              {/* Nombre pintado con el color del rival (si tiene), si no, blanco */}
+                              <p className="font-black italic text-lg" style={{ color: partido.rival.color || '#FFFFFF' }}>
+                                {partido.rival.nombre}
+                              </p>
+                            </div>
+                          </div>
                   </div>
                 </div>
               ) : misPartidos.length === 0 ? (
@@ -1277,30 +1315,98 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: PERFIL */}
+        {/* VISTA: PERFIL (VERSIÓN PERSONALIZABLE) */}
         {tab === 'perfil' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
-            <div className={`bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden w-full ${!isLoggedIn && 'opacity-80'}`}>
-              {!isLoggedIn && <div className="absolute top-4 bg-[#1A1C1E]/5 text-[#1A1C1E]/50 px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase">Perfil de Ejemplo</div>}
-              <div className="w-24 h-24 bg-[#F8F7F2] rounded-full border-4 border-[#29C454] flex items-center justify-center text-[#1A1C1E] font-black italic text-4xl mb-4 uppercase">
-                {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
+            
+            <div className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
+              
+              {/* Etiqueta de Nivel / Fuerza (AHORA GIGANTE) */}
+              <div 
+                className="absolute top-0 left-0 w-full py-4 shadow-md transition-colors duration-300"
+                style={{ backgroundColor: (isLoggedIn && currentUser?.color) ? currentUser.color : '#29C454' }}
+              >
+                <p className="text-sm font-black tracking-[0.4em] uppercase text-white drop-shadow-sm">
+                  {isLoggedIn && currentUser ? getFuerza(currentUser.elo) : 'Modo Espectador'}
+                </p>
               </div>
-              <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight">
+
+              {/* Avatar con Color Dinámico */}
+              <div className="relative mt-12 mb-4">
+                <div 
+                  className="w-28 h-28 bg-[#F8F7F2] rounded-full border-[5px] flex items-center justify-center font-black italic text-5xl uppercase shadow-inner transition-colors duration-300"
+                  style={{ 
+                    borderColor: (isLoggedIn && currentUser?.color) ? currentUser.color : '#1A1C1E',
+                    color: (isLoggedIn && currentUser?.color) ? currentUser.color : '#1A1C1E' 
+                  }}
+                >
+                  {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
+                </div>
+                
+                {/* Botón de Editar Color */}
+                {isLoggedIn && (
+                  <button 
+                    onClick={() => setShowColorPicker(!showColorPicker)} 
+                    className="absolute bottom-0 right-0 bg-white p-0.5 rounded-full shadow-lg border border-[#1A1C1E]/10 text- hover:scale-110 transition-transform active:scale-95"
+                    title="Cambiar Color"
+                  >
+                    🎨
+                  </button>
+                )}
+              </div>
+
+              {/* Paleta de Colores (Se muestra al hacer clic en el 🎨) */}
+              {showColorPicker && (
+                <div className="flex gap-3 mb-6 p-3 bg-[#F8F7F2] rounded-2xl shadow-inner border border-[#1A1C1E]/10 animate-in fade-in slide-in-from-top-2">
+                  {['#29C454', '#007AFF', '#FF3B30', '#AF52DE', '#FF9500', '#1A1C1E'].map(colorHex => (
+                    <button 
+                      key={colorHex} 
+                      onClick={() => handleColorChange(colorHex)} 
+                      className="w-8 h-8 rounded-full shadow-md active:scale-90 transition-all border-2 border-white" 
+                      style={{ backgroundColor: colorHex }} 
+                    />
+                  ))}
+                </div>
+              )}
+              
+              <h2 
+                className="text-4xl font-black italic uppercase tracking-tight transition-colors duration-300"
+                style={{ color: (isLoggedIn && currentUser?.color) ? currentUser.color : '#1A1C1E' }}
+              >
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
-              <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-sm mb-6">
-                {isLoggedIn && currentUser ? currentUser.telefono : 'Regístrate'}
+              <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-xs mb-6 uppercase mt-1">
+                {isLoggedIn && currentUser ? '' : 'Regístrate para jugar'}
               </p>
-              {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
-              <div className="flex gap-4 w-full mt-6 border-t border-[#1A1C1E]/10 pt-6">
-                <div className="flex-1 text-center">
-                  <p className="text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Tu ELO</p>
-                  <p className="text-3xl font-black italic text-[#29C454]">{isLoggedIn && currentUser ? currentUser.elo : '1,000'}</p>
+              
+              {/* Confianza */}
+              <div className="bg-[#F8F7F2] w-full rounded-2xl p-4 border border-[#1A1C1E]/5 mb-6">
+                <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-2">Confiabilidad</p>
+                {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
+              </div>
+
+              {/* Estadísticas Gratuitas */}
+              <div className="flex gap-3 w-full border-t border-[#1A1C1E]/10 pt-6">
+                <div className="flex-1 bg-white border border-[#1A1C1E]/10 rounded-2xl py-4 shadow-sm">
+                  <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Tu ELO</p>
+                  <p className="text-2xl font-black italic text-[#29C454]">
+                    {isLoggedIn && currentUser ? currentUser.elo : '1,000'}
+                  </p>
+                </div>
+                
+                <div className="flex-1 bg-white border border-[#1A1C1E]/10 rounded-2xl py-4 shadow-sm relative overflow-hidden">
+                  <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Racha Actual</p>
+                  <p className="text-2xl font-black italic text-[#1A1C1E]">
+                    {isLoggedIn && currentUser ? `${currentUser.racha_asistencia || 0} 🔥` : '-'}
+                  </p>
                 </div>
               </div>
             </div>
+
             {isLoggedIn && (
-              <button onClick={handleLogout} className="w-full bg-[#F8F7F2] border border-red-500/20 text-red-500 py-4 rounded-2xl font-black uppercase text-xs hover:bg-red-50 transition-colors">Cerrar Sesión</button>
+              <button onClick={handleLogout} className="w-full bg-transparent border-2 border-red-500/20 text-red-500/80 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-red-50 transition-colors mt-4">
+                Cerrar Sesión
+              </button>
             )}
           </div>
         )}
