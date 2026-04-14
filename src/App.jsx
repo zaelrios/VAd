@@ -73,6 +73,46 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState(initData.end);
   const [bookError, setBookError] = useState('');
 
+  // --- SECCIÓN ADMIN ---
+  // 1. Lista de administradores (Agrega aquí los IDs que necesites)
+  const ADMIN_IDS = ["bf19ee3b-c5fb-4a2f-89e1-182e21e2e074"]; 
+
+  // ESTOS DOS ESTADOS FALTABAN (Para guardar y cargar las sugerencias)
+  const [listaSugerencias, setListaSugerencias] = useState([]);
+  
+  const cargarSugerenciasAdmin = async () => {
+    if (!currentUser || !ADMIN_IDS.includes(currentUser.id)) return;
+    
+    const { data, error } = await supabase
+      .from('sugerencias')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (!error && data) {
+      setListaSugerencias(data);
+    }
+  };
+
+  // 2. Función para cambiar el estado
+  const actualizarEstadoSugerencia = async (id, nuevoEstado) => {
+    const { error } = await supabase
+      .from('sugerencias')
+      .update({ estado: nuevoEstado })
+      .eq('id', id);
+
+    if (!error) {
+      // Actualizamos la lista local para que el cambio se vea al instante
+      setListaSugerencias(prev => 
+        prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug)
+      );
+    } else {
+      alert("Error al actualizar: " + error.message);
+    }
+  };
+
+  // 3. Variable calculada para el botón (Ahora sí funciona porque listaSugerencias existe)
+  const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
+
   // ESTADOS DE PERSONALIZACIÓN
   const [showColorPicker, setShowColorPicker] = useState(false);
 
@@ -1619,6 +1659,28 @@ export default function App() {
                   </p>
                 </div>
               </div>
+
+              {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
+              {isLoggedIn && ADMIN_IDS.includes(currentUser?.id) && (
+                <div className="w-full mt-8 pt-8 border-t border-[#1A1C1E]/10 space-y-4">
+                  <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola de Administración</h3>
+                  
+                  <button 
+                    onClick={() => {
+                      cargarSugerenciasAdmin();
+                      setTab('admin_buzon');
+                    }}
+                    className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative"
+                  >
+                    📩 Revisar Buzón 
+                    {sugerenciasNuevas > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">
+                        {sugerenciasNuevas}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {isLoggedIn && (
@@ -1626,6 +1688,63 @@ export default function App() {
                 Cerrar Sesión
               </button>
             )}
+          </div>
+        )}
+
+        {/* VISTA DEL BUZÓN ADMIN */}
+        {tab === 'admin_buzon' && (
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in fade-in pb-20">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black italic uppercase text-[#1A1C1E]">Buzón VAd.</h2>
+                <p className="text-[10px] font-bold text-[#29C454] uppercase tracking-widest">{sugerenciasNuevas} mensajes sin leer</p>
+              </div>
+              <button onClick={() => setTab('perfil')} className="bg-white p-3 rounded-xl shadow-sm border border-[#1A1C1E]/5 text-[10px] font-black uppercase">✕</button>
+            </div>
+            
+            <div className="space-y-4">
+              {listaSugerencias.map((sug) => (
+                <div key={sug.id} className={`bg-white border ${sug.estado === 'nueva' ? 'border-[#29C454]' : 'border-[#1A1C1E]/10'} p-5 rounded-[2rem] shadow-sm relative transition-all`}>
+                  
+                  {/* Badge de Estado */}
+                  <div className="flex justify-between items-start mb-3">
+                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
+                      sug.estado === 'nueva' ? 'bg-[#29C454] text-white' : 'bg-[#F8F7F2] text-[#1A1C1E]/40'
+                    }`}>
+                      {sug.estado}
+                    </span>
+                    <span className="text-[8px] font-bold opacity-30">{new Date(sug.created_at).toLocaleDateString()}</span>
+                  </div>
+
+                  <p className="font-black text-[11px] uppercase text-[#1A1C1E] mb-1">{sug.nombre}</p>
+                  <p className="text-sm font-bold text-[#1A1C1E]/70 leading-relaxed mb-5">{sug.comentario}</p>
+
+                  {/* ACCIONES */}
+                  <div className="flex gap-2 border-t border-[#1A1C1E]/5 pt-4">
+                    {sug.estado !== 'leida' && (
+                      <button 
+                        onClick={() => actualizarEstadoSugerencia(sug.id, 'leida')}
+                        className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-[#29C454]/10 hover:text-[#29C454] transition-colors"
+                      >
+                        ✓ Leída
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => actualizarEstadoSugerencia(sug.id, 'en proceso')}
+                      className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-blue-50 hover:text-blue-500 transition-colors"
+                    >
+                      ⚙️ Proceso
+                    </button>
+                    <button 
+                      onClick={() => actualizarEstadoSugerencia(sug.id, 'archivada')}
+                      className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-red-50 hover:text-red-500 transition-colors"
+                    >
+                      📁 Archivar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </main>
