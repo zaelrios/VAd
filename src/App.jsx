@@ -827,17 +827,9 @@ export default function App() {
                   </li>
                   <li className="flex gap-3">
                     <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">3 Cancelaciones al mes sin afectar ELO y confiabilidad.</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
                     <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#29C454]">Si te cancelan el buscador se reactivara por ti.</span></span>
                   </li>
-                  <li className="flex gap-3">
-                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#F50514]">Las cancelaciones deben de ser maximo 30 minutos antes del encuentro, de lo contrario se tomara como Walkover.</span></span>
-                  </li>
-                </ul>
+                 </ul>
               </div>
 
               {/* 3. SISTEMA ELO (MOTOR MATEMÁTICO VAd.) */}
@@ -939,7 +931,47 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. BUZÓN DE SUGERENCIAS */}
+              {/* 4. REGLAS DE CANCHA (CONFIABILIDAD) */}
+              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
+                <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#E5B824]/10 rounded-full blur-3xl"></div>
+                <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Confiabilidad</h3>
+                <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">En Ventaja Adentro respetamos el tiempo de todos. Tienes 5 Pelotas de Confiabilidad, protégelas:</p>
+                
+                <div className="space-y-4 relative z-10 text-xs text-[#1A1C1E]">
+                  <div className="bg-[#F8F7F2] p-5 rounded-2xl border border-[#1A1C1E]/5 shadow-inner space-y-5">
+                    
+                    {/* Zona Verde */}
+                    <div className="flex gap-4 items-start">
+                      <span className="text-[#29C454] text-xl leading-none drop-shadow-sm">🟢</span>
+                      <div>
+                        <p className="font-black uppercase tracking-wider text-[11px] mb-1">Cancelación Libre (24h+)</p>
+                        <p className="font-bold leading-relaxed opacity-70">Avisar con más de un día de anticipación no tiene penalización. El buscador tiene tiempo para buscar otro rival.</p>
+                      </div>
+                    </div>
+
+                    {/* Zona Amarilla */}
+                    <div className="flex gap-4 items-start">
+                      <span className="text-[#E5B824] text-xl leading-none drop-shadow-sm">🟡</span>
+                      <div>
+                        <p className="font-black uppercase tracking-wider text-[11px] mb-1">Los 2 Comodines (24h a 3h)</p>
+                        <p className="font-bold leading-relaxed opacity-70">Tienes 2 cancelaciones al mes para imprevistos. <span className="text-[#E5B824]">Ojo: Solo 1 comodín</span> sirve para emergencias extremas (entre 3h y 30 mins antes). Si te los acabas, perderás Confiabilidad <span className="text-[#E5B824]">(-0.5 pelotas)</span>.</p>
+                      </div>
+                    </div>
+
+                    {/* Zona Roja */}
+                    <div className="flex gap-4 items-start">
+                      <span className="text-red-500 text-xl leading-none drop-shadow-sm">🔴</span>
+                      <div>
+                        <p className="font-black uppercase tracking-wider text-[11px] mb-1">Walkover / W.O. (-30 mins)</p>
+                        <p className="font-bold leading-relaxed opacity-70">Faltar a la cancha o cancelar a menos de 30 minutos es castigo máximo. <span className="text-[#F50514]">Tu ELO caerá (como si perdieras 6-0, 6-0) y tu Confiabilidad se desplomará (-1 pelota)</span>.</p>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. BUZÓN DE SUGERENCIAS */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Buzón</h3>
                 <p className="text-[#1A1C1E]/70 text-sm font-bold mb-5 leading-relaxed">¿Ideas, reportes de error o sugerencias? Háznoslo saber.</p>
