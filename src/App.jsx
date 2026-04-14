@@ -59,8 +59,6 @@ export default function App() {
   // ESTADOS PARA LOS PARTIDOS Y REPORTES
   const [misPartidos, setMisPartidos] = useState([]);
   const [reportingMatch, setReportingMatch] = useState(null);
-  const [marcador, setMarcador] = useState('');
-  const [ganadorId, setGanadorId] = useState('');
 
   // ESTADOS DEL FORMULARIO DE REPORTE (NUEVO)
   const [s1Mi, setS1Mi] = useState('');
@@ -136,19 +134,18 @@ export default function App() {
   const fetchPartidos = async () => {
     if (!currentUser) return;
     try {
-      // 1. Refrescar el perfil silenciosamente para asegurar que el ELO en pantalla sea el real
+      // 1. Refrescar el perfil silenciosamente
       const { data: freshUser } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
       if (freshUser) {
         setCurrentUser(freshUser);
         localStorage.setItem('vad_session', JSON.stringify(freshUser));
       }
 
-      // 2. Cargar los partidos
+      // 2. Cargar los partidos sin orden forzado desde Supabase (lo haremos acá)
       const { data: matches, error } = await supabase
         .from('partidos')
         .select('*')
-        .or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`)
-        .order('fecha', { ascending: false });
+        .or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
 
       if (error) throw error;
 
@@ -158,6 +155,25 @@ export default function App() {
           const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo').eq('id', rivalId).single();
           return { ...partido, rival: rivalData || { id: '?', nombre: 'Jugador Desconocido', elo: '?' } };
         }));
+
+        // ORDENAMIENTO INTELIGENTE VAd.
+        partidosConRivales.sort((a, b) => {
+          const dateA = new Date(`${a.fecha}T${a.hora_inicio}`);
+          const dateB = new Date(`${b.fecha}T${b.hora_inicio}`);
+          
+          const isA_Active = a.estado === 'confirmado' || a.estado === 'en_revision';
+          const isB_Active = b.estado === 'confirmado' || b.estado === 'en_revision';
+
+          if (isA_Active && !isB_Active) return -1; // Activos arriba
+          if (!isA_Active && isB_Active) return 1;  // Finalizados abajo
+          
+          if (isA_Active && isB_Active) {
+            return dateA - dateB; // Activos: El más próximo primero (Ascendente)
+          } else {
+            return dateB - dateA; // Finalizados: El más reciente primero (Descendente)
+          }
+        });
+
         setMisPartidos(partidosConRivales);
       } else {
         setMisPartidos([]);
@@ -211,7 +227,24 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // Función para saber en qué etapa cronológica está el partido (Fix Safari/iPhone)
+  // Función ESPEJO: Siempre muestra "Mi Score - Su Score"
+  const getRelativeMarcador = (partido) => {
+    if (partido.estado === 'wo') return 'W.O.';
+    if (!partido.marcador) return '';
+    
+    // Si el rival fue quien reportó, invertimos los números para que los leas desde TU perspectiva
+    if (partido.reportado_por && partido.reportado_por !== currentUser?.id) {
+      return partido.marcador.split(',').map(set => {
+        const scores = set.trim().split('-');
+        if (scores.length === 2) return `${scores[1]}-${scores[0]}`;
+        return set;
+      }).join(', ');
+    }
+    
+    return partido.marcador;
+  };
+
+  // Función para saber en qué etapa cronológica está el partido
   const obtenerEstadoTiempo = (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
@@ -225,7 +258,7 @@ export default function App() {
     return 'terminado'; 
   };
 
-  // Función para calcular la cuenta regresiva (Fix Safari/iPhone)
+  // Función para calcular la cuenta regresiva
   const getCountdown = (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
@@ -272,7 +305,6 @@ export default function App() {
     if (diff < -200) diff = -200;
 
     // 2. Probabilidad Lineal VAd (Base 500 para dar un rango de 10% a 90%)
-    // Si diff es 0 = 0.5 (50%). Si diff es 200 = 0.1 (10%). Si diff es -200 = 0.9 (90%)
     const expectedScore = 0.5 - (diff / 500);
     
     // 3. Multiplicador de Sets
@@ -301,51 +333,74 @@ export default function App() {
     let nuevaConfianza = Number(confianzaActual);
     let nuevaRacha = rachaActual + 1;
 
-    // Recuperación de media pelota en rachas clave
     if (nuevaRacha === 5 || nuevaRacha === 8 || nuevaRacha === 10 || nuevaRacha > 10) {
        nuevaConfianza = Math.min(5.0, nuevaConfianza + 0.5);
     }
     return { nuevaConfianza, nuevaRacha };
   };
 
-  // --- FLUJO DE REPORTE (JUEZ DE SILLA) ---
+  // --- FLUJO DE REPORTE AUTOMATIZADO CON FRENO DE MANO ---
   const handleSubmitReport = async (partido) => {
-    if (!ganadorId) {
-      alert('Selecciona al ganador del partido.');
-      return;
-    }
     if (!s1Mi || !s1Rival || !s2Mi || !s2Rival) {
       alert('Debes ingresar al menos los resultados de los 2 primeros sets.');
       return;
     }
 
-    // Armamos el texto perfecto para la base de datos
-    let marcadorFinal = `${s1Mi}-${s1Rival}, ${s2Mi}-${s2Rival}`;
+    // Convertimos el texto a números reales
+    const v1Mi = parseInt(s1Mi, 10);
+    const v1Riv = parseInt(s1Rival, 10);
+    const v2Mi = parseInt(s2Mi, 10);
+    const v2Riv = parseInt(s2Rival, 10);
+
+    let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0);
+    let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0);
+    let marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
+
     if (s3Mi && s3Rival) {
-      marcadorFinal += `, ${s3Mi}-${s3Rival}`;
+      const v3Mi = parseInt(s3Mi, 10);
+      const v3Riv = parseInt(s3Rival, 10);
+      setsMi += (v3Mi > v3Riv ? 1 : 0);
+      setsRiv += (v3Riv > v3Mi ? 1 : 0);
+      marcadorFinal += `, ${v3Mi}-${v3Riv}`;
     }
 
+    if (setsMi === setsRiv) {
+      alert('Los sets están empatados. Verifica los números, tiene que haber un ganador claro.');
+      return;
+    }
+
+    // El sistema decide quién ganó
+    const yoGane = setsMi > setsRiv;
+    const ganadorIdCalculado = yoGane ? currentUser.id : partido.rival.id;
+
+    // 🚨 FRENO DE MANO: Le avisamos al usuario antes de mandarlo
+    const nombreGanador = yoGane ? "TÚ" : partido.rival.nombre.toUpperCase();
+    const mensajeConfirmacion = `Revisa bien:\n\nSegún los números que ingresaste, el ganador es: ${nombreGanador} 🏆\n\n¿Estás seguro de enviar este resultado a revisión?`;
+    
+    if (!window.confirm(mensajeConfirmacion)) {
+      return; // Si el usuario se da cuenta del error y le da a "Cancelar", detenemos todo.
+    }
+
+    // Si acepta, ahora sí lo mandamos a Supabase
     try {
       const { error } = await supabase
         .from('partidos')
         .update({ 
           estado: 'en_revision', 
           marcador: marcadorFinal, 
-          ganador_id: ganadorId, 
+          ganador_id: ganadorIdCalculado, 
           reportado_por: currentUser.id 
         })
         .eq('id', partido.id);
 
       if (error) throw error;
       setReportingMatch(null);
-      setGanadorId('');
-      // Limpiamos el formulario
       setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
       fetchPartidos(); 
-      alert('Reporte enviado. Esperando confirmación del rival.');
+      alert('Reporte enviado a tu rival para confirmación.');
     } catch (error) {
-      console.error("Error al reportar:", error);
-      alert('Error Supabase: ' + error.message);
+      console.error(error);
+      alert('Error: ' + error.message);
     }
   };
 
@@ -355,7 +410,6 @@ export default function App() {
       
       const yoGane = partido.ganador_id === currentUser.id;
       
-      // Calculamos ELO usando el nuevo motor que lee los sets
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, partido.marcador, yoGane);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, partido.marcador, !yoGane);
 
@@ -373,7 +427,6 @@ export default function App() {
 
       await supabase.from('partidos').update({ estado: 'finalizado' }).eq('id', partido.id);
 
-      // PARCHE FANTASMA: Si Supabase no devuelve el perfil, usamos los datos calculados
       const perfilSeguro = miPerfilActualizado || { 
         ...currentUser, 
         elo: miNuevoElo, 
@@ -381,7 +434,6 @@ export default function App() {
         racha_asistencia: misNuevosDatos.nuevaRacha 
       };
 
-      // Guardamos la sesión segura una sola vez
       setCurrentUser(perfilSeguro);
       localStorage.setItem('vad_session', JSON.stringify(perfilSeguro));
       
@@ -401,7 +453,6 @@ export default function App() {
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
       
-      // Un W.O. se castiga como una derrota 2-0 directa ("6-0, 6-0")
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, "6-0, 6-0", true);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, "6-0, 6-0", false);
 
@@ -434,10 +485,8 @@ export default function App() {
     if (!confirmar) return;
 
     try {
-      // 1. Eliminamos el partido para liberar la cancha y tu agenda
       await supabase.from('partidos').delete().eq('id', partido.id);
       
-      // 2. Devolvemos al rival automáticamente al radar de búsquedas para no dejarlo colgado
       await supabase.from('buscar').insert([{
         jugador_id: partido.rival.id,
         nombre: partido.rival.nombre,
@@ -548,7 +597,6 @@ export default function App() {
     e.preventDefault();
     setSearchError(''); 
     
-    // CANDADO DOBLE: Si su perfil es fantasma, limpiamos y mandamos al login
     if (!isLoggedIn || !currentUser) { 
       setIsLoggedIn(false);
       setCurrentUser(null);
@@ -789,56 +837,66 @@ export default function App() {
                     {/* Punto 4: Desglose Técnico */}
                     <div className="pt-2 border-t border-[#1A1C1E]/10">
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">4.</span> Desglose de la Fórmula</p>
-                      <div className="bg-[#1A1C1E] p-4 rounded-xl shadow-lg border border-[#29C454]/30 text-left">
-                        <p className="font-mono text-[#F8F7F2] text-[13px] tracking-widest text-center mb-3">
-                          R' = R + <span className="text-[#29C454] font-black">K</span> × (S - E)
+                      
+                      {/* Recuadro Verde Tenis Unificado */}
+                      <div className="bg-[#29C454] p-5 rounded-2xl shadow-lg shadow-[#29C454]/20 text-left relative overflow-hidden">
+                        <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/20 rounded-full blur-xl"></div>
+                        
+                        {/* El whitespace-nowrap evita que la fórmula se parta en dos líneas */}
+                        <p className="font-mono text-white text-[14px] tracking-widest text-center mb-4 font-black whitespace-nowrap drop-shadow-sm">
+                          R' = R + K × (S - E)
                         </p>
-                        <ul className="space-y-1.5 text-[9px] font-bold text-[#F8F7F2]/60 uppercase tracking-tighter">
-                          <li><span className="text-[#29C454]">R':</span> Tu nuevo puntaje tras el partido.</li>
-                          <li><span className="text-[#29C454]">R:</span> Tus puntos actuales.</li>
-                          <li><span className="text-[#29C454]">K:</span> Constante de cambio = 60.</li>
-                          <li><span className="text-[#29C454]">S:</span> Resultado (1.0 si ganas 2-0 / 0.85 si ganas 2-1).</li>
-                          <li><span className="text-[#29C454]">E:</span> Probabilidad (de 0.1 a 0.9 según la brecha).</li>
+                        
+                        <ul className="space-y-2 text-[9px] font-bold text-white/90 uppercase tracking-tight">
+                          <li><span className="font-black text-white text-[10px]">R':</span> Tu nuevo puntaje tras el partido.</li>
+                          <li><span className="font-black text-white text-[10px]">R:</span> Tus puntos actuales.</li>
+                          <li><span className="font-black text-white text-[10px]">K:</span> Constante de cambio = 60.</li>
+                          <li><span className="font-black text-white text-[10px]">S:</span> Resultado (1.0 si ganas 2-0 / 0.85 si 2-1).</li>
+                          <li><span className="font-black text-white text-[10px]">E:</span> Probabilidad (de 0.1 a 0.9).</li>
                         </ul>
                       </div>
                     </div>
 
                     {/* Punto 5: Ejemplos Prácticos */}
-                    <div className="pt-2 border-t border-[#1A1C1E]/10">
+                    <div className="pt-4 border-t border-[#1A1C1E]/10">
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">5.</span> Ejemplos (Victoria 2-0)</p>
                       <div className="space-y-2">
                         
-                        <div className="bg-white p-3 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm">
-                          <div className="max-w-[70%]">
+                        {/* Ejemplo 1: Sorpresa */}
+                        <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
+                          <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">La Gran Sorpresa (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight">Tienes 1000 pts vs Rival de 1200 pts</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1000 pts vs Rival de 1200 pts</p>
                           </div>
-                          <div className="text-right">
-                            <span className="bg-[#29C454] text-white px-2 py-1.5 rounded-lg font-black text-xs shadow-md">
+                          {/* El shrink-0 protege a la pastilla de aplastarse */}
+                          <div className="shrink-0 text-right">
+                            <span className="bg-[#29C454] text-white px-3 py-1.5 rounded-lg font-black text-[11px] shadow-md shadow-[#29C454]/20 inline-block">
                               +54 Pts
                             </span>
                           </div>
                         </div>
 
-                        <div className="bg-white p-3 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm">
-                          <div className="max-w-[70%]">
+                        {/* Ejemplo 2: Equilibrado */}
+                        <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
+                          <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Duelo Equilibrado (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight">Tienes 1200 pts vs Rival de 1200 pts</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1200 pts</p>
                           </div>
-                          <div className="text-right">
-                            <span className="bg-[#29C454]/10 text-[#29C454] px-2 py-1.5 rounded-lg font-black text-xs border border-[#29C454]/20">
+                          <div className="shrink-0 text-right">
+                            <span className="bg-[#29C454]/10 text-[#29C454] px-3 py-1.5 rounded-lg font-black text-[11px] border border-[#29C454]/20 inline-block">
                               +30 Pts
                             </span>
                           </div>
                         </div>
 
-                        <div className="bg-white p-3 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm">
-                          <div className="max-w-[70%]">
+                        {/* Ejemplo 3: Favorito */}
+                        <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
+                          <div className="flex-1 pr-2">
                             <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Favorito (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight">Tienes 1200 pts vs Rival de 1000 pts</p>
+                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1000 pts</p>
                           </div>
-                          <div className="text-right">
-                            <span className="bg-[#F8F7F2] text-[#1A1C1E]/60 px-2 py-1.5 rounded-lg font-black text-xs border border-[#1A1C1E]/10">
+                          <div className="shrink-0 text-right">
+                            <span className="bg-[#F8F7F2] text-[#1A1C1E]/60 px-3 py-1.5 rounded-lg font-black text-[11px] border border-[#1A1C1E]/10 inline-block">
                               +6 Pts
                             </span>
                           </div>
@@ -1045,7 +1103,7 @@ export default function App() {
                           <p className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-1">
                             {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} • {partido.estado === 'wo' ? 'W.O.' : 'Terminó'}
                           </p>
-                          {/* Historial Compacto: Mostrar si Ganó o Perdió */}
+                          {/* Historial Compacto: Mostrar si Ganó o Perdió usando el ID */}
                           <p className="font-black italic text-sm">
                             {partido.estado === 'wo' 
                               ? 'W.O. vs ' 
@@ -1057,7 +1115,9 @@ export default function App() {
                         </div>
                         <div className="text-right bg-white/10 px-3 py-2 rounded-xl border border-white/20">
                           <p className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Marcador</p>
-                          <p className="font-black italic text-base leading-none">{partido.estado === 'wo' ? 'W.O.' : partido.marcador}</p>
+                          <p className="font-black italic text-base leading-none">
+                            {getRelativeMarcador(partido)}
+                          </p>
                         </div>
                       </div>
                     ) : (
@@ -1079,12 +1139,13 @@ export default function App() {
                             {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
                           </h4>
                           <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20 mb-4">
-                            <div className="w-10 h-10 bg-white text-[#1A1C1E] rounded-full flex items-center justify-center font-black italic uppercase">
+                            <div className="w-10 h-10 bg-white text-[#29C454] rounded-full flex items-center justify-center font-black italic uppercase shadow-inner">
                               {getInitials(partido.rival.nombre)}
                             </div>
                             <div>
                               <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
-                              <p className="font-black italic">{partido.rival.nombre} ({partido.rival.elo} Pts)</p>
+                              {/* ELO OCULTO PARA MANTENER LA TENSIÓN (FUNCIÓN PREMIUM) */}
+                              <p className="font-black italic text-lg">{partido.rival.nombre}</p>
                             </div>
                           </div>
 
@@ -1092,25 +1153,23 @@ export default function App() {
                           {partido.estado === 'confirmado' && (
                             <>
                               {obtenerEstadoTiempo(partido) === 'futuro' ? (
-                                <div className="text-center py-5 bg-[#1A1C1E] rounded-[1.8rem] border border-[#007AFF]/40 shadow-2xl relative overflow-hidden">
-                                  {/* --- BRILLO AZUL DE FONDO --- */}
-                                  <div className="absolute -top-10 -left-10 w-32 h-32 bg-[#007AFF]/20 rounded-full blur-3xl"></div>
+                                <div className="text-center py-6 bg-[#FFFFFF] rounded-[1.8rem] shadow-xl relative overflow-hidden border border-[#1A1C1E]/5">
                                   
                                   {/* --- BOTÓN DE CANCELAR --- */}
                                   <button 
                                     onClick={() => handleCancelMatch(partido)}
-                                    className="absolute top-3 right-4 w-8 h-8 bg-white/5 text-[#007AFF] rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20"
+                                    className="absolute top-3 right-4 w-8 h-8 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20"
                                     title="Cancelar Partido"
                                   >
                                     ✕
                                   </button>
                                   
-                                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#007AFF] mb-3 relative z-10 drop-shadow-sm">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#29C454] mb-3 relative z-10">
                                     El partido inicia en
                                   </p>
                                   
-                                  <div className="mx-auto w-fit bg-[#F8F7F2]/5 px-7 py-2 rounded-xl border border-[#007AFF]/20 relative z-10 shadow-inner">
-                                    <p className="text-2xl font-black italic tracking-[0.2em] font-mono text-white drop-shadow-[0_0_8px_rgba(0,122,255,0.4)]">
+                                  <div className="mx-auto w-fit bg-[#F8F7F2] px-7 py-2.5 rounded-xl border border-[#1A1C1E]/10 relative z-10 shadow-inner">
+                                    <p className="text-3xl font-black italic tracking-[0.1em] font-mono text-[#1A1C1E]">
                                       {getCountdown(partido)}
                                     </p>
                                   </div>
@@ -1154,12 +1213,6 @@ export default function App() {
                                     </div>
                                   </div>
 
-                                  <select value={ganadorId} onChange={(e) => setGanadorId(e.target.value)} className="w-full bg-white border-none rounded-xl px-4 py-4 text-[#1A1C1E] font-black text-sm focus:outline-none appearance-none text-center shadow-md">
-                                    <option value="">¿Quién ganó el partido?</option>
-                                    <option value={currentUser.id}>🏆 Yo gané el partido</option>
-                                    <option value={partido.rival.id}>🏆 {partido.rival.nombre} ganó</option>
-                                  </select>
-
                                   <div className="flex gap-3 pt-2">
                                     <button onClick={() => setReportingMatch(null)} className="flex-1 bg-black/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white hover:bg-black/20 transition-colors">Cancelar</button>
                                     <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg hover:scale-95 transition-all">Enviar Final</button>
@@ -1185,7 +1238,7 @@ export default function App() {
                           {partido.estado === 'en_revision' && partido.reportado_por === currentUser.id && (
                             <div className="bg-white/20 p-4 rounded-xl text-center border border-white/30">
                               <p className="text-xs font-black uppercase tracking-widest">⏳ Esperando confirmación</p>
-                              <p className="text-[10px] mt-1 opacity-80">El rival debe aceptar el marcador ({partido.marcador}).</p>
+                              <p className="text-[10px] mt-1 opacity-80">El rival debe aceptar el marcador que pusiste.</p>
                             </div>
                           )}
 
@@ -1198,7 +1251,9 @@ export default function App() {
                                     ? `🏆 El rival reportó que TÚ ganaste:` 
                                     : `🏆 El rival reportó que ÉL ganó:`}
                                 </p>
-                                <p className="text-2xl font-black italic tracking-widest font-mono text-white drop-shadow-md">{partido.marcador}</p>
+                                <p className="text-2xl font-black italic tracking-widest font-mono text-white drop-shadow-md">
+                                  {getRelativeMarcador(partido)}
+                                </p>
                               </div>
                               <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs mb-3 shadow-xl active:scale-95 transition-all">
                                 ✅ Aceptar Resultado
@@ -1257,7 +1312,7 @@ export default function App() {
             <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg' : 'text-[#1A1C1E]/40'}`}>
               <div className="relative">
                 <span className="text-xl">{item.icon}</span>
-                {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser.id)) && (
+                {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
               </div>
