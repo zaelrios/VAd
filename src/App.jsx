@@ -34,6 +34,25 @@ export default function App() {
   const [initData] = useState(getInitialTimes);
 
   const [tab, setTab] = useState('home');
+
+  // --- SISTEMA DE ALERTAS VAd. ---
+  const [vadAlert, setVadAlert] = useState(null);
+
+  // Funciones para llamar a las alertas fácilmente
+  const mostrarAlerta = (titulo, mensaje) => {
+    setVadAlert({ tipo: 'info', titulo, mensaje });
+  };
+
+  const mostrarError = (titulo, mensaje) => {
+    setVadAlert({ tipo: 'error', titulo, mensaje });
+  };
+
+  const mostrarConfirmacion = (titulo, mensaje, accionConfirmar) => {
+    setVadAlert({ tipo: 'confirm', titulo, mensaje, accionConfirmar });
+  };
+
+  const cerrarAlerta = () => setVadAlert(null);
+  
   const [isLoggedIn, setIsLoggedIn] = useState(false); 
   const [currentUser, setCurrentUser] = useState(null); 
   const [comentario, setComentario] = useState('');
@@ -111,9 +130,9 @@ export default function App() {
 
     if (!error) {
       setListaUsuarios(prev => prev.map(u => u.id === id ? { ...u, rol: nuevoRol } : u));
-      alert(`Rol actualizado a ${nuevoRol.toUpperCase()}`);
+      mostrarAlerta("Éxito", `Rol actualizado a ${nuevoRol.toUpperCase()}`);
     } else {
-      alert("Error al cambiar rol.");
+      mostrarError("Error", "Error al cambiar rol.");
     }
   };
 
@@ -141,7 +160,7 @@ export default function App() {
         prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug)
       );
     } else {
-      alert("Error al actualizar: " + error.message);
+      mostrarError("Error", "Error al actualizar: " + error.message);
     }
   };
 
@@ -283,7 +302,7 @@ export default function App() {
     const canalActualizaciones = supabase.channel('alertas-vad')
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, (payload) => {
         fetchPartidos(); 
-        alert('🚨 Atención: Tu rival ha cancelado el partido. Te hemos regresado a la sala de búsqueda automáticamente.');
+        mostrarError('Partido Cancelado', 'Tu rival ha cancelado el partido. Te hemos regresado a la sala de búsqueda automáticamente.');
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, (payload) => {
         fetchPartidos(); 
@@ -430,7 +449,6 @@ export default function App() {
     return { nuevaConfianza, nuevaRacha };
   };
 
-
   // --- FLUJO DE W.O. EN MI CONTRA (ME RINDO) ---
   const processSelfWO = async (partido, miPerfil) => {
     const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
@@ -462,33 +480,37 @@ export default function App() {
 
     await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
 
-    alert(`W.O. Procesado. Tu nuevo ELO es ${miNuevoElo} (${deltaMi} pts) y perdiste Confiabilidad.`);
+    mostrarAlerta("W.O. Procesado", `Tu nuevo ELO es ${miNuevoElo} (${deltaMi} pts) y perdiste Confiabilidad.`);
   };
 
-  const handleSelfWO = async (partido) => {
-    const confirmar = window.confirm("🚨 Faltan menos de 30 minutos. NO PUEDES CANCELAR.\n\n¿Deseas declarar W.O. asumiendo la derrota (-ELO, -1 Confiabilidad)?");
-    if (!confirmar) return;
-    try {
-        const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
-        await processSelfWO(partido, perfil);
-        
-        const updatedUser = { 
-          ...perfil, 
-          confianza: Math.max(0, perfil.confianza - 1.0), 
-          elo: calculateElo(perfil.elo, partido.rival.elo, "0-6, 0-6", false), 
-          racha_asistencia: 0 
-        };
-        setCurrentUser(updatedUser);
-        localStorage.setItem('vad_session', JSON.stringify(updatedUser));
-        
-        fetchPartidos();
-    } catch (error) {
-         console.error(error);
-    }
+  const handleSelfWO = (partido) => {
+    mostrarConfirmacion(
+      "Me Rindo (W.O.)",
+      "🚨 Faltan menos de 30 minutos. NO PUEDES CANCELAR.\n\n¿Deseas declarar W.O. asumiendo la derrota (-ELO, -1 Confiabilidad)?",
+      async () => {
+        try {
+            const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
+            await processSelfWO(partido, perfil);
+            
+            const updatedUser = { 
+              ...perfil, 
+              confianza: Math.max(0, perfil.confianza - 1.0), 
+              elo: calculateElo(perfil.elo, partido.rival.elo, "0-6, 0-6", false), 
+              racha_asistencia: 0 
+            };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('vad_session', JSON.stringify(updatedUser));
+            
+            fetchPartidos();
+        } catch (error) {
+             console.error(error);
+             mostrarError("Error", "No se pudo procesar el W.O.");
+        }
+      }
+    );
   };
 
-
-  // --- CANCELACIONES CON LÓGICA DE TIEMPO (CORREGIDO) ---
+  // --- CANCELACIONES CON LÓGICA DE TIEMPO ---
   const handleCancelMatch = async (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
@@ -498,7 +520,7 @@ export default function App() {
     const diffHoras = (inicioPartido - now) / (1000 * 60 * 60);
 
     if (diffHoras <= 0.5) {
-        alert("Faltan menos de 30 minutos. Usa el botón rojo de 'Declarar W.O.'");
+        mostrarError("Atención", "Faltan menos de 30 minutos. Usa el botón rojo de 'Declarar W.O.'");
         return;
     }
 
@@ -532,40 +554,49 @@ export default function App() {
             }
         }
 
-        if (!window.confirm(msj)) return;
+        mostrarConfirmacion(
+          "Cancelar Partido", 
+          msj, 
+          async () => {
+            try {
+              if (penalizacionWODirecto) {
+                  await processSelfWO(partido, perfil);
+              } else {
+                  await supabase.from('Perfiles').update({ 
+                      confianza: nuevaConfianza, 
+                      comodines: comodines, 
+                      racha_asistencia: 0 
+                  }).eq('id', perfil.id);
+                  
+                  await supabase.from('partidos').delete().eq('id', partido.id);
+                  
+                  await supabase.from('buscar').insert([{
+                      jugador_id: partido.rival.id,
+                      nombre: partido.rival.nombre,
+                      fecha: partido.fecha,
+                      hora_inicio: partido.hora_inicio,
+                      hora_fin: partido.hora_fin,
+                      superficie: partido.superficie,
+                      estado: 'activa'
+                  }]);
 
-        if (penalizacionWODirecto) {
-            await processSelfWO(partido, perfil);
-        } else {
-            await supabase.from('Perfiles').update({ 
-                confianza: nuevaConfianza, 
-                comodines: comodines, 
-                racha_asistencia: 0 
-            }).eq('id', perfil.id);
-            
-            await supabase.from('partidos').delete().eq('id', partido.id);
-            
-            await supabase.from('buscar').insert([{
-                jugador_id: partido.rival.id,
-                nombre: partido.rival.nombre,
-                fecha: partido.fecha,
-                hora_inicio: partido.hora_inicio,
-                hora_fin: partido.hora_fin,
-                superficie: partido.superficie,
-                estado: 'activa'
-            }]);
-
-            const updatedUser = { ...perfil, confianza: nuevaConfianza, comodines: comodines, racha_asistencia: 0 };
-            setCurrentUser(updatedUser);
-            localStorage.setItem('vad_session', JSON.stringify(updatedUser));
-            
-            alert('Partido cancelado. Hemos regresado a tu rival a la sala de espera del Radar.');
-        }
-        
-        fetchPartidos();
+                  const updatedUser = { ...perfil, confianza: nuevaConfianza, comodines: comodines, racha_asistencia: 0 };
+                  setCurrentUser(updatedUser);
+                  localStorage.setItem('vad_session', JSON.stringify(updatedUser));
+                  
+                  mostrarAlerta("Cancelado", "Partido cancelado. Hemos regresado a tu rival a la sala de espera del Radar.");
+              }
+              
+              fetchPartidos();
+            } catch (error) {
+                console.error(error);
+                mostrarError("Error", "Error al procesar la cancelación en el servidor.");
+            }
+          }
+        );
     } catch (error) {
         console.error(error);
-        alert("Error al procesar la cancelación en el servidor.");
+        mostrarError("Error de Conexión", "No se pudo leer tu perfil.");
     }
   };
 
@@ -585,7 +616,7 @@ export default function App() {
   // --- FLUJO DE REPORTE AUTOMATIZADO BLINDADO ---
   const handleSubmitReport = async (partido) => {
     if (s1Mi === '' || s1Rival === '' || s2Mi === '' || s2Rival === '') {
-      alert('Debes ingresar al menos los resultados de los 2 primeros sets.');
+      mostrarError("Datos Incompletos", "Debes ingresar al menos los resultados de los 2 primeros sets.");
       return;
     }
 
@@ -596,11 +627,11 @@ export default function App() {
 
     // 1. Validar Sets 1 y 2
     if (!isValidTennisSet(v1Mi, v1Riv)) {
-      alert('El Set 1 tiene un marcador inválido para tenis (ej. válidos: 6-4, 7-5, 7-6).');
+      mostrarError("Marcador Inválido", "El Set 1 tiene un marcador inválido para tenis (ej. válidos: 6-4, 7-5, 7-6).");
       return;
     }
     if (!isValidTennisSet(v2Mi, v2Riv)) {
-      alert('El Set 2 tiene un marcador inválido para tenis.');
+      mostrarError("Marcador Inválido", "El Set 2 tiene un marcador inválido para tenis.");
       return;
     }
 
@@ -611,7 +642,7 @@ export default function App() {
     // 2. Revisar si hay empate obligando a un 3er set
     if (setsMi === 1 && setsRiv === 1) {
       if (s3Mi === '' || s3Rival === '') {
-        alert('Están empatados 1 a 1 en sets. Debes ingresar el marcador del Set 3 para desempatar.');
+        mostrarError("Empate", "Están empatados 1 a 1 en sets. Debes ingresar el marcador del Set 3 para desempatar.");
         return;
       }
       
@@ -619,7 +650,7 @@ export default function App() {
       const v3Riv = parseInt(s3Rival, 10);
       
       if (!isValidTennisSet(v3Mi, v3Riv)) { 
-        alert('El Set 3 tiene un marcador inválido para tenis (ej. válidos: 6-4, 7-5, 7-6).');
+        mostrarError("Marcador Inválido", "El Set 3 tiene un marcador inválido para tenis (ej. válidos: 6-4, 7-5, 7-6).");
         return;
       }
 
@@ -629,7 +660,7 @@ export default function App() {
     }
 
     if (setsMi === setsRiv) {
-      alert('Los sets están empatados. Verifica los números, tiene que haber un ganador claro.');
+      mostrarError("Error de Marcador", "Los sets están empatados. Verifica los números, tiene que haber un ganador claro.");
       return;
     }
 
@@ -639,30 +670,28 @@ export default function App() {
     const nombreGanador = yoGane ? "TÚ" : partido.rival.nombre.toUpperCase();
     const mensajeConfirmacion = `Revisa bien:\n\nMarcador: ${marcadorFinal}\nEl ganador es: ${nombreGanador} 🏆\n\n¿Estás seguro de enviar este resultado a revisión?`;
     
-    if (!window.confirm(mensajeConfirmacion)) {
-      return; 
-    }
+    mostrarConfirmacion("Confirmar Reporte", mensajeConfirmacion, async () => {
+      try {
+        const { error } = await supabase
+          .from('partidos')
+          .update({ 
+            estado: 'en_revision', 
+            marcador: marcadorFinal, 
+            ganador_id: ganadorIdCalculado, 
+            reportado_por: currentUser.id 
+          })
+          .eq('id', partido.id);
 
-    try {
-      const { error } = await supabase
-        .from('partidos')
-        .update({ 
-          estado: 'en_revision', 
-          marcador: marcadorFinal, 
-          ganador_id: ganadorIdCalculado, 
-          reportado_por: currentUser.id 
-        })
-        .eq('id', partido.id);
-
-      if (error) throw error;
-      setReportingMatch(null);
-      setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
-      fetchPartidos(); 
-      alert('Reporte enviado a tu rival para confirmación.');
-    } catch (error) {
-      console.error(error);
-      alert('Error: ' + error.message);
-    }
+        if (error) throw error;
+        setReportingMatch(null);
+        setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
+        fetchPartidos(); 
+        mostrarAlerta("Reporte Enviado", "Reporte enviado a tu rival para confirmación.");
+      } catch (error) {
+        console.error(error);
+        mostrarError("Error", error.message);
+      }
+    });
   };
 
   const handleConfirmReport = async (partido) => {
@@ -707,38 +736,45 @@ export default function App() {
       localStorage.setItem('vad_session', JSON.stringify(perfilSeguro));
       
       fetchPartidos();
-      alert(`¡Partido finalizado!\nSumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts`);
+      mostrarAlerta("¡Partido finalizado!", `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts`);
     } catch (error) {
       console.error(error);
     }
   };
 
   // Esto es para reportar que el OTRO no llegó
- const handleWO = async (partido) => {
-    const confirmar = window.confirm("¿Estás seguro de reportar W.O.? penalizará fuertemente al rival.");
-    if (!confirmar) return;
+ const handleWO = (partido) => {
+    mostrarConfirmacion(
+      "Reportar W.O.", 
+      "¿Estás seguro de reportar W.O.? Esto penalizará fuertemente el ELO y la confiabilidad del rival.", 
+      async () => {
+        try {
+          const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
+          const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, "6-0, 6-0", true);
+          const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, "6-0, 6-0", false);
 
-    try {
-      const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
-      const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, "6-0, 6-0", true);
-      const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, "6-0, 6-0", false);
+          const deltaMi = miNuevoElo - currentUser.elo;
+          const deltaRival = rivalNuevoElo - rivalDB.elo;
 
-      const deltaMi = miNuevoElo - currentUser.elo;
-      const deltaRival = rivalNuevoElo - rivalDB.elo;
+          await supabase.from('Perfiles').update({ elo: miNuevoElo }).eq('id', currentUser.id);
+          await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
 
-      await supabase.from('Perfiles').update({ elo: miNuevoElo }).eq('id', currentUser.id);
-      await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
+          const dataUpdate = { estado: 'wo', ganador_id: currentUser.id };
+          if (partido.jugador1_id === currentUser.id) {
+            dataUpdate.puntos_j1 = deltaMi; dataUpdate.puntos_j2 = deltaRival;
+          } else {
+            dataUpdate.puntos_j1 = deltaRival; dataUpdate.puntos_j2 = deltaMi;
+          }
 
-      const dataUpdate = { estado: 'wo', ganador_id: currentUser.id };
-      if (partido.jugador1_id === currentUser.id) {
-        dataUpdate.puntos_j1 = deltaMi; dataUpdate.puntos_j2 = deltaRival;
-      } else {
-        dataUpdate.puntos_j1 = deltaRival; dataUpdate.puntos_j2 = deltaMi;
+          await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
+          fetchPartidos();
+          mostrarAlerta("W.O. Exitoso", "Se ha reportado la inasistencia del rival.");
+        } catch (error) { 
+          console.error(error); 
+          mostrarError("Error", "No se pudo procesar el W.O.");
+        }
       }
-
-      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
-      fetchPartidos();
-    } catch (error) { console.error(error); }
+    );
   };
 
 
@@ -869,7 +905,7 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      // --- NUEVO: ESCÁNER DE DISPONIBILIDAD REAL (EVITAR FALSA ESPERANZA) ---
+      // --- ESCÁNER DE DISPONIBILIDAD REAL ---
       const { data: partidosDelDia } = await supabase
         .from('partidos')
         .select('cancha_numero, hora_inicio, hora_fin')
@@ -877,11 +913,10 @@ export default function App() {
         .eq('superficie', superficie);
 
       let hayEspacioParaJugar = false;
-      const baseStr = '2000-01-01T'; // Fecha comodín para cálculos matemáticos seguros
+      const baseStr = '2000-01-01T'; 
       let checkStart = new Date(`${baseStr}${startTime}:00`);
       const limitEnd = new Date(`${baseStr}${endTime}:00`);
 
-      // Deslizamos una lupa de 2 hrs en intervalos de 30 minutos
       while (true) {
         let checkEnd = new Date(checkStart.getTime() + (2 * 60 * 60 * 1000));
         if (checkEnd > limitEnd) break;
@@ -889,25 +924,24 @@ export default function App() {
         const strStart = checkStart.toTimeString().substring(0, 5);
         const strEnd = checkEnd.toTimeString().substring(0, 5);
 
-        // Ver qué canchas se cruzan en este mini-bloque exacto de 2 hrs
         const ocupadasAqui = partidosDelDia
           ? partidosDelDia.filter(p => strStart < p.hora_fin && strEnd > p.hora_inicio).map(p => p.cancha_numero)
           : [];
 
-        // Si hay al menos una cancha libre, hay esperanza
+        const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
         const libre = inventario[superficie].find(n => !ocupadasAqui.includes(n));
+        
         if (libre) {
           hayEspacioParaJugar = true;
-          break; // Rompemos el escáner, sí se puede jugar
+          break; 
         }
 
-        // Avanzamos el escáner 30 minutos
         checkStart = new Date(checkStart.getTime() + (30 * 60 * 1000));
       }
 
       if (!hayEspacioParaJugar) {
         setSearchError(`El club tiene las canchas de ${superficie} a máxima capacidad. No hay bloques de 2 hrs libres en tu rango.`);
-        return; // Bloqueamos la entrada al radar
+        return; 
       }
       // --- FIN DEL ESCÁNER ---
 
@@ -927,7 +961,6 @@ export default function App() {
       let matchFin = '';
       let canchaAsignada = null;
       
-      // Inventario de Punta Azul
       const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
 
       if (posiblesRivales && posiblesRivales.length > 0) {
@@ -947,14 +980,12 @@ export default function App() {
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
             if (diferenciaElo <= 200 && horasCruce >= 2) {
-              // 2. Tenemos 2 hrs en común. Extraemos ese bloque de tiempo exacto.
               const propInicio = inicioCruce;
               
               const propEndObj = new Date(`2000-01-01T${propInicio}`);
               propEndObj.setHours(propEndObj.getHours() + 2);
               const propFin = propEndObj.toTimeString().substring(0,5);
 
-              // 3. Preguntamos a Supabase si hay canchas SOLO para esas 2 horas
               const { data: partidosCruce } = await supabase
                 .from('partidos')
                 .select('cancha_numero')
@@ -967,12 +998,11 @@ export default function App() {
               const canchaLibre = inventario[superficie].find(n => !canchasOcupadas.includes(n));
 
               if (canchaLibre) {
-                // ÉXITO: Tenemos rival y tenemos cancha
                 matchEncontrado = rival;
                 matchInicio = propInicio;
                 matchFin = propFin;
                 canchaAsignada = canchaLibre;
-                break; // Rompemos el ciclo, ya tenemos partido
+                break; 
               }
             }
           }
@@ -980,7 +1010,6 @@ export default function App() {
       }
 
       if (matchEncontrado) {
-        // Ejecutar Match
         const { error: insertMatchError } = await supabase
           .from('partidos')
           .insert([{
@@ -997,11 +1026,10 @@ export default function App() {
         if (insertMatchError) throw new Error("Error Supabase: " + insertMatchError.message);
 
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
-        alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
+        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
         setTab('partidos');
         fetchPartidos();
       } else {
-        // Si no encontró rival (o los rivales chocaban con canchas llenas), publica la búsqueda
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
           .insert([{ 
@@ -1017,7 +1045,7 @@ export default function App() {
 
         if (insertError) throw new Error("Error Supabase al publicar: " + insertError.message);
         setActiveSearches([...activeSearches, nuevaBusqueda]); 
-        alert('Búsqueda publicada en el Radar. Te avisaremos cuando alguien haga match.');
+        mostrarAlerta("Búsqueda Publicada", "Te avisaremos cuando alguien haga match.");
       }
     } catch (error) {
       setSearchError(error.message || 'Hubo un error en el circuito.');
@@ -1029,14 +1057,14 @@ export default function App() {
       await supabase.from('buscar').delete().eq('id', id);
       setActiveSearches(prev => prev.filter(search => search.id !== id));
     } catch (error) {
-      alert('Error al eliminar de la base de datos.');
+      mostrarError("Error", "Error al eliminar de la base de datos.");
     }
   };
 
   const handleBookSubmit = (e) => {
     e.preventDefault();
     if (!isLoggedIn) { setTab('auth'); return; }
-    alert(`Redirigiendo al pago...`);
+    mostrarAlerta("Reserva", "Redirigiendo al pago...");
   };
 
   // --- LÓGICA DE UX: REDONDEO A MEDIAS HORAS Y AUTO-AJUSTE ---
@@ -1289,11 +1317,11 @@ export default function App() {
 
                         if (error) throw error;
 
-                        alert('¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto.');
+                        mostrarAlerta("Buzón", "¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto.");
                         setComentario('');
                       } catch (error) {
                         console.error("Error al enviar sugerencia:", error);
-                        alert('Hubo un error al enviar el mensaje. Intenta de nuevo.');
+                        mostrarError("Error", "Hubo un error al enviar el mensaje. Intenta de nuevo.");
                       } finally {
                         btn.innerText = textoOriginal;
                       }
@@ -1411,18 +1439,17 @@ export default function App() {
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    {/* INPUT INICIO */}
                     <input 
                       type="time" 
+                      step="1800"
                       value={modoCancha === 'match' ? startTime : bookStart} 
                       onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} 
                       required 
                       className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
                     />
-                    
-                    {/* INPUT FIN */}
                     <input 
                       type="time" 
+                      step="1800"
                       value={modoCancha === 'match' ? endTime : bookEnd} 
                       onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} 
                       required 
@@ -1501,7 +1528,6 @@ export default function App() {
               ) : (
                 misPartidos.map((partido) => {
                   const esVictoria = partido.ganador_id === currentUser.id;
-                  // Colores dinámicos para historial
                   const colorAcento = esVictoria ? 'text-[#E5B824]' : 'text-[#007AFF]';
                   const bgAcento = esVictoria ? 'bg-[#E5B824]/10' : 'bg-[#007AFF]/10';
                   const borderAcento = esVictoria ? 'border-[#E5B824]/30' : 'border-[#007AFF]/30';
@@ -1511,7 +1537,6 @@ export default function App() {
                       {partido.estado === 'finalizado' || partido.estado === 'wo' ? (
                         <div className={`bg-[#FFFFFF] border ${borderAcento} rounded-2xl p-4 shadow-sm flex items-center justify-between animate-in fade-in`}>
                           <div className="flex items-center gap-3">
-                            {/* Avatar del rival con su color */}
                             <div 
                               className="w-10 h-10 rounded-full flex items-center justify-center font-black italic uppercase shadow-inner text-white text-xs"
                               style={{ backgroundColor: partido.rival.color || '#1A1C1E' }}
@@ -1714,11 +1739,6 @@ export default function App() {
                 })
               )}
             </div>
-            {!isLoggedIn && (
-              <button onClick={() => setTab('auth')} className="w-full mt-6 bg-[#29C454] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg animate-bounce">
-                Únete para ver tu circuito
-              </button>
-            )}
           </div>
         )}
 
@@ -1956,6 +1976,55 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* --- MODAL DE ALERTAS PERSONALIZADO VAd. --- */}
+      {vadAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#1A1C1E]/40 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-[#F8F7F2] w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border border-[#1A1C1E]/10 animate-in zoom-in-95 duration-300">
+            
+            <div className="text-center mb-6 mt-2">
+              <div className="text-4xl mb-3">
+                {vadAlert.tipo === 'info' ? '🎾' : vadAlert.tipo === 'error' ? '🚨' : '⚠️'}
+              </div>
+              <h3 className={`text-xl font-black italic uppercase tracking-tight mb-2 ${vadAlert.tipo === 'error' ? 'text-red-500' : 'text-[#1A1C1E]'}`}>
+                {vadAlert.titulo}
+              </h3>
+              <p className="text-[#1A1C1E]/70 font-bold text-sm leading-relaxed whitespace-pre-wrap">
+                {vadAlert.mensaje}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              {vadAlert.tipo === 'confirm' ? (
+                <>
+                  <button 
+                    onClick={cerrarAlerta} 
+                    className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-[#1A1C1E]/50 bg-white border border-[#1A1C1E]/10 hover:bg-[#1A1C1E]/5 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={() => {
+                      vadAlert.accionConfirmar();
+                      cerrarAlerta();
+                    }} 
+                    className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white bg-[#29C454] shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all"
+                  >
+                    Confirmar
+                  </button>
+                </>
+              ) : (
+                <button 
+                  onClick={cerrarAlerta} 
+                  className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all ${vadAlert.tipo === 'error' ? 'bg-red-500 shadow-red-500/30' : 'bg-[#29C454]'}`}
+                >
+                  Entendido
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav className="fixed bottom-0 left-0 w-full z-50 bg-[#F8F7F2]/90 backdrop-blur-lg border-t border-[#1A1C1E]/5 px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         <div className="flex justify-between items-center max-w-sm mx-auto px-4">
