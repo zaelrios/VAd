@@ -63,7 +63,7 @@ export default function App() {
   const [misPartidos, setMisPartidos] = useState([]);
   const [reportingMatch, setReportingMatch] = useState(null);
 
-  // ESTADOS DEL FORMULARIO DE REPORTE (NUEVO)
+  // ESTADOS DEL FORMULARIO DE REPORTE
   const [s1Mi, setS1Mi] = useState('');
   const [s1Rival, setS1Rival] = useState('');
   const [s2Mi, setS2Mi] = useState('');
@@ -76,15 +76,39 @@ export default function App() {
   const [bookEnd, setBookEnd] = useState(initData.end);
   const [bookError, setBookError] = useState('');
 
-  // --- SECCIÓN ADMIN ---
-  // 1. Lista de administradores (Agrega aquí los IDs que necesites)
-  const ADMIN_IDS = ["bf19ee3b-c5fb-4a2f-89e1-182e21e2e074"]; 
-
-  // ESTOS DOS ESTADOS FALTABAN (Para guardar y cargar las sugerencias)
+  // --- SECCIÓN ADMIN (ROLES, USUARIOS Y BUZÓN) ---
+  const [listaUsuarios, setListaUsuarios] = useState([]);
   const [listaSugerencias, setListaSugerencias] = useState([]);
-  
+
+  const cargarUsuariosAdmin = async () => {
+    if (currentUser?.rol !== 'admin') return;
+    
+    const { data, error } = await supabase
+      .from('Perfiles')
+      .select('id, nombre, elo, rol')
+      .order('nombre', { ascending: true });
+      
+    if (!error && data) {
+      setListaUsuarios(data);
+    }
+  };
+
+  const actualizarRolUsuario = async (id, nuevoRol) => {
+    const { error } = await supabase
+      .from('Perfiles')
+      .update({ rol: nuevoRol })
+      .eq('id', id);
+
+    if (!error) {
+      setListaUsuarios(prev => prev.map(u => u.id === id ? { ...u, rol: nuevoRol } : u));
+      alert(`Rol actualizado a ${nuevoRol.toUpperCase()}`);
+    } else {
+      alert("Error al cambiar rol.");
+    }
+  };
+
   const cargarSugerenciasAdmin = async () => {
-    if (!currentUser || !ADMIN_IDS.includes(currentUser.id)) return;
+    if (currentUser?.rol !== 'admin') return;
     
     const { data, error } = await supabase
       .from('sugerencias')
@@ -96,7 +120,6 @@ export default function App() {
     }
   };
 
-  // 2. Función para cambiar el estado
   const actualizarEstadoSugerencia = async (id, nuevoEstado) => {
     const { error } = await supabase
       .from('sugerencias')
@@ -104,7 +127,6 @@ export default function App() {
       .eq('id', id);
 
     if (!error) {
-      // Actualizamos la lista local para que el cambio se vea al instante
       setListaSugerencias(prev => 
         prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug)
       );
@@ -113,20 +135,17 @@ export default function App() {
     }
   };
 
-  // 3. Variable calculada para el botón (Ahora sí funciona porque listaSugerencias existe)
   const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
 
   // ESTADOS DE PERSONALIZACIÓN
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const handleColorChange = async (newColor) => {
-    // Actualizamos la pantalla de inmediato
     const updatedUser = { ...currentUser, color: newColor };
     setCurrentUser(updatedUser);
     localStorage.setItem('vad_session', JSON.stringify(updatedUser));
     setShowColorPicker(false);
 
-    // Guardamos en Supabase
     try {
       await supabase.from('Perfiles').update({ color: newColor }).eq('id', currentUser.id);
     } catch (error) {
@@ -194,14 +213,12 @@ export default function App() {
   const fetchPartidos = async () => {
     if (!currentUser) return;
     try {
-      // 1. Refrescar el perfil silenciosamente
       const { data: freshUser } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
       if (freshUser) {
         setCurrentUser(freshUser);
         localStorage.setItem('vad_session', JSON.stringify(freshUser));
       }
 
-      // 2. Cargar los partidos sin orden forzado desde Supabase
       const { data: matches, error } = await supabase
         .from('partidos')
         .select('*')
@@ -216,7 +233,6 @@ export default function App() {
           return { ...partido, rival: rivalData || { id: '?', nombre: 'Jugador Desconocido', elo: '?' } };
         }));
 
-        // ORDENAMIENTO INTELIGENTE VAd.
         partidosConRivales.sort((a, b) => {
           const dateA = new Date(`${a.fecha}T${a.hora_inicio}`);
           const dateB = new Date(`${b.fecha}T${b.hora_inicio}`);
@@ -224,13 +240,13 @@ export default function App() {
           const isA_Active = a.estado === 'confirmado' || a.estado === 'en_revision';
           const isB_Active = b.estado === 'confirmado' || b.estado === 'en_revision';
 
-          if (isA_Active && !isB_Active) return -1; // Activos arriba
-          if (!isA_Active && isB_Active) return 1;  // Finalizados abajo
+          if (isA_Active && !isB_Active) return -1; 
+          if (!isA_Active && isB_Active) return 1;  
           
           if (isA_Active && isB_Active) {
-            return dateA - dateB; // Activos: El más próximo primero (Ascendente)
+            return dateA - dateB; 
           } else {
-            return dateB - dateA; // Finalizados: El más reciente primero (Descendente)
+            return dateB - dateA; 
           }
         });
 
@@ -245,8 +261,7 @@ export default function App() {
 
   useEffect(() => {
     fetchPartidos();
-    // --- NUEVO: Descargar buzón en silencio si eres admin ---
-    if (currentUser && ADMIN_IDS.includes(currentUser.id)) {
+    if (currentUser && currentUser.rol === 'admin') {
       cargarSugerenciasAdmin();
     }
   }, [currentUser, tab]);
@@ -263,10 +278,9 @@ export default function App() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, (payload) => {
         fetchPartidos(); 
       })
-      // --- NUEVO: Escuchar el buzón en tiempo real ---
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sugerencias' }, (payload) => {
-        if (ADMIN_IDS.includes(currentUser.id)) {
-          cargarSugerenciasAdmin(); // Actualiza el globito de notificaciones al instante
+        if (currentUser.rol === 'admin') {
+          cargarSugerenciasAdmin(); 
         }
       })
       .subscribe();
@@ -295,7 +309,6 @@ export default function App() {
     return fullName.substring(0, 2).toUpperCase();
   };
 
-  // Traductor de ELO a Categoría (Fuerza)
   const getFuerza = (elo) => {
     const pts = Number(elo);
     if (pts >= 2000) return '1ra Fuerza (Élite)';
@@ -306,12 +319,10 @@ export default function App() {
     return '6ta Fuerza';
   };
 
-  // Función ESPEJO: Siempre muestra "Mi Score - Su Score"
   const getRelativeMarcador = (partido) => {
     if (partido.estado === 'wo') return 'W.O.';
     if (!partido.marcador) return '';
     
-    // Si el rival fue quien reportó, invertimos los números para que los leas desde TU perspectiva
     if (partido.reportado_por && partido.reportado_por !== currentUser?.id) {
       return partido.marcador.split(',').map(set => {
         const scores = set.trim().split('-');
@@ -323,7 +334,6 @@ export default function App() {
     return partido.marcador;
   };
 
-  // Función para saber en qué etapa cronológica está el partido
   const obtenerEstadoTiempo = (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
@@ -337,7 +347,6 @@ export default function App() {
     return 'terminado'; 
   };
 
-  // Función para calcular la cuenta regresiva
   const getCountdown = (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
@@ -376,31 +385,24 @@ export default function App() {
 
   // --- MOTOR MATEMÁTICO VAd: PROBABILIDAD LINEAL Y PISO DE 1000 ---
   const calculateElo = (miElo, rivalElo, marcador, yoGane) => {
-    const K = 60; // Puntos máximos en juego
-    
-    // 1. Calculamos la diferencia y la limitamos a +/- 200
+    const K = 60; 
     let diff = rivalElo - miElo;
     if (diff > 200) diff = 200;
     if (diff < -200) diff = -200;
 
-    // 2. Probabilidad Lineal VAd (Base 500 para dar un rango de 10% a 90%)
     const expectedScore = 0.5 - (diff / 500);
-    
-    // 3. Multiplicador de Sets
     const setsJugados = marcador ? marcador.split(',').length : 2; 
     const fueBarrida = setsJugados === 2;
 
     let S = 0;
     if (yoGane) {
-      S = fueBarrida ? 1.0 : 0.85; // Ganar 2-0 da el botín completo
+      S = fueBarrida ? 1.0 : 0.85; 
     } else {
-      S = fueBarrida ? 0.0 : 0.15; // Si lograste sacar 1 set, duele menos
+      S = fueBarrida ? 0.0 : 0.15; 
     }
 
-    // 4. Cálculo final redondeado
     let nuevoElo = Math.round(miElo + K * (S - expectedScore));
 
-    // 5. PISO DE CONCRETO: Nadie cae a los abismos de la depresión
     if (nuevoElo < 1000) {
       nuevoElo = 1000;
     }
@@ -423,27 +425,22 @@ export default function App() {
   const processSelfWO = async (partido, miPerfil) => {
     const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
     
-    // El sistema me castiga asumiendo que perdí 0-6, 0-6
     const miNuevoElo = calculateElo(miPerfil.elo, rivalDB.elo, "0-6, 0-6", false);
     const rivalNuevoElo = calculateElo(rivalDB.elo, miPerfil.elo, "6-0, 6-0", true);
     
-    // --- CÁLCULO DE PUNTOS PERDIDOS/GANADOS ---
     const deltaMi = miNuevoElo - miPerfil.elo;
     const deltaRival = rivalNuevoElo - rivalDB.elo;
 
     const miConfianzaCastigada = Math.max(0, Number(miPerfil.confianza) - 1.0);
 
-    // Actualizo mi perfil (pierdo ELO, pierdo 1 bola, pierdo racha)
     await supabase.from('Perfiles').update({ 
         elo: miNuevoElo, 
         confianza: miConfianzaCastigada, 
         racha_asistencia: 0 
     }).eq('id', miPerfil.id);
     
-    // Actualizo rival (gana ELO)
     await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
 
-    // --- GUARDAMOS LOS PUNTOS EN EL PARTIDO ---
     const dataUpdate = { estado: 'wo', ganador_id: rivalDB.id, marcador: "W.O." };
     if (partido.jugador1_id === miPerfil.id) {
       dataUpdate.puntos_j1 = deltaMi;
@@ -453,10 +450,8 @@ export default function App() {
       dataUpdate.puntos_j2 = deltaMi;
     }
 
-    // Marco el partido como W.O. ganado por el rival con los puntos grabados
     await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
 
-    // Alerta actualizada para mostrar cuántos puntos perdiste
     alert(`W.O. Procesado. Tu nuevo ELO es ${miNuevoElo} (${deltaMi} pts) y perdiste Confiabilidad.`);
   };
 
@@ -467,7 +462,6 @@ export default function App() {
         const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
         await processSelfWO(partido, perfil);
         
-        // Actualizamos sesión local
         const updatedUser = { 
           ...perfil, 
           confianza: Math.max(0, perfil.confianza - 1.0), 
@@ -486,23 +480,19 @@ export default function App() {
 
   // --- CANCELACIONES CON LÓGICA DE TIEMPO (CORREGIDO) ---
   const handleCancelMatch = async (partido) => {
-    // 1. Calculamos el tiempo que falta con precisión
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
     const inicioPartido = new Date(year, month - 1, day, startH, startM);
     const now = new Date();
     
-    // Calculamos la diferencia en horas exactas
     const diffHoras = (inicioPartido - now) / (1000 * 60 * 60);
 
-    // Protección extra por si el botón sigue visible por error
     if (diffHoras <= 0.5) {
         alert("Faltan menos de 30 minutos. Usa el botón rojo de 'Declarar W.O.'");
         return;
     }
 
     try {
-        // Traemos perfil fresco para leer los comodines
         const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
         
         let comodines = perfil.comodines !== undefined && perfil.comodines !== null ? perfil.comodines : 2;
@@ -510,11 +500,9 @@ export default function App() {
         let msj = "";
         let penalizacionWODirecto = false;
 
-        // 🟢 ZONA VERDE: Más de 24 hrs
         if (diffHoras >= 24) {
             msj = "✅ ZONA VERDE: Faltan más de 24 horas. Esta cancelación es LIBRE y no gasta tus comodines.\n\n¿Estás seguro de cancelar el partido?";
         } 
-        // 🟡 ZONA AMARILLA: Menos de 24h pero más de 3h (Usa 1 Comodín normal)
         else if (diffHoras < 24 && diffHoras >= 3) {
             if (comodines > 0) {
                 msj = `🟡 ZONA AMARILLA: Faltan menos de 24 hrs. Usarás 1 COMODÍN (Te quedan ${comodines}). Tu confianza quedará intacta.\n\n¿Confirmar cancelación?`;
@@ -524,7 +512,6 @@ export default function App() {
                 nuevaConfianza = Math.max(0, nuevaConfianza - 0.5);
             }
         } 
-        // 🟠 ZONA NARANJA (Emergencia crítica): Menos de 3h pero más de 30 min
         else if (diffHoras < 3 && diffHoras > 0.5) {
             if (comodines > 0) {
                 msj = `🟠 EMERGENCIA: Faltan menos de 3 hrs. Usarás 1 COMODÍN para salvarte del W.O. (Te quedan ${comodines}).\n\n¿Confirmar emergencia?`;
@@ -537,11 +524,9 @@ export default function App() {
 
         if (!window.confirm(msj)) return;
 
-        // Ejecución
         if (penalizacionWODirecto) {
             await processSelfWO(partido, perfil);
         } else {
-            // Cancelación normal o con multa de confianza
             await supabase.from('Perfiles').update({ 
                 confianza: nuevaConfianza, 
                 comodines: comodines, 
@@ -550,7 +535,6 @@ export default function App() {
             
             await supabase.from('partidos').delete().eq('id', partido.id);
             
-            // Regresamos al rival al buscador
             await supabase.from('buscar').insert([{
                 jugador_id: partido.rival.id,
                 nombre: partido.rival.nombre,
@@ -561,7 +545,6 @@ export default function App() {
                 estado: 'activa'
             }]);
 
-            // Actualizamos UI local
             const updatedUser = { ...perfil, confianza: nuevaConfianza, comodines: comodines, racha_asistencia: 0 };
             setCurrentUser(updatedUser);
             localStorage.setItem('vad_session', JSON.stringify(updatedUser));
@@ -646,7 +629,6 @@ export default function App() {
       const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, partido.marcador, yoGane);
       const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, partido.marcador, !yoGane);
 
-      // --- CÁLCULO DE PUNTOS GANADOS/PERDIDOS ---
       const deltaMi = miNuevoElo - currentUser.elo;
       const deltaRival = rivalNuevoElo - rivalDB.elo;
 
@@ -665,7 +647,6 @@ export default function App() {
         racha_asistencia: rivalNuevosDatos.nuevaRacha 
       }).eq('id', rivalDB.id);
 
-      // GUARDAMOS LOS PUNTOS EN EL PARTIDO (Sabiendo quién es J1 y quién es J2)
       const dataUpdate = { estado: 'finalizado' };
       if (partido.jugador1_id === currentUser.id) {
         dataUpdate.puntos_j1 = deltaMi;
@@ -775,7 +756,8 @@ export default function App() {
           elo: 1200, 
           confianza: 5.0, 
           racha_asistencia: 0,
-          comodines: 2 // <--- AHORA NACEN CON SUS DOS COMODINES
+          comodines: 2,
+          rol: 'gratis' 
         }])
         .select()
         .single();
@@ -824,7 +806,6 @@ export default function App() {
     const searchStartObj = new Date(`${searchDate}T${startTime}:00`);
     const diffInHoursNotice = (searchStartObj - now) / (1000 * 60 * 60);
 
-    // 🚨 CAMBIO AQUÍ: Bajamos el límite a 2 horas de anticipación
     if (diffInHoursNotice < 2) {
       setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.');
       return;
@@ -892,12 +873,10 @@ export default function App() {
             const eloRival = perfilRival?.elo || 1000;
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
-            // 🚨 CAMBIO AQUÍ: Exigimos que tengan mínimo 2 horas en común
             if (diferenciaElo <= 200 && horasCruce >= 2) {
               matchEncontrado = rival;
               matchInicio = inicioCruce;
               
-              // Siempre extraemos bloques exactos de 2 horas para el partido
               startObj.setHours(startObj.getHours() + 2);
               matchFin = startObj.toTimeString().substring(0,5); 
               break;
@@ -972,7 +951,6 @@ export default function App() {
         {tab === 'home' && (
           <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10 px-2">
             
-            {/* 1. HERO ORIGINAL Y BOTÓN PRINCIPAL */}
             <section className="flex flex-col items-center">
               <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
@@ -981,15 +959,13 @@ export default function App() {
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
                  La comunidad que premia a los que sí aparecen.<br/>Matchmaking inteligente con sistema ELO para un ranking justo y real.
               </p>
-              <button onClick={() => isLoggedIn ? setTab('buscar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
+              <button onClick={() => isLoggedIn ? setTab('jugar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
                 {isLoggedIn ? "Buscar rival ➜" : "Únete al Circuito ➜"}
               </button>
             </section>
 
-            {/* SECCIONES DE EXPLICACIÓN (DISEÑO BLANCO Y HUESO) */}
             <section className="w-full text-left space-y-6">
               
-              {/* 2. CÓMO FUNCIONA (BUSCADOR) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 opacity-5 text-9xl">🔍</div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">El Matchmaking</h3>
@@ -1014,7 +990,6 @@ export default function App() {
                  </ul>
               </div>
 
-              {/* 3. SISTEMA ELO (MOTOR MATEMÁTICO VAd.) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#29C454]/10 rounded-full blur-3xl"></div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Ranking ELO</h3>
@@ -1038,7 +1013,6 @@ export default function App() {
                       <p className="font-bold leading-relaxed opacity-70">A diferencia de otros sistemas, usamos un cálculo lineal: contra un rival 200 pts arriba, tu probabilidad de ganar es del 10%. Dar la sorpresa ahí te da el premio máximo de puntos.</p>
                     </div>
 
-                    {/* Punto 4: Desglose Técnico */}
                     <div className="pt-2 border-t border-[#1A1C1E]/10">
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">4.</span> Desglose de la Fórmula</p>
                       
@@ -1059,7 +1033,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Punto 5: Ejemplos Prácticos */}
                     <div className="pt-4 border-t border-[#1A1C1E]/10">
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">5.</span> Ejemplos (Victoria 2-0)</p>
                       <div className="space-y-2">
@@ -1107,7 +1080,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. REGLAS DE CANCHA (CONFIABILIDAD) */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
                 <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#E5B824]/10 rounded-full blur-3xl"></div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Confiabilidad</h3>
@@ -1116,7 +1088,6 @@ export default function App() {
                 <div className="space-y-4 relative z-10 text-xs text-[#1A1C1E]">
                   <div className="bg-[#F8F7F2] p-5 rounded-2xl border border-[#1A1C1E]/5 shadow-inner space-y-5">
                     
-                    {/* Zona Verde */}
                     <div className="flex gap-4 items-start">
                       <span className="text-[#29C454] text-xl leading-none drop-shadow-sm">🟢</span>
                       <div>
@@ -1125,7 +1096,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Zona Amarilla */}
                     <div className="flex gap-4 items-start">
                       <span className="text-[#E5B824] text-xl leading-none drop-shadow-sm">🟡</span>
                       <div>
@@ -1134,7 +1104,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Zona Roja */}
                     <div className="flex gap-4 items-start">
                       <span className="text-red-500 text-xl leading-none drop-shadow-sm">🔴</span>
                       <div>
@@ -1147,7 +1116,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 5. BUZÓN DE SUGERENCIAS */}
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Buzón</h3>
                 <p className="text-[#1A1C1E]/70 text-sm font-bold mb-5 leading-relaxed">¿Ideas, reportes de error o sugerencias? Háznoslo saber.</p>
@@ -1163,7 +1131,6 @@ export default function App() {
                       e.preventDefault();
                       if(!comentario.trim()) return;
 
-                      // Cambiamos el texto temporalmente para mostrar que está cargando
                       const btn = e.currentTarget;
                       const textoOriginal = btn.innerText;
                       btn.innerText = 'Enviando...';
@@ -1172,7 +1139,6 @@ export default function App() {
                         const { error } = await supabase
                           .from('sugerencias')
                           .insert([{ 
-                            // Si está logueado mandamos sus datos, si no, va como anónimo
                             jugador_id: isLoggedIn && currentUser ? currentUser.id : null,
                             nombre: isLoggedIn && currentUser ? currentUser.nombre : 'Anónimo',
                             comentario: comentario.trim(),
@@ -1251,7 +1217,6 @@ export default function App() {
         {tab === 'jugar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center pb-20">
             
-            {/* INTERRUPTOR (TOGGLE) CON COLORES DINÁMICOS */}
             <div className="bg-[#FFFFFF] p-1.5 rounded-2xl border border-[#1A1C1E]/10 shadow-sm flex w-full relative z-20">
               <button 
                 onClick={() => setModoCancha('match')}
@@ -1267,12 +1232,10 @@ export default function App() {
               </button>
             </div>
 
-            {/* FORMULARIO DINÁMICO */}
             <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
               <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
                 
                 <div className="text-center mb-2">
-                  {/* TÍTULO DINÁMICO (Verde o Azul) */}
                   <h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>
                     {modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}
                   </h2>
@@ -1296,7 +1259,6 @@ export default function App() {
 
                 <div className="space-y-3 text-left w-full">
                   <div className="ml-2">
-                    {/* ETIQUETA DINÁMICA */}
                     <label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>
                       Franja Horaria
                     </label>
@@ -1307,7 +1269,6 @@ export default function App() {
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    {/* INPUTS QUE BRILLAN VERDE O AZUL AL TOCARLOS */}
                     <input type="time" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => modoCancha === 'match' ? setStartTime(e.target.value) : setBookStart(e.target.value)} required className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
                     <input type="time" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} required className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
                   </div>
@@ -1316,7 +1277,6 @@ export default function App() {
               </div>
 
               <div className="pt-6 flex flex-col items-center">
-                {/* BOTÓN PRINCIPAL DINÁMICO */}
                 <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>
                   {modoCancha === 'match' ? (
                     <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</>
@@ -1327,7 +1287,6 @@ export default function App() {
               </div>
             </form>
             
-            {/* BÚSQUEDAS ACTIVAS (Solo se ven en modo match) */}
             {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
               <div className="pt-4 space-y-4 animate-in fade-in w-full">
                 <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Radar Activo</h3>
@@ -1380,14 +1339,13 @@ export default function App() {
                 <div className="text-center bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
                   <p className="text-4xl mb-4 opacity-50">🕸️</p>
                   <p className="text-[#1A1C1E]/60 font-bold text-sm">Aún no tienes partidos.</p>
-                  <button onClick={() => setTab('buscar')} className="mt-6 px-6 py-3 bg-[#F8F7F2] text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10">
+                  <button onClick={() => setTab('jugar')} className="mt-6 px-6 py-3 bg-[#F8F7F2] text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10">
                     Buscar Rival
                   </button>
                 </div>
               ) : (
                 misPartidos.map((partido) => (
                   <React.Fragment key={partido.id}>
-                    {/* --- TARJETA COMPACTA: PARTIDOS FINALIZADOS / W.O. --- */}
                     {partido.estado === 'finalizado' || partido.estado === 'wo' ? (
                       <div className={`${partido.estado === 'wo' ? 'bg-red-500' : 'bg-[#007AFF]'} text-white rounded-2xl p-4 shadow-md flex items-center justify-between animate-in fade-in`}>
                         <div>
@@ -1402,7 +1360,6 @@ export default function App() {
                                 : '❌ L vs '} 
                             {partido.rival.nombre}
                             
-                            {/* --- MOSTRAR PUNTOS --- */}
                             {((partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) !== undefined) && (
                               <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-md font-black ${
                                 (partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 
@@ -1423,7 +1380,6 @@ export default function App() {
                         </div>
                       </div>
                     ) : (
-                      /* --- TARJETA GRANDE: PARTIDOS ACTIVOS (Confirmado, En Revisión) --- */
                       <div className={`${partido.estado === 'confirmado' ? 'bg-[#29C454]' : 'bg-[#E5B824]'} text-white rounded-[2rem] p-6 shadow-lg shadow-[#1A1C1E]/10 relative overflow-hidden transition-colors`}>
                         <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
                         <div className="relative z-10">
@@ -1455,7 +1411,6 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* ESTADOS DEL PARTIDO */}
                           {partido.estado === 'confirmado' && (
                             <>
                               {(() => {
@@ -1467,7 +1422,6 @@ export default function App() {
                                 return diffHrs > 0 ? (
                                   <div className="text-center py-6 bg-[#FFFFFF] rounded-[1.8rem] shadow-xl relative overflow-hidden border border-[#1A1C1E]/5">
                                     
-                                    {/* LÓGICA DE BOTONES: Mostrar Cancelar (X) o W.O. (Rojo) */}
                                     {diffHrs > 0.5 ? (
                                       <button 
                                         onClick={() => handleCancelMatch(partido)}
@@ -1505,7 +1459,6 @@ export default function App() {
                                   <div className="mt-4 bg-black/20 p-5 rounded-3xl space-y-5 animate-in fade-in border border-black/10">
                                     <p className="text-xs font-black uppercase tracking-widest text-center">Reportar Resultado</p>
                                     
-                                    {/* --- FORMULARIO DE SETS --- */}
                                     <div className="space-y-3">
                                       <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest opacity-60">
                                         <span className="w-1/3 text-center">Mi Score</span>
@@ -1597,13 +1550,12 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: PERFIL (VERSIÓN PERSONALIZABLE) */}
+        {/* VISTA: PERFIL */}
         {tab === 'perfil' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
             
             <div className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
               
-              {/* Etiqueta de Nivel / Fuerza */}
               <div 
                 className="absolute top-0 left-0 w-full py-4 shadow-md transition-colors duration-300"
                 style={{ backgroundColor: (isLoggedIn && currentUser?.color) ? currentUser.color : '#29C454' }}
@@ -1613,7 +1565,6 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Avatar con Color Dinámico */}
               <div className="relative mt-12 mb-4">
                 <div 
                   className="w-28 h-28 bg-[#F8F7F2] rounded-full border-[5px] flex items-center justify-center font-black italic text-5xl uppercase shadow-inner transition-colors duration-300"
@@ -1625,7 +1576,6 @@ export default function App() {
                   {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
                 </div>
                 
-                {/* Botón de Editar Color (MÁS PEQUEÑO) */}
                 {isLoggedIn && (
                   <button 
                     onClick={() => setShowColorPicker(!showColorPicker)} 
@@ -1637,7 +1587,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Paleta de Colores */}
               {showColorPicker && (
                 <div className="flex gap-3 mb-6 p-3 bg-[#F8F7F2] rounded-2xl shadow-inner border border-[#1A1C1E]/10 animate-in fade-in slide-in-from-top-2">
                   {['#29C454', '#007AFF', '#FF3B30', '#AF52DE', '#FF9500', '#1A1C1E'].map(colorHex => (
@@ -1658,10 +1607,9 @@ export default function App() {
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
               <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-xs mb-6 uppercase mt-1">
-                {isLoggedIn && currentUser ? 'Circuito Activo' : 'Regístrate para jugar'}
+                {isLoggedIn && currentUser ? `Circuito Activo • ${currentUser.rol || 'Gratis'}` : 'Regístrate para jugar'}
               </p>
               
-              {/* Confianza y Comodines */}
               <div className="bg-[#F8F7F2] w-full rounded-2xl p-4 border border-[#1A1C1E]/5 mb-6">
                 <div className="flex justify-between items-center mb-2">
                   <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest">Confiabilidad</p>
@@ -1674,7 +1622,6 @@ export default function App() {
                 {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
               </div>
 
-              {/* Estadísticas Gratuitas */}
               <div className="flex gap-3 w-full border-t border-[#1A1C1E]/10 pt-6">
                 <div className="flex-1 bg-white border border-[#1A1C1E]/10 rounded-2xl py-4 shadow-sm">
                   <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Tu ELO</p>
@@ -1692,24 +1639,36 @@ export default function App() {
               </div>
 
               {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
-              {isLoggedIn && ADMIN_IDS.includes(currentUser?.id) && (
+              {isLoggedIn && currentUser?.rol === 'admin' && (
                 <div className="w-full mt-8 pt-8 border-t border-[#1A1C1E]/10 space-y-4">
-                  <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola de Administración</h3>
+                  <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola Master</h3>
                   
-                  <button 
-                    onClick={() => {
-                      cargarSugerenciasAdmin();
-                      setTab('admin_buzon');
-                    }}
-                    className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative"
-                  >
-                    📩 Revisar Buzón 
-                    {sugerenciasNuevas > 0 && (
-                      <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">
-                        {sugerenciasNuevas}
-                      </span>
-                    )}
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => {
+                        cargarSugerenciasAdmin();
+                        setTab('admin_buzon');
+                      }}
+                      className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95"
+                    >
+                      📩 Buzón 
+                      {sugerenciasNuevas > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">
+                          {sugerenciasNuevas}
+                        </span>
+                      )}
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        cargarUsuariosAdmin();
+                        setTab('admin_usuarios');
+                      }}
+                      className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95"
+                    >
+                      👥 Jugadores
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1719,6 +1678,46 @@ export default function App() {
                 Cerrar Sesión
               </button>
             )}
+          </div>
+        )}
+
+        {/* VISTA DEL PANEL DE USUARIOS ADMIN */}
+        {tab === 'admin_usuarios' && currentUser?.rol === 'admin' && (
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in fade-in pb-20">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black italic uppercase text-[#1A1C1E]">Jugadores</h2>
+                <p className="text-[10px] font-bold text-[#007AFF] uppercase tracking-widest">{listaUsuarios.length} registrados en el club</p>
+              </div>
+              <button onClick={() => setTab('perfil')} className="bg-white p-3 rounded-xl shadow-sm border border-[#1A1C1E]/5 text-[10px] font-black uppercase">✕</button>
+            </div>
+            
+            <div className="space-y-3">
+              {listaUsuarios.map((usr) => (
+                <div key={usr.id} className="bg-white border border-[#1A1C1E]/10 p-4 rounded-2xl shadow-sm flex items-center justify-between">
+                  <div>
+                    <p className="font-black text-[11px] uppercase text-[#1A1C1E]">{usr.nombre}</p>
+                    <p className="text-[9px] font-bold text-[#1A1C1E]/50 uppercase mt-0.5">ELO: {usr.elo}</p>
+                  </div>
+                  
+                  <select 
+                    value={usr.rol || 'gratis'} 
+                    onChange={(e) => actualizarRolUsuario(usr.id, e.target.value)}
+                    className={`text-[9px] font-black uppercase tracking-widest px-3 py-2 rounded-xl border-none focus:outline-none focus:ring-4 focus:ring-black/10 cursor-pointer shadow-inner transition-colors ${
+                      usr.rol === 'admin' ? 'bg-[#1A1C1E] text-white' : 
+                      usr.rol === 'pro' ? 'bg-[#AF52DE] text-white' : 
+                      usr.rol === 'premium' ? 'bg-[#E5B824] text-[#1A1C1E]' : 
+                      'bg-[#F8F7F2] text-[#1A1C1E]/60'
+                    }`}
+                  >
+                    <option value="gratis">Gratis</option>
+                    <option value="premium">Premium 🌟</option>
+                    <option value="pro">Pro ⚡</option>
+                    <option value="admin">Admin 👑</option>
+                  </select>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1734,7 +1733,6 @@ export default function App() {
             </div>
             
             <div className="space-y-4">
-              {/* Filtramos las que dicen 'archivada' para que desaparezcan de la pantalla */}
               {listaSugerencias.filter(sug => sug.estado !== 'archivada').length === 0 ? (
                 <div className="text-center py-12 bg-white rounded-[2rem] border border-[#1A1C1E]/10 shadow-sm">
                   <p className="text-4xl mb-3">🍃</p>
@@ -1745,7 +1743,6 @@ export default function App() {
                 listaSugerencias.filter(sug => sug.estado !== 'archivada').map((sug) => (
                   <div key={sug.id} className={`bg-white border ${sug.estado === 'nueva' ? 'border-[#29C454]' : 'border-[#1A1C1E]/10'} p-5 rounded-[2rem] shadow-sm relative transition-all`}>
                     
-                    {/* Badge de Estado */}
                     <div className="flex justify-between items-start mb-3">
                       <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
                         sug.estado === 'nueva' ? 'bg-[#29C454] text-white' : 'bg-[#F8F7F2] text-[#1A1C1E]/40'
@@ -1758,7 +1755,6 @@ export default function App() {
                     <p className="font-black text-[11px] uppercase text-[#1A1C1E] mb-1">{sug.nombre}</p>
                     <p className="text-sm font-bold text-[#1A1C1E]/70 leading-relaxed mb-5">{sug.comentario}</p>
 
-                    {/* ACCIONES */}
                     <div className="flex gap-2 border-t border-[#1A1C1E]/5 pt-4">
                       {sug.estado !== 'leida' && (
                         <button 
@@ -1791,7 +1787,6 @@ export default function App() {
 
       <nav className="fixed bottom-0 left-0 w-full z-50 bg-[#F8F7F2]/90 backdrop-blur-lg border-t border-[#1A1C1E]/5 px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         <div className="flex justify-between items-center max-w-sm mx-auto px-4">
-          {/* Quitamos 'reservar' y 'buscar', ahora solo usamos 'jugar' */}
           {[
             { id: 'home', icon: '🏠', label: 'Inicio' }, 
             { id: 'jugar', icon: '🎾', label: 'Jugar' }, 
@@ -1805,7 +1800,6 @@ export default function App() {
             >
               <div className="relative flex flex-col items-center gap-1">
                 <span className="text-xl mb-0.5">{item.icon}</span>
-                {/* Opcional: Mostrar el texto del tab si quieres, si no, se ve más limpio sin él */}
                 {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
