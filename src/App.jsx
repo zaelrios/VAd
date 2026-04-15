@@ -1469,27 +1469,25 @@ export default function App() {
 
         {/* VISTA: MIS PARTIDOS Y JUEZ DE SILLA */}
         {tab === 'partidos' && (
-          <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto">
+          <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto pb-20">
             <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight text-center">Partidos</h2>
             <div className={`space-y-4 text-left ${!isLoggedIn && 'opacity-80'}`}>
               
               {!isLoggedIn ? (
-                <div className="bg-[#29C454] text-white rounded-[2rem] p-6 shadow-lg shadow-[#29C454]/20 relative overflow-hidden">
-                  <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
+                <div className="bg-[#FFFFFF] border-2 border-[#29C454]/30 rounded-[2rem] p-6 shadow-sm relative overflow-hidden">
+                  <div className="absolute right-0 top-0 opacity-5 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
                   <div className="relative z-10">
-                    <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Jueves, 16 Abril</p>
-                    <h4 className="text-3xl font-black italic mb-4">6:00 PM - 8:00 PM</h4>
-                    <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20 mb-4">
-                            <div 
-                              className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-black italic uppercase shadow-inner text-[#29C454]"
-                            >
-                              MC
-                            </div>
-                            <div>
-                              <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
-                              <p className="font-black italic text-lg">Mateo C.</p>
-                            </div>
-                          </div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-[#29C454] mb-1">Jueves, 16 Abril</p>
+                    <h4 className="text-3xl font-black italic mb-4 text-[#1A1C1E]">6:00 PM - 8:00 PM</h4>
+                    <div className="flex items-center gap-4 bg-[#F8F7F2] p-3 rounded-xl shadow-inner border border-[#1A1C1E]/5 mb-4">
+                      <div className="w-10 h-10 bg-[#1A1C1E] text-white rounded-full flex items-center justify-center font-black italic uppercase shadow-md">
+                        MC
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest font-black text-[#1A1C1E]/50">Rival Confirmado</p>
+                        <p className="font-black italic text-lg text-[#1A1C1E]">Mateo C.</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : misPartidos.length === 0 ? (
@@ -1501,204 +1499,219 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                misPartidos.map((partido) => (
-                  <React.Fragment key={partido.id}>
-                    {partido.estado === 'finalizado' || partido.estado === 'wo' ? (
-                      <div className={`${partido.estado === 'wo' ? 'bg-red-500' : 'bg-[#007AFF]'} text-white rounded-2xl p-4 shadow-md flex items-center justify-between animate-in fade-in`}>
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-1">
-                            {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} • {partido.estado === 'wo' ? 'W.O.' : 'Terminó'}
-                          </p>
-                          <p className="font-black italic text-sm">
-                            {partido.estado === 'wo' 
-                              ? 'W.O. vs ' 
-                              : partido.ganador_id === currentUser.id 
-                                ? '🏆 W vs ' 
-                                : '❌ L vs '} 
-                            {partido.rival.nombre}
-                            
-                            {((partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) !== undefined) && (
-                              <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-md font-black ${
-                                (partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 
-                                ? 'bg-white/20 text-white' 
-                                : 'bg-black/20 text-white'
-                              }`}>
-                                {(partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 ? '+' : ''}
-                                {partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        <div className="text-right bg-white/10 px-3 py-2 rounded-xl border border-white/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest opacity-70 mb-1">Marcador</p>
-                          <p className="font-black italic text-base leading-none">
-                            {getRelativeMarcador(partido)}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className={`${partido.estado === 'confirmado' ? 'bg-[#29C454]' : 'bg-[#E5B824]'} text-white rounded-[2rem] p-6 shadow-lg shadow-[#1A1C1E]/10 relative overflow-hidden transition-colors`}>
-                        <div className="absolute right-0 top-0 opacity-10 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
-                        <div className="relative z-10">
-                          <div className="flex justify-between items-start mb-1">
-                            <p className="text-xs font-bold uppercase tracking-widest opacity-80">
-                              {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
-                            </p>
-                            {partido.cancha_numero && (
-                              <span className="bg-white/20 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                                Cancha {partido.cancha_numero} ({partido.superficie})
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="text-3xl font-black italic mb-4">
-                            {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
-                          </h4>
-                          <div className="flex items-center gap-4 bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/20 mb-4">
+                misPartidos.map((partido) => {
+                  const esVictoria = partido.ganador_id === currentUser.id;
+                  // Colores dinámicos para historial
+                  const colorAcento = esVictoria ? 'text-[#E5B824]' : 'text-[#007AFF]';
+                  const bgAcento = esVictoria ? 'bg-[#E5B824]/10' : 'bg-[#007AFF]/10';
+                  const borderAcento = esVictoria ? 'border-[#E5B824]/30' : 'border-[#007AFF]/30';
+
+                  return (
+                    <React.Fragment key={partido.id}>
+                      {partido.estado === 'finalizado' || partido.estado === 'wo' ? (
+                        <div className={`bg-[#FFFFFF] border ${borderAcento} rounded-2xl p-4 shadow-sm flex items-center justify-between animate-in fade-in`}>
+                          <div className="flex items-center gap-3">
+                            {/* Avatar del rival con su color */}
                             <div 
-                              className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-black italic uppercase shadow-inner"
-                              style={{ color: partido.rival.color || '#29C454' }}
+                              className="w-10 h-10 rounded-full flex items-center justify-center font-black italic uppercase shadow-inner text-white text-xs"
+                              style={{ backgroundColor: partido.rival.color || '#1A1C1E' }}
                             >
                               {getInitials(partido.rival.nombre)}
                             </div>
                             <div>
-                              <p className="text-[10px] uppercase tracking-widest font-black opacity-70">Rival Confirmado</p>
-                              <p className="font-black italic text-lg" style={{ color: partido.rival.color || '#FFFFFF' }}>
-                                {partido.rival.nombre}
+                              <p className="text-[9px] font-bold uppercase tracking-widest opacity-50 mb-0.5 text-[#1A1C1E]">
+                                {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} • {partido.estado === 'wo' ? 'W.O.' : 'Terminó'}
+                              </p>
+                              <p className={`font-black italic text-sm ${colorAcento}`}>
+                                {partido.estado === 'wo' 
+                                  ? 'W.O. vs ' 
+                                  : esVictoria 
+                                    ? '🏆 W vs ' 
+                                    : '❌ L vs '} 
+                                <span className="text-[#1A1C1E]">{partido.rival.nombre}</span>
+                                
+                                {((partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) !== undefined) && (
+                                  <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-md font-black ${
+                                    (partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 
+                                    ? 'bg-[#29C454]/10 text-[#29C454]' 
+                                    : 'bg-red-500/10 text-red-500'
+                                  }`}>
+                                    {(partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 ? '+' : ''}
+                                    {partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2}
+                                  </span>
+                                )}
                               </p>
                             </div>
                           </div>
-
-                          {partido.estado === 'confirmado' && (
-                            <>
-                              {(() => {
-                                const [y, m, d] = partido.fecha.split('-');
-                                const [sh, sm] = partido.hora_inicio.split(':');
-                                const start = new Date(y, m - 1, d, sh, sm);
-                                const diffHrs = (start - currentTime) / (1000 * 60 * 60);
-
-                                return diffHrs > 0 ? (
-                                  <div className="text-center py-6 bg-[#FFFFFF] rounded-[1.8rem] shadow-xl relative overflow-hidden border border-[#1A1C1E]/5">
-                                    
-                                    {diffHrs > 0.5 ? (
-                                      <button 
-                                        onClick={() => handleCancelMatch(partido)}
-                                        className="absolute top-3 right-4 w-8 h-8 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20"
-                                        title="Cancelar Partido"
-                                      >
-                                        ✕
-                                      </button>
-                                    ) : (
-                                      <button 
-                                        onClick={() => handleSelfWO(partido)}
-                                        className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 transition-all z-20"
-                                        title="Declarar W.O."
-                                      >
-                                        Me Rindo (W.O.)
-                                      </button>
-                                    )}
-                                    
-                                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#29C454] mb-3 relative z-10">
-                                      El partido inicia en
-                                    </p>
-                                    
-                                    <div className="mx-auto w-fit bg-[#F8F7F2] px-7 py-2.5 rounded-xl border border-[#1A1C1E]/10 relative z-10 shadow-inner">
-                                      <p className="text-3xl font-black italic tracking-[0.1em] font-mono text-[#1A1C1E]">
-                                        {getCountdown(partido)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
-                                  <div className="text-center py-4 bg-white/10 rounded-2xl border border-dashed border-white/30">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-white">Partido en curso 🔥</p>
-                                    <p className="text-[9px] opacity-60 mt-1">El reporte se habilitará al terminar el tiempo.</p>
-                                  </div>
-                                ) : reportingMatch === partido.id ? (
-                                  <div className="mt-4 bg-black/20 p-5 rounded-3xl space-y-5 animate-in fade-in border border-black/10">
-                                    <p className="text-xs font-black uppercase tracking-widest text-center">Reportar Resultado</p>
-                                    
-                                    {/* --- FORMULARIO DE SETS --- */}
-                                    <div className="space-y-3">
-                                      <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest opacity-60">
-                                        <span className="w-1/3 text-center">Mi Score</span>
-                                        <span className="w-1/3 text-center">Set</span>
-                                        <span className="w-1/3 text-center">Su Score</span>
-                                      </div>
-                                      
-                                      <div className="flex gap-2 items-center">
-                                        <input type="number" min="0" max="7" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                        <span className="w-1/3 text-center font-black text-xs opacity-50">1</span>
-                                        <input type="number" min="0" max="7" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                      </div>
-                                      
-                                      <div className="flex gap-2 items-center">
-                                        <input type="number" min="0" max="7" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                        <span className="w-1/3 text-center font-black text-xs opacity-50">2</span>
-                                        <input type="number" min="0" max="7" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
-                                      </div>
-
-                                      {/* TERCER SET QUE SE BLOQUEA MÁGICAMENTE */}
-                                      <div className={`flex gap-2 items-center transition-all duration-300 ${partidoDefinidoEnDosSets ? 'opacity-20 pointer-events-none grayscale' : 'opacity-70 focus-within:opacity-100'}`}>
-                                        <input type="number" min="0" max="7" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
-                                        <span className="w-1/3 text-center font-black text-[9px] opacity-50">3 (Opc)</span>
-                                        <input type="number" min="0" max="7" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-3 pt-2">
-                                      <button onClick={() => setReportingMatch(null)} className="flex-1 bg-black/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white hover:bg-black/20 transition-colors">Cancelar</button>
-                                      <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg hover:scale-95 transition-all">Enviar Final</button>
-                                    </div>
-                                    
-                                    <div className="pt-4 border-t border-white/10">
-                                      <button 
-                                        onClick={() => handleWO(partido)} 
-                                        className="w-full border-2 border-red-500/40 bg-red-500/10 text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
-                                      >
-                                        🚨 El rival no se presentó (W.O.)
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-lg active:scale-95 transition-all">
-                                    Reportar Resultado ➜
-                                  </button>
-                                );
-                              })()}
-                            </>
-                          )}
-
-                          {partido.estado === 'en_revision' && partido.reportado_por === currentUser.id && (
-                            <div className="bg-white/20 p-4 rounded-xl text-center border border-white/30">
-                              <p className="text-xs font-black uppercase tracking-widest">⏳ Esperando confirmación</p>
-                              <p className="text-[10px] mt-1 opacity-80">El rival debe aceptar el marcador que pusiste.</p>
+                          <div className={`text-right ${bgAcento} px-3 py-2 rounded-xl border ${borderAcento}`}>
+                            <p className={`text-[8px] font-black uppercase tracking-widest ${colorAcento} opacity-80 mb-1`}>Marcador</p>
+                            <p className={`font-black italic text-base leading-none ${colorAcento}`}>
+                              {getRelativeMarcador(partido)}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`bg-[#FFFFFF] border-2 ${partido.estado === 'confirmado' ? 'border-[#29C454]/40' : 'border-[#E5B824]/40'} rounded-[2rem] p-6 shadow-sm relative overflow-hidden transition-colors`}>
+                          <div className="absolute right-0 top-0 opacity-5 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
+                          <div className="relative z-10">
+                            <div className="flex justify-between items-start mb-1">
+                              <p className={`text-xs font-bold uppercase tracking-widest ${partido.estado === 'confirmado' ? 'text-[#29C454]' : 'text-[#E5B824]'}`}>
+                                {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                              </p>
+                              {partido.cancha_numero && (
+                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${partido.estado === 'confirmado' ? 'bg-[#29C454]/10 text-[#29C454] border border-[#29C454]/20' : 'bg-[#E5B824]/10 text-[#E5B824] border border-[#E5B824]/20'}`}>
+                                  Cancha {partido.cancha_numero} ({partido.superficie})
+                                </span>
+                              )}
                             </div>
-                          )}
-
-                          {partido.estado === 'en_revision' && partido.reportado_por !== currentUser.id && (
-                            <div className="bg-black/20 p-5 rounded-2xl text-center border border-black/10 shadow-inner">
-                              <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-3">🚨 Acción Requerida</p>
-                              <div className="bg-white/10 p-4 rounded-xl mb-5 border border-white/10">
-                                <p className="text-xs font-black mb-2 leading-snug">
-                                  {partido.ganador_id === currentUser.id 
-                                    ? `🏆 El rival reportó que TÚ ganaste:` 
-                                    : `🏆 El rival reportó que ÉL ganó:`}
-                                </p>
-                                <p className="text-2xl font-black italic tracking-widest font-mono text-white drop-shadow-md">
-                                  {getRelativeMarcador(partido)}
+                            <h4 className="text-3xl font-black italic mb-4 text-[#1A1C1E]">
+                              {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
+                            </h4>
+                            <div className="flex items-center gap-4 bg-[#F8F7F2] p-3 rounded-xl border border-[#1A1C1E]/5 mb-4 shadow-inner">
+                              <div 
+                                className="w-12 h-12 rounded-full flex items-center justify-center font-black italic text-xl uppercase shadow-md text-white"
+                                style={{ backgroundColor: partido.rival.color || '#1A1C1E' }}
+                              >
+                                {getInitials(partido.rival.nombre)}
+                              </div>
+                              <div>
+                                <p className="text-[10px] uppercase tracking-widest font-black text-[#1A1C1E]/50">Rival Confirmado</p>
+                                <p className="font-black italic text-xl text-[#1A1C1E]">
+                                  {partido.rival.nombre}
                                 </p>
                               </div>
-                              <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs mb-3 shadow-xl active:scale-95 transition-all">
-                                ✅ Aceptar Resultado
-                              </button>
-                              <p className="text-[9px] opacity-60">Al aceptar, se ajustará el ELO de ambos.</p>
                             </div>
-                          )}
 
+                            {partido.estado === 'confirmado' && (
+                              <>
+                                {(() => {
+                                  const [y, m, d] = partido.fecha.split('-');
+                                  const [sh, sm] = partido.hora_inicio.split(':');
+                                  const start = new Date(y, m - 1, d, sh, sm);
+                                  const diffHrs = (start - currentTime) / (1000 * 60 * 60);
+
+                                  return diffHrs > 0 ? (
+                                    <div className="text-center py-6 bg-[#F8F7F2] rounded-[1.8rem] shadow-inner relative overflow-hidden border border-[#1A1C1E]/5">
+                                      
+                                      {diffHrs > 0.5 ? (
+                                        <button 
+                                          onClick={() => handleCancelMatch(partido)}
+                                          className="absolute top-3 right-4 w-8 h-8 bg-[#FFFFFF] text-[#1A1C1E]/40 border border-[#1A1C1E]/10 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white hover:border-red-500 transition-all z-20 shadow-sm"
+                                          title="Cancelar Partido"
+                                        >
+                                          ✕
+                                        </button>
+                                      ) : (
+                                        <button 
+                                          onClick={() => handleSelfWO(partido)}
+                                          className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-md hover:scale-105 active:scale-95 transition-all z-20"
+                                          title="Declarar W.O."
+                                        >
+                                          Me Rindo (W.O.)
+                                        </button>
+                                      )}
+                                      
+                                      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#29C454] mb-3 relative z-10">
+                                        El partido inicia en
+                                      </p>
+                                      
+                                      <div className="mx-auto w-fit bg-[#FFFFFF] px-7 py-2.5 rounded-xl border border-[#1A1C1E]/10 relative z-10 shadow-sm">
+                                        <p className="text-3xl font-black italic tracking-[0.1em] font-mono text-[#1A1C1E]">
+                                          {getCountdown(partido)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
+                                    <div className="text-center py-4 bg-[#29C454]/10 rounded-2xl border border-dashed border-[#29C454]/50">
+                                      <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-[#29C454]">Partido en curso 🔥</p>
+                                      <p className="text-[9px] opacity-60 mt-1 text-[#1A1C1E]">El reporte se habilitará al terminar.</p>
+                                    </div>
+                                  ) : reportingMatch === partido.id ? (
+                                    <div className="mt-4 bg-[#F8F7F2] p-5 rounded-3xl space-y-5 animate-in fade-in border border-[#1A1C1E]/10 shadow-inner">
+                                      <p className="text-xs font-black uppercase tracking-widest text-center text-[#1A1C1E]">Reportar Resultado</p>
+                                      
+                                      <div className="space-y-3">
+                                        <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest text-[#1A1C1E]/50">
+                                          <span className="w-1/3 text-center">Mi Score</span>
+                                          <span className="w-1/3 text-center">Set</span>
+                                          <span className="w-1/3 text-center">Su Score</span>
+                                        </div>
+                                        
+                                        <div className="flex gap-2 items-center">
+                                          <input type="number" min="0" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">1</span>
+                                          <input type="number" min="0" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                        </div>
+                                        
+                                        <div className="flex gap-2 items-center">
+                                          <input type="number" min="0" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">2</span>
+                                          <input type="number" min="0" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                        </div>
+
+                                        <div className={`flex gap-2 items-center transition-all duration-300 ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+                                          <input type="number" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <span className="w-1/3 text-center font-black text-[9px] text-[#1A1C1E]/50">3 (Opc)</span>
+                                          <input type="number" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                        </div>
+                                      </div>
+
+                                      <div className="flex gap-3 pt-2">
+                                        <button onClick={() => setReportingMatch(null)} className="flex-1 bg-white border border-[#1A1C1E]/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-[#1A1C1E]/60 hover:bg-[#1A1C1E]/5 transition-colors shadow-sm">Cancelar</button>
+                                        <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-md hover:scale-95 transition-all">Enviar Final</button>
+                                      </div>
+                                      
+                                      <div className="pt-4 border-t border-[#1A1C1E]/10">
+                                        <button 
+                                          onClick={() => handleWO(partido)} 
+                                          className="w-full border-2 border-red-500/40 bg-red-500/10 text-red-600 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
+                                        >
+                                          🚨 El rival no se presentó (W.O.)
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-md active:scale-95 transition-all">
+                                      Reportar Resultado ➜
+                                    </button>
+                                  );
+                                })()}
+                              </>
+                            )}
+
+                            {partido.estado === 'en_revision' && partido.reportado_por === currentUser.id && (
+                              <div className="bg-[#E5B824]/10 p-4 rounded-xl text-center border border-[#E5B824]/30 mt-4">
+                                <p className="text-xs font-black uppercase tracking-widest text-[#E5B824]">⏳ Esperando confirmación</p>
+                                <p className="text-[10px] mt-1 text-[#1A1C1E]/60">El rival debe aceptar el marcador que pusiste.</p>
+                              </div>
+                            )}
+
+                            {partido.estado === 'en_revision' && partido.reportado_por !== currentUser.id && (
+                              <div className="bg-[#007AFF]/5 p-5 rounded-2xl text-center border border-[#007AFF]/20 shadow-inner mt-4">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-[#007AFF] mb-3">🚨 Acción Requerida</p>
+                                <div className="bg-white p-4 rounded-xl mb-5 border border-[#007AFF]/10 shadow-sm">
+                                  <p className="text-xs font-black mb-2 leading-snug text-[#1A1C1E]">
+                                    {partido.ganador_id === currentUser.id 
+                                      ? `🏆 El rival reportó que TÚ ganaste:` 
+                                      : `🏆 El rival reportó que ÉL ganó:`}
+                                  </p>
+                                  <p className="text-2xl font-black italic tracking-widest font-mono text-[#007AFF]">
+                                    {getRelativeMarcador(partido)}
+                                  </p>
+                                </div>
+                                <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#007AFF] text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs mb-3 shadow-md active:scale-95 transition-all">
+                                  ✅ Aceptar Resultado
+                                </button>
+                                <p className="text-[9px] text-[#1A1C1E]/50">Al aceptar, se ajustará el ELO de ambos.</p>
+                              </div>
+                            )}
+
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))
+                      )}
+                    </React.Fragment>
+                  );
+                })
               )}
             </div>
             {!isLoggedIn && (
