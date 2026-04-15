@@ -1039,29 +1039,50 @@ export default function App() {
     alert(`Redirigiendo al pago...`);
   };
 
-  // --- LÓGICA DE UX: AUTO-AJUSTAR HORA DE FIN (+4 HRS) ---
-  const handleStartTimeChange = (newStartTime, isMatch) => {
-    // 1. Actualizar la hora de inicio normal
-    if (isMatch) setStartTime(newStartTime);
-    else setBookStart(newStartTime);
-
-    if (!newStartTime) return;
-
-    // 2. Calcular la hora de fin (+4 horas)
-    const [hours, minutes] = newStartTime.split(':');
-    const tempDate = new Date();
-    tempDate.setHours(parseInt(hours, 10));
-    tempDate.setMinutes(parseInt(minutes, 10));
+  // --- LÓGICA DE UX: REDONDEO A MEDIAS HORAS Y AUTO-AJUSTE ---
+  const roundToHalfHour = (rawTime) => {
+    if (!rawTime) return '';
+    let [hours, minutes] = rawTime.split(':').map(Number);
     
-    tempDate.setHours(tempDate.getHours() + 4); // Le sumamos 4 horas mágicas
+    // Redondear al 00 o 30 más cercano
+    if (minutes > 0 && minutes <= 15) minutes = 0;
+    else if (minutes > 15 && minutes <= 45) minutes = 30;
+    else if (minutes > 45) { 
+      minutes = 0; 
+      hours = (hours + 1) % 24;  // Si puso 10:50, lo pasamos a 11:00
+    }
+    
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const handleStartTimeChange = (rawTime, isMatch) => {
+    if (!rawTime) return;
+    const roundedTime = roundToHalfHour(rawTime);
+
+    if (isMatch) setStartTime(roundedTime);
+    else setBookStart(roundedTime);
+
+    // Calcular hora de fin (+4 horas) basándonos en la hora ya redondeada
+    const [h, m] = roundedTime.split(':').map(Number);
+    const tempDate = new Date();
+    tempDate.setHours(h);
+    tempDate.setMinutes(m);
+    tempDate.setHours(tempDate.getHours() + 4);
 
     const endHours = String(tempDate.getHours()).padStart(2, '0');
     const endMinutes = String(tempDate.getMinutes()).padStart(2, '0');
     const newEndTime = `${endHours}:${endMinutes}`;
 
-    // 3. Actualizar la hora de fin automáticamente
     if (isMatch) setEndTime(newEndTime);
     else setBookEnd(newEndTime);
+  };
+
+  const handleEndTimeChange = (rawTime, isMatch) => {
+    if (!rawTime) return;
+    const roundedTime = roundToHalfHour(rawTime);
+    
+    if (isMatch) setEndTime(roundedTime);
+    else setBookEnd(roundedTime);
   };
 
   return (
@@ -1390,22 +1411,20 @@ export default function App() {
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    {/* INPUT INICIO: AHORA ACTUALIZA EL DE FIN AUTOMÁTICAMENTE Y SALTA DE 30 EN 30 MIN */}
+                    {/* INPUT INICIO */}
                     <input 
                       type="time" 
-                      step="1800" 
                       value={modoCancha === 'match' ? startTime : bookStart} 
                       onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} 
                       required 
                       className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
                     />
                     
-                    {/* INPUT FIN: SALTA DE 30 EN 30 MIN */}
+                    {/* INPUT FIN */}
                     <input 
                       type="time" 
-                      step="1800" 
                       value={modoCancha === 'match' ? endTime : bookEnd} 
-                      onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} 
+                      onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} 
                       required 
                       className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
                     />
