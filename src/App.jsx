@@ -1616,7 +1616,8 @@ export default function App() {
                                   const diffHrs = (start - currentTime) / (1000 * 60 * 60);
 
                                   return diffHrs > 0 ? (
-                                    <div className="text-center py-6 bg-[#F8F7F2] rounded-[1.8rem] shadow-inner relative overflow-hidden border border-[#1A1C1E]/5">
+                                    // AÑADÍ pt-10 AQUÍ PARA DARLE ESPACIO AL BOTÓN
+                                    <div className="text-center pt-10 pb-6 bg-[#F8F7F2] rounded-[1.8rem] shadow-inner relative overflow-hidden border border-[#1A1C1E]/5">
                                       
                                       {diffHrs > 0.5 ? (
                                         <button 
@@ -1632,7 +1633,7 @@ export default function App() {
                                           className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-md hover:scale-105 active:scale-95 transition-all z-20"
                                           title="Declarar W.O."
                                         >
-                                          W.O.
+                                          Me Rindo (W.O.)
                                         </button>
                                       )}
                                       
@@ -2041,9 +2042,17 @@ export default function App() {
             >
               <div className="relative flex flex-col items-center gap-1">
                 <span className="text-xl mb-0.5">{item.icon}</span>
+                
+                {/* Puntito Azul para Partidos Pendientes */}
                 {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
+
+                {/* NUEVO: Puntito Azul para Buzón de Admin */}
+                {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
+                  <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
+                )}
+
               </div>
             </button>
           ))}
