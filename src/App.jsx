@@ -71,6 +71,16 @@ export default function App() {
   const [s3Mi, setS3Mi] = useState('');
   const [s3Rival, setS3Rival] = useState('');
 
+  // Lógica para bloquear la interfaz del 3er set si ya hay ganador
+  const v1M_UI = parseInt(s1Mi, 10);
+  const v1R_UI = parseInt(s1Rival, 10);
+  const v2M_UI = parseInt(s2Mi, 10);
+  const v2R_UI = parseInt(s2Rival, 10);
+  
+  const partidoDefinidoEnDosSets = 
+    (!isNaN(v1M_UI) && !isNaN(v1R_UI) && !isNaN(v2M_UI) && !isNaN(v2R_UI)) &&
+    ((v1M_UI > v1R_UI && v2M_UI > v2R_UI) || (v1R_UI > v1M_UI && v2R_UI > v2M_UI));
+
   const [bookDate, setBookDate] = useState(initData.date);
   const [bookStart, setBookStart] = useState(initData.start);
   const [bookEnd, setBookEnd] = useState(initData.end);
@@ -559,10 +569,22 @@ export default function App() {
     }
   };
 
+  // --- JUEZ DE SILLA: VALIDADOR DE REGLAS DE TENIS ---
+  const isValidTennisSet = (score1, score2) => {
+    if (isNaN(score1) || isNaN(score2)) return false;
+    const max = Math.max(score1, score2);
+    const min = Math.min(score1, score2);
 
-  // --- FLUJO DE REPORTE AUTOMATIZADO CON FRENO DE MANO ---
+    // Reglas estándar (absolutamente nada mayor a 7)
+    if (max === 6 && min <= 4) return true; // Ej: 6-0 a 6-4
+    if (max === 7 && (min === 5 || min === 6)) return true; // Ej: 7-5 o 7-6
+
+    return false;
+  };
+
+  // --- FLUJO DE REPORTE AUTOMATIZADO BLINDADO ---
   const handleSubmitReport = async (partido) => {
-    if (!s1Mi || !s1Rival || !s2Mi || !s2Rival) {
+    if (s1Mi === '' || s1Rival === '' || s2Mi === '' || s2Rival === '') {
       alert('Debes ingresar al menos los resultados de los 2 primeros sets.');
       return;
     }
@@ -572,13 +594,35 @@ export default function App() {
     const v2Mi = parseInt(s2Mi, 10);
     const v2Riv = parseInt(s2Rival, 10);
 
+    // 1. Validar Sets 1 y 2
+    if (!isValidTennisSet(v1Mi, v1Riv)) {
+      alert('El Set 1 tiene un marcador inválido para tenis (ej. válidos: 6-4, 7-5, 7-6).');
+      return;
+    }
+    if (!isValidTennisSet(v2Mi, v2Riv)) {
+      alert('El Set 2 tiene un marcador inválido para tenis.');
+      return;
+    }
+
     let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0);
     let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0);
     let marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
 
-    if (s3Mi && s3Rival) {
+    // 2. Revisar si hay empate obligando a un 3er set
+    if (setsMi === 1 && setsRiv === 1) {
+      if (s3Mi === '' || s3Rival === '') {
+        alert('Están empatados 1 a 1 en sets. Debes ingresar el marcador del Set 3 para desempatar.');
+        return;
+      }
+      
       const v3Mi = parseInt(s3Mi, 10);
       const v3Riv = parseInt(s3Rival, 10);
+      
+      if (!isValidTennisSet(v3Mi, v3Riv)) { 
+        alert('El Set 3 tiene un marcador inválido para tenis (ej. válidos: 6-4, 7-5, 7-6).');
+        return;
+      }
+
       setsMi += (v3Mi > v3Riv ? 1 : 0);
       setsRiv += (v3Riv > v3Mi ? 1 : 0);
       marcadorFinal += `, ${v3Mi}-${v3Riv}`;
@@ -593,7 +637,7 @@ export default function App() {
     const ganadorIdCalculado = yoGane ? currentUser.id : partido.rival.id;
 
     const nombreGanador = yoGane ? "TÚ" : partido.rival.nombre.toUpperCase();
-    const mensajeConfirmacion = `Revisa bien:\n\nSegún los números que ingresaste, el ganador es: ${nombreGanador} 🏆\n\n¿Estás seguro de enviar este resultado a revisión?`;
+    const mensajeConfirmacion = `Revisa bien:\n\nMarcador: ${marcadorFinal}\nEl ganador es: ${nombreGanador} 🏆\n\n¿Estás seguro de enviar este resultado a revisión?`;
     
     if (!window.confirm(mensajeConfirmacion)) {
       return; 
@@ -829,7 +873,8 @@ export default function App() {
         .from('partidos')
         .select('cancha_numero, superficie')
         .eq('fecha', searchDate)
-        .or(`hora_inicio.lt.${endTime},hora_fin.gt.${startTime}`);
+        .lt('hora_inicio', endTime) // El partido debe empezar ANTES de que tú te vayas
+        .gt('hora_fin', startTime); // Y terminar DESPUÉS de que tú llegues
 
       const canchasOcupadasEnSuperficie = partidosOcupados
         ? partidosOcupados.filter(p => p.superficie === superficie).map(p => p.cancha_numero)
@@ -1459,6 +1504,7 @@ export default function App() {
                                   <div className="mt-4 bg-black/20 p-5 rounded-3xl space-y-5 animate-in fade-in border border-black/10">
                                     <p className="text-xs font-black uppercase tracking-widest text-center">Reportar Resultado</p>
                                     
+                                    {/* --- FORMULARIO DE SETS --- */}
                                     <div className="space-y-3">
                                       <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest opacity-60">
                                         <span className="w-1/3 text-center">Mi Score</span>
@@ -1478,10 +1524,11 @@ export default function App() {
                                         <input type="number" min="0" max="7" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all shadow-inner" />
                                       </div>
 
-                                      <div className="flex gap-2 items-center opacity-70 focus-within:opacity-100 transition-opacity">
-                                        <input type="number" min="0" max="7" placeholder="-" value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                      {/* TERCER SET QUE SE BLOQUEA MÁGICAMENTE */}
+                                      <div className={`flex gap-2 items-center transition-all duration-300 ${partidoDefinidoEnDosSets ? 'opacity-20 pointer-events-none grayscale' : 'opacity-70 focus-within:opacity-100'}`}>
+                                        <input type="number" min="0" max="7" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
                                         <span className="w-1/3 text-center font-black text-[9px] opacity-50">3 (Opc)</span>
-                                        <input type="number" min="0" max="7" placeholder="-" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
+                                        <input type="number" min="0" max="7" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white/80 border-none rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:ring-4 focus:ring-white/50 transition-all" />
                                       </div>
                                     </div>
 
@@ -1607,7 +1654,7 @@ export default function App() {
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
               <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-xs mb-6 uppercase mt-1">
-                {isLoggedIn && currentUser ? `Circuito Activo • ${currentUser.rol || 'Gratis'}` : 'Regístrate para jugar'}
+                {isLoggedIn && currentUser ? `Miembro • ${currentUser.rol || 'Gratis'}` : 'Regístrate para jugar'}
               </p>
               
               <div className="bg-[#F8F7F2] w-full rounded-2xl p-4 border border-[#1A1C1E]/5 mb-6">
