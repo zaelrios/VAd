@@ -16,7 +16,7 @@ export default function App() {
     
     // End Time: Start Time + 2 horas
     const endObj = new Date(startObj);
-    endObj.setHours(endObj.getHours() + 2);
+    endObj.setHours(endObj.getHours() + 4);
 
     const formatTime = (dateObj) => dateObj.toTimeString().substring(0, 5);
     const formatDate = (dateObj) => {
@@ -869,25 +869,49 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      const { data: partidosOcupados } = await supabase
+      // --- NUEVO: ESCÁNER DE DISPONIBILIDAD REAL (EVITAR FALSA ESPERANZA) ---
+      const { data: partidosDelDia } = await supabase
         .from('partidos')
-        .select('cancha_numero, superficie')
+        .select('cancha_numero, hora_inicio, hora_fin')
         .eq('fecha', searchDate)
-        .lt('hora_inicio', endTime) // El partido debe empezar ANTES de que tú te vayas
-        .gt('hora_fin', startTime); // Y terminar DESPUÉS de que tú llegues
+        .eq('superficie', superficie);
 
-      const canchasOcupadasEnSuperficie = partidosOcupados
-        ? partidosOcupados.filter(p => p.superficie === superficie).map(p => p.cancha_numero)
-        : [];
+      let hayEspacioParaJugar = false;
+      const baseStr = '2000-01-01T'; // Fecha comodín para cálculos matemáticos seguros
+      let checkStart = new Date(`${baseStr}${startTime}:00`);
+      const limitEnd = new Date(`${baseStr}${endTime}:00`);
 
-      const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
-      const canchaDisponible = inventario[superficie].find(n => !canchasOcupadasEnSuperficie.includes(n));
+      // Deslizamos una lupa de 2 hrs en intervalos de 30 minutos
+      while (true) {
+        let checkEnd = new Date(checkStart.getTime() + (2 * 60 * 60 * 1000));
+        if (checkEnd > limitEnd) break;
 
-      if (!canchaDisponible) {
-        setSearchError(`No hay canchas de ${superficie} disponibles en ese horario.`);
-        return;
+        const strStart = checkStart.toTimeString().substring(0, 5);
+        const strEnd = checkEnd.toTimeString().substring(0, 5);
+
+        // Ver qué canchas se cruzan en este mini-bloque exacto de 2 hrs
+        const ocupadasAqui = partidosDelDia
+          ? partidosDelDia.filter(p => strStart < p.hora_fin && strEnd > p.hora_inicio).map(p => p.cancha_numero)
+          : [];
+
+        // Si hay al menos una cancha libre, hay esperanza
+        const libre = inventario[superficie].find(n => !ocupadasAqui.includes(n));
+        if (libre) {
+          hayEspacioParaJugar = true;
+          break; // Rompemos el escáner, sí se puede jugar
+        }
+
+        // Avanzamos el escáner 30 minutos
+        checkStart = new Date(checkStart.getTime() + (30 * 60 * 1000));
       }
 
+      if (!hayEspacioParaJugar) {
+        setSearchError(`El club tiene las canchas de ${superficie} a máxima capacidad. No hay bloques de 2 hrs libres en tu rango.`);
+        return; // Bloqueamos la entrada al radar
+      }
+      // --- FIN DEL ESCÁNER ---
+
+      // 1. Buscamos posibles rivales PRIMERO
       const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
         .select('*')
@@ -901,6 +925,10 @@ export default function App() {
       let matchEncontrado = null;
       let matchInicio = '';
       let matchFin = '';
+      let canchaAsignada = null;
+      
+      // Inventario de Punta Azul
+      const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
 
       if (posiblesRivales && posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
@@ -919,18 +947,40 @@ export default function App() {
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
             if (diferenciaElo <= 200 && horasCruce >= 2) {
-              matchEncontrado = rival;
-              matchInicio = inicioCruce;
+              // 2. Tenemos 2 hrs en común. Extraemos ese bloque de tiempo exacto.
+              const propInicio = inicioCruce;
               
-              startObj.setHours(startObj.getHours() + 2);
-              matchFin = startObj.toTimeString().substring(0,5); 
-              break;
+              const propEndObj = new Date(`2000-01-01T${propInicio}`);
+              propEndObj.setHours(propEndObj.getHours() + 2);
+              const propFin = propEndObj.toTimeString().substring(0,5);
+
+              // 3. Preguntamos a Supabase si hay canchas SOLO para esas 2 horas
+              const { data: partidosCruce } = await supabase
+                .from('partidos')
+                .select('cancha_numero')
+                .eq('fecha', searchDate)
+                .eq('superficie', superficie)
+                .lt('hora_inicio', propFin)
+                .gt('hora_fin', propInicio);
+
+              const canchasOcupadas = partidosCruce ? partidosCruce.map(p => p.cancha_numero) : [];
+              const canchaLibre = inventario[superficie].find(n => !canchasOcupadas.includes(n));
+
+              if (canchaLibre) {
+                // ÉXITO: Tenemos rival y tenemos cancha
+                matchEncontrado = rival;
+                matchInicio = propInicio;
+                matchFin = propFin;
+                canchaAsignada = canchaLibre;
+                break; // Rompemos el ciclo, ya tenemos partido
+              }
             }
           }
         }
       }
 
       if (matchEncontrado) {
+        // Ejecutar Match
         const { error: insertMatchError } = await supabase
           .from('partidos')
           .insert([{
@@ -940,17 +990,18 @@ export default function App() {
             hora_inicio: matchInicio,
             hora_fin: matchFin,
             superficie: superficie, 
-            cancha_numero: canchaDisponible,
+            cancha_numero: canchaAsignada,
             estado: 'confirmado'
           }]);
         
         if (insertMatchError) throw new Error("Error Supabase: " + insertMatchError.message);
 
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
-        alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado en Cancha ${canchaDisponible} (${superficie}).`);
+        alert(`¡MATCH ENCONTRADO!\nTienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
         setTab('partidos');
         fetchPartidos();
       } else {
+        // Si no encontró rival (o los rivales chocaban con canchas llenas), publica la búsqueda
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
           .insert([{ 
@@ -966,7 +1017,7 @@ export default function App() {
 
         if (insertError) throw new Error("Error Supabase al publicar: " + insertError.message);
         setActiveSearches([...activeSearches, nuevaBusqueda]); 
-        alert('Búsqueda publicada. Te avisaremos en cuanto alguien de tu nivel haga match.');
+        alert('Búsqueda publicada en el Radar. Te avisaremos cuando alguien haga match.');
       }
     } catch (error) {
       setSearchError(error.message || 'Hubo un error en el circuito.');
@@ -986,6 +1037,31 @@ export default function App() {
     e.preventDefault();
     if (!isLoggedIn) { setTab('auth'); return; }
     alert(`Redirigiendo al pago...`);
+  };
+
+  // --- LÓGICA DE UX: AUTO-AJUSTAR HORA DE FIN (+4 HRS) ---
+  const handleStartTimeChange = (newStartTime, isMatch) => {
+    // 1. Actualizar la hora de inicio normal
+    if (isMatch) setStartTime(newStartTime);
+    else setBookStart(newStartTime);
+
+    if (!newStartTime) return;
+
+    // 2. Calcular la hora de fin (+4 horas)
+    const [hours, minutes] = newStartTime.split(':');
+    const tempDate = new Date();
+    tempDate.setHours(parseInt(hours, 10));
+    tempDate.setMinutes(parseInt(minutes, 10));
+    
+    tempDate.setHours(tempDate.getHours() + 4); // Le sumamos 4 horas mágicas
+
+    const endHours = String(tempDate.getHours()).padStart(2, '0');
+    const endMinutes = String(tempDate.getMinutes()).padStart(2, '0');
+    const newEndTime = `${endHours}:${endMinutes}`;
+
+    // 3. Actualizar la hora de fin automáticamente
+    if (isMatch) setEndTime(newEndTime);
+    else setBookEnd(newEndTime);
   };
 
   return (
@@ -1314,8 +1390,25 @@ export default function App() {
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
-                    <input type="time" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => modoCancha === 'match' ? setStartTime(e.target.value) : setBookStart(e.target.value)} required className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
-                    <input type="time" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} required className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
+                    {/* INPUT INICIO: AHORA ACTUALIZA EL DE FIN AUTOMÁTICAMENTE Y SALTA DE 30 EN 30 MIN */}
+                    <input 
+                      type="time" 
+                      step="1800" 
+                      value={modoCancha === 'match' ? startTime : bookStart} 
+                      onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} 
+                      required 
+                      className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
+                    />
+                    
+                    {/* INPUT FIN: SALTA DE 30 EN 30 MIN */}
+                    <input 
+                      type="time" 
+                      step="1800" 
+                      value={modoCancha === 'match' ? endTime : bookEnd} 
+                      onChange={(e) => modoCancha === 'match' ? setEndTime(e.target.value) : setBookEnd(e.target.value)} 
+                      required 
+                      className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
+                    />
                   </div>
                 </div>
                 {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
