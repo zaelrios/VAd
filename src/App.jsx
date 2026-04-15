@@ -1531,7 +1531,7 @@ export default function App() {
                                 <span className="text-[#1A1C1E]">{partido.rival.nombre}</span>
                                 
                                 {((partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) !== undefined) && (
-                                  <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-md font-black ${
+                                  <span className={`ml-2 text-[12px] px-1.5 py-0.5 rounded-md font-black ${
                                     (partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) >= 0 
                                     ? 'bg-[#29C454]/10 text-[#29C454]' 
                                     : 'bg-red-500/10 text-red-500'
@@ -1607,7 +1607,7 @@ export default function App() {
                                           className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-md hover:scale-105 active:scale-95 transition-all z-20"
                                           title="Declarar W.O."
                                         >
-                                          Me Rindo (W.O.)
+                                          W.O.
                                         </button>
                                       )}
                                       
