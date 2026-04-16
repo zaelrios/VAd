@@ -220,7 +220,6 @@ export default function App() {
     }
   }, []);
 
-  // --- CARGAR BÚSQUEDAS ACTIVAS Y LIMPIAR EXPIRADAS ---
   useEffect(() => {
     if (currentUser) {
       const cargarBúsquedas = async () => {
