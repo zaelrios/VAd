@@ -195,16 +195,23 @@ export default function App() {
     const initOneSignal = async () => {
       try {
         await OneSignal.init({
-          appId: "6278e71b-dc64-4195-988c-9ccae0bb5140", // <-- Reemplaza esto con el ID que te dio OneSignal
-          allowLocalhostAsSecureOrigin: true, // Vital para que te deje probarlo en tu computadora (localhost)
+          appId: "6278e71b-dc64-4195-988c-9ccae0bb5140", 
+          safari_web_id: "web.onesignal.auto.459ab5a0-25ed-43f1-a7b1-99d986ce9992", // <-- EL CÓDIGO NUEVO PARA iPHONE
+          allowLocalhostAsSecureOrigin: true,
+          notifyButton: {
+            enable: false, // Lo apagamos porque usaremos el Slidedown
+          },
         });
         
-        // Esto lanza el mensajito preguntando "Ventaja Adentro quiere enviarte notificaciones"
+        // Esto lanza el mensajito preguntando
         OneSignal.Slidedown.promptPush();
       } catch (error) {
         console.error("Error iniciando OneSignal:", error);
       }
     };
+
+    initOneSignal();
+  }, []);
 
     initOneSignal();
   }, []);
