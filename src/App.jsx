@@ -1115,16 +1115,32 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30">
-      <main className="pt-10 px-6 max-w-lg mx-auto w-full flex flex-col items-center">
+      
+      {/* =========================================
+          NUEVO HEADER FIJO SUPERIOR VAd.
+      ========================================= */}
+      <header className="fixed top-0 left-0 w-full bg-[#F8F7F2]/90 backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b border-[#1A1C1E]/5">
+  <h1 className="text-2xl font-black italic tracking-tighter">
+    <span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span>
+  </h1>
+</header>
+
+      {/* CORRECCIÓN EN EL MAIN: 
+          Cambiamos 'pt-10' por 'pt-24' para darle espacio al header 
+      */}
+      <main className="pt-24 px-6 max-w-lg mx-auto w-full flex flex-col items-center">
         
         {/* VISTA HOME - DISEÑO UNIFICADO PREMIUM */}
         {tab === 'home' && (
           <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10 px-2">
             
             <section className="flex flex-col items-center">
-              <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm">Donde el tennis se vive</h2>
+              
+              <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm">
+                Donde el tennis se vive
+              </h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
-                VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1A1C1E' }}>ADENTRO.</span>
+                VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1268B0' }}>ADENTRO.</span>
               </h1>
               <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
                  La comunidad que premia a los que sí aparecen.<br/>Matchmaking inteligente con sistema ELO para un ranking justo y real.
@@ -1142,20 +1158,20 @@ export default function App() {
                 <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">El buscador mas sencillo para encontrar con quien jugar tennis.</p>
                 <ul className="space-y-4 relative z-10 text-xs font-bold text-[#1A1C1E]/80">
                   <li className="flex gap-3">
-                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
                     <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda desde 2 horas de anticipacion.</span>
                   </li>
                   <li className="flex gap-3">
-                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
                     <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda activa con hasta 1 semana de anticipación.</span>
                   </li>
                   <li className="flex gap-3">
-                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Emparejamiento por diferencia de puntos:<span className="text-[#29C454]"> +/-200 puntos </span>.</span>
+                    <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Emparejamiento por diferencia de puntos:<span className="text-[#1268B0]"> +/-200 puntos </span>.</span>
                   </li>
                   <li className="flex gap-3">
-                    <span className="text-[#29C454] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#29C454]">Si el rival cancela, el buscador te reactivará automáticamente.</span></span>
+                    <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
+                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#1268B0]">Si el rival cancela, el buscador te reactivará automáticamente.</span></span>
                   </li>
                  </ul>
               </div>
@@ -1169,22 +1185,22 @@ export default function App() {
                   <div className="bg-[#F8F7F2] p-5 rounded-2xl border border-[#1A1C1E]/5 shadow-inner space-y-5">
                     
                     <div>
-                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#29C454]">1.</span> Inicio y Fuerzas</p>
-                      <p className="font-bold leading-relaxed opacity-70">Todos inician en <span className="text-[#29C454]">5ta Fuerza (1,200 pts)</span>. El sistema te empareja con rivales en un rango de ±200 puntos. El piso mínimo es de 1,000 pts (6ta Fuerza) para proteger tu progreso.</p>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#1268B0]">1.</span> Inicio y Fuerzas</p>
+                      <p className="font-bold leading-relaxed opacity-70">Todos inician en <span className="text-[#1268B0]">5ta Fuerza (1,200 pts)</span>. El sistema te empareja con rivales en un rango de ±200 puntos. El piso mínimo es de 1,000 pts (6ta Fuerza) para proteger tu progreso.</p>
                     </div>
 
                     <div>
-                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#29C454]">2.</span> Velocidad K-Max (60)</p>
-                      <p className="font-bold leading-relaxed opacity-70">El 'Factor K' es la potencia de ascenso. Si juegas contra alguien de tu nivel, K es 40. Si el rival te supera por el límite de <span className="text-[#29C454]">200 puntos</span>, K sube a <span className="text-[#29C454]">60</span> para acelerar tu subida.</p>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#1268B0]">2.</span> Velocidad K-Max (60)</p>
+                      <p className="font-bold leading-relaxed opacity-70">El 'Factor K' es la potencia de ascenso. Si juegas contra alguien de tu nivel, K es 40. Si el rival te supera por el límite de <span className="text-[#1268B0]">200 puntos</span>, K sube a <span className="text-[#1268B0]">60</span> para acelerar tu subida.</p>
                     </div>
 
                     <div>
-                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#29C454]">3.</span> Probabilidad Lineal VAd.</p>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#1268B0]">3.</span> Probabilidad Lineal VAd.</p>
                       <p className="font-bold leading-relaxed opacity-70">A diferencia de otros sistemas, usamos un cálculo lineal: contra un rival 200 pts arriba, tu probabilidad de ganar es del 10%. Dar la sorpresa ahí te da el premio máximo de puntos.</p>
                     </div>
 
                     <div className="pt-2 border-t border-[#1A1C1E]/10">
-                      <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">4.</span> Desglose de la Fórmula</p>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#1268B0]">4.</span> Desglose de la Fórmula</p>
                       
                       <div className="bg-[#29C454] p-5 rounded-2xl shadow-lg shadow-[#29C454]/20 text-left relative overflow-hidden">
                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/20 rounded-full blur-xl"></div>
@@ -1204,7 +1220,7 @@ export default function App() {
                     </div>
 
                     <div className="pt-4 border-t border-[#1A1C1E]/10">
-                      <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#29C454]">5.</span> Ejemplos (Victoria 2-0)</p>
+                      <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#1268B0]">5.</span> Ejemplos (Victoria 2-0)</p>
                       <div className="space-y-2">
                         
                         <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
