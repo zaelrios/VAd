@@ -213,22 +213,20 @@ export default function App() {
     initOneSignal();
   }, []);
 
-  // --- VINCULAR CELULAR CON EL JUGADOR ---
+  // --- VINCULAR CELULAR CON EL JUGADOR (CORREGIDO) ---
   useEffect(() => {
     const identificarCelular = async () => {
-      if (isLoggedIn && currentUser) {
+      // Solo intentamos vincular si el usuario ya inició sesión y tenemos sus datos
+      if (isLoggedIn && currentUser && currentUser.id) {
         try {
-          // Le pasamos el ID único de Supabase a OneSignal
-          await OneSignal.login(currentUser.id);
-          console.log("📱 Celular vinculado al jugador:", currentUser.nombre);
+          // Esperamos 2 segundos para darle tiempo a OneSignal de despertar por completo
+          setTimeout(async () => {
+            await OneSignal.login(currentUser.id);
+            console.log("📱 Celular vinculado al jugador:", currentUser.nombre);
+          }, 2000);
         } catch (error) {
           console.error("Error al vincular OneSignal:", error);
         }
-      } else {
-        // Si cierra sesión, desvinculamos el celular
-        try {
-          await OneSignal.logout();
-        } catch (e) {}
       }
     };
 
