@@ -213,9 +213,6 @@ export default function App() {
     initOneSignal();
   }, []);
 
-    initOneSignal();
-  }, []);
-
  // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
