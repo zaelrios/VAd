@@ -1,15 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite' // <-- AQUÍ REGRESAMOS EL DISEÑO
+import tailwindcss from '@tailwindcss/vite' 
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [
-    tailwindcss(), // <-- AQUÍ LO ACTIVAMOS DE NUEVO
+    tailwindcss(), 
     react(),
     VitePWA({
       registerType: 'autoUpdate', 
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.png'],
+      
+      // --- LA LLAVE MAESTRA PARA QUE ONESIGNAL FUNCIONE ---
+      workbox: {
+        navigateFallbackDenylist: [/^\/OneSignalSDKWorker\.js$/] 
+      },
+      // ---------------------------------------------------
+
       manifest: {
         name: 'Ventaja Adentro',
         short_name: 'Ventaja Adentro',
