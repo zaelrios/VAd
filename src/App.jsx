@@ -485,7 +485,7 @@ export default function App() {
 
   const handleSelfWO = (partido) => {
     mostrarConfirmacion(
-      "Me Rindo (W.O.)",
+      "W.O.",
       "🚨 Faltan menos de 30 minutos. NO PUEDES CANCELAR.\n\n¿Deseas declarar W.O. asumiendo la derrota (-ELO, -1 Confiabilidad)?",
       async () => {
         try {
@@ -1633,7 +1633,7 @@ export default function App() {
                                           className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-md hover:scale-105 active:scale-95 transition-all z-20"
                                           title="Declarar W.O."
                                         >
-                                          Me Rindo (W.O.)
+                                          (W.O.)
                                         </button>
                                       )}
                                       
