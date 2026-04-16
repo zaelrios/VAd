@@ -167,8 +167,9 @@ export default function App() {
 
   const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
 
-  // ESTADOS DE PERSONALIZACIÓN
+  // ESTADOS DE PERSONALIZACIÓN Y NOTIFICACIONES
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pushActivo, setPushActivo] = useState(false); // <-- AGREGA ESTE NUEVO
 
   const handleColorChange = async (newColor) => {
     const updatedUser = { ...currentUser, color: newColor };
@@ -201,7 +202,10 @@ export default function App() {
           notifyButton: { enable: false },
         });
         
-        // BORRAMOS el promptPush automático de aquí
+        // REVISAMOS SI YA TIENE PERMISO Y ACTUALIZAMOS LA INTERFAZ
+        const yaTienePermiso = OneSignal.Notifications.permission;
+        setPushActivo(yaTienePermiso);
+
       } catch (error) {
         console.error("Error iniciando OneSignal:", error);
       }
@@ -1891,20 +1895,33 @@ export default function App() {
                 {/* ... (Aquí están las cajitas de ELO y Racha) ... */}
               </div>
 
-              {/* NUEVO BOTÓN PARA NOTIFICACIONES */}
-              <button 
-                onClick={async () => {
-                  try {
-                    // Esto fuerza la pregunta de permisos de iOS/Android al hacer TAP
-                    await OneSignal.Notifications.requestPermission();
-                  } catch (err) {
-                    console.error(err);
-                  }
-                }}
-                className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
-              >
-                🔔 Activar Alertas de Partidos
-              </button>
+              {/* INTERRUPTOR INTELIGENTE DE NOTIFICACIONES */}
+              {pushActivo ? (
+                <div className="w-full bg-[#29C454]/10 text-[#29C454] py-4 rounded-2xl font-black italic uppercase text-xs flex items-center justify-center gap-2 mt-6 border border-[#29C454]/30 shadow-sm">
+                  ✅ Alertas Activadas
+                </div>
+              ) : (
+                <button 
+                  onClick={async () => {
+                    try {
+                      // El celular pide el permiso
+                      const permisoConcedido = await OneSignal.Notifications.requestPermission();
+                      
+                      if (permisoConcedido) {
+                        setPushActivo(true);
+                        mostrarAlerta("¡Alertas Listas!", "A partir de ahora te avisaremos en cuanto encontremos a tu rival.");
+                      } else {
+                        mostrarError("Permiso Denegado", "Para recibir las alertas, necesitas dar permiso desde la configuración de tu celular.");
+                      }
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  className="w-full bg-[#1268B0] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
+                >
+                  🔔 Activar Alertas de Partidos
+                </button>
+              )}
 
               {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
               {isLoggedIn && currentUser?.rol === 'admin' && (
