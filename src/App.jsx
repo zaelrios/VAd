@@ -213,6 +213,28 @@ export default function App() {
     initOneSignal();
   }, []);
 
+  // --- VINCULAR CELULAR CON EL JUGADOR ---
+  useEffect(() => {
+    const identificarCelular = async () => {
+      if (isLoggedIn && currentUser) {
+        try {
+          // Le pasamos el ID único de Supabase a OneSignal
+          await OneSignal.login(currentUser.id);
+          console.log("📱 Celular vinculado al jugador:", currentUser.nombre);
+        } catch (error) {
+          console.error("Error al vincular OneSignal:", error);
+        }
+      } else {
+        // Si cierra sesión, desvinculamos el celular
+        try {
+          await OneSignal.logout();
+        } catch (e) {}
+      }
+    };
+
+    identificarCelular();
+  }, [isLoggedIn, currentUser]);
+
  // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
