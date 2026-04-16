@@ -12,7 +12,7 @@ export default defineConfig({
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.png'],
       manifest: {
         name: 'Ventaja Adentro',
-        short_name: 'VAd',
+        short_name: 'Ventaja Adentro',
         description: 'Matchmaking y Ranking ELO para Tenis',
         theme_color: '#29C454', 
         background_color: '#F8F7F2', 
