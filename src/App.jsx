@@ -190,21 +190,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // --- MOTOR DE NOTIFICACIONES PUSH ---
+  // --- MOTOR DE NOTIFICACIONES PUSH (ACTUALIZADO) ---
   useEffect(() => {
     const initOneSignal = async () => {
       try {
         await OneSignal.init({
           appId: "6278e71b-dc64-4195-988c-9ccae0bb5140", 
-          safari_web_id: "web.onesignal.auto.459ab5a0-25ed-43f1-a7b1-99d986ce9992", // <-- EL CÓDIGO NUEVO PARA iPHONE
+          safari_web_id: "web.onesignal.auto.459ab5a0-25ed-43f1-a7b1-99d986ce9992", 
           allowLocalhostAsSecureOrigin: true,
-          notifyButton: {
-            enable: false, // Lo apagamos porque usaremos el Slidedown
-          },
+          notifyButton: { enable: false },
         });
         
-        // Esto lanza el mensajito preguntando
-        OneSignal.Slidedown.promptPush();
+        // BORRAMOS el promptPush automático de aquí
       } catch (error) {
         console.error("Error iniciando OneSignal:", error);
       }
@@ -1889,6 +1886,25 @@ export default function App() {
                   </p>
                 </div>
               </div>
+
+              <div className="flex gap-3 w-full border-t border-[#1A1C1E]/10 pt-6">
+                {/* ... (Aquí están las cajitas de ELO y Racha) ... */}
+              </div>
+
+              {/* NUEVO BOTÓN PARA NOTIFICACIONES */}
+              <button 
+                onClick={async () => {
+                  try {
+                    // Esto fuerza la pregunta de permisos de iOS/Android al hacer TAP
+                    await OneSignal.Notifications.requestPermission();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+                className="w-full bg-[#1268B0] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
+              >
+                🔔 Activar Alertas de Partidos
+              </button>
 
               {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
               {isLoggedIn && currentUser?.rol === 'admin' && (
