@@ -1917,7 +1917,7 @@ export default function App() {
                       console.error(err);
                     }
                   }}
-                  className="w-full bg-[#1268B0] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
+                  className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
                 >
                   🔔 Activar Alertas de Partidos
                 </button>
