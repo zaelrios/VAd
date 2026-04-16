@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './supabase' 
+import OneSignal from 'react-onesignal';
 
 export default function App() {
   // --- LÓGICA DE HORA INTELIGENTE INICIAL ---
@@ -187,6 +188,25 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // --- MOTOR DE NOTIFICACIONES PUSH ---
+  useEffect(() => {
+    const initOneSignal = async () => {
+      try {
+        await OneSignal.init({
+          appId: "AQUI_PEGA_TU_APP_ID", // <-- Reemplaza esto con el ID que te dio OneSignal
+          allowLocalhostAsSecureOrigin: true, // Vital para que te deje probarlo en tu computadora (localhost)
+        });
+        
+        // Esto lanza el mensajito preguntando "Ventaja Adentro quiere enviarte notificaciones"
+        OneSignal.Slidedown.promptPush();
+      } catch (error) {
+        console.error("Error iniciando OneSignal:", error);
+      }
+    };
+
+    initOneSignal();
   }, []);
 
  // MEMORIA PERMANENTE
