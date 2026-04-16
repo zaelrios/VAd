@@ -195,7 +195,7 @@ export default function App() {
     const initOneSignal = async () => {
       try {
         await OneSignal.init({
-          appId: "AQUI_PEGA_TU_APP_ID", // <-- Reemplaza esto con el ID que te dio OneSignal
+          appId: "6278e71b-dc64-4195-988c-9ccae0bb5140", // <-- Reemplaza esto con el ID que te dio OneSignal
           allowLocalhostAsSecureOrigin: true, // Vital para que te deje probarlo en tu computadora (localhost)
         });
         
