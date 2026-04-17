@@ -894,7 +894,7 @@ export default function App() {
     localStorage.removeItem('vad_session');
   };
 
- // --- MOTOR DE MATCHMAKING BLINDADO ---
+ // --- MOTOR DE MATCHMAKING BLINDADO v1.2 ---
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     setSearchError(''); 
@@ -906,15 +906,22 @@ export default function App() {
       setTab('auth'); 
       return; 
     }
+
+    const getMins = (timeStr) => {
+      if (!timeStr) return 0;
+      const parts = timeStr.split(':');
+      return (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
+    };
+
+    const startMins = getMins(startTime);
+    const endMins = getMins(endTime);
     
-    if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
+    if (startMins >= endMins) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
     const now = new Date();
-    // FIX: Matemática pura para evaluar el inicio
     const [year, month, day] = searchDate.split('-').map(Number);
     const [sH, sM] = startTime.split(':').map(Number);
     const searchStartObj = new Date(year, month - 1, day, sH, sM);
-    
     const diffInHoursNotice = (searchStartObj - now) / (1000 * 60 * 60);
 
     if (diffInHoursNotice < 2) {
@@ -922,80 +929,22 @@ export default function App() {
       return;
     }
 
-    // --- NUEVO BLINDAJE MATEMÁTICO PARA CRUCES (Reemplaza los hasOverlap de texto) ---
-    
-    // Función universal para convertir cualquier hora a minutos
-    const getMins = (timeStr) => {
-      if (!timeStr) return 0;
-      const [h, m] = timeStr.split(':').map(Number);
-      return (h * 60) + m;
-    };
-
-    const startMins = getMins(startTime);
-    const endMins = getMins(endTime);
-
+    // 🛡️ VALIDACIÓN DE CRUCES PROPIOS (USANDO MINUTOS)
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
-      const searchStart = getMins(search.hora_inicio);
-      const searchEnd = getMins(search.hora_fin);
-      return (startMins < searchEnd && endMins > searchStart);
+      return (startMins < getMins(search.hora_fin) && endMins > getMins(search.hora_inicio));
     });
-    
-    if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa cruzada con este horario.'); return; }
+    if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
 
     const hasMatchOverlap = misPartidos.some(partido => {
       if (partido.fecha !== searchDate) return false; 
       if (partido.estado === 'finalizado' || partido.estado === 'wo') return false; 
-      const matchStart = getMins(partido.hora_inicio);
-      const matchEnd = getMins(partido.hora_fin);
-      return (startMins < matchEnd && endMins > matchStart);
+      return (startMins < getMins(partido.hora_fin) && endMins > getMins(partido.hora_inicio));
     });
-    
-    if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado que choca con este horario.'); return; }
-    // ---------------------------------------------------------------------------------
+    if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      // --- ESCÁNER DE DISPONIBILIDAD REAL ---
-      const { data: partidosDelDia } = await supabase
-        .from('partidos')
-        .select('cancha_numero, hora_inicio, hora_fin')
-        .eq('fecha', searchDate)
-        .eq('superficie', superficie);
-
-      let hayEspacioParaJugar = false;
-      const baseStr = '2000-01-01T'; 
-      let checkStart = new Date(`${baseStr}${startTime}:00`);
-      const limitEnd = new Date(`${baseStr}${endTime}:00`);
-
-      while (true) {
-        let checkEnd = new Date(checkStart.getTime() + (2 * 60 * 60 * 1000));
-        if (checkEnd > limitEnd) break;
-
-        const strStart = checkStart.toTimeString().substring(0, 5);
-        const strEnd = checkEnd.toTimeString().substring(0, 5);
-
-        const ocupadasAqui = partidosDelDia
-          ? partidosDelDia.filter(p => strStart < p.hora_fin && strEnd > p.hora_inicio).map(p => p.cancha_numero)
-          : [];
-
-        const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
-        const libre = inventario[superficie].find(n => !ocupadasAqui.includes(n));
-        
-        if (libre) {
-          hayEspacioParaJugar = true;
-          break; 
-        }
-
-        checkStart = new Date(checkStart.getTime() + (30 * 60 * 1000));
-      }
-
-      if (!hayEspacioParaJugar) {
-        setSearchError(`El club tiene las canchas de ${superficie} a máxima capacidad. No hay bloques de 2 hrs libres en tu rango.`);
-        return; 
-      }
-      // --- FIN DEL ESCÁNER ---
-
-      // 1. Buscamos posibles rivales PRIMERO
+      // 1. Buscamos posibles rivales
       const { data: posiblesRivales, error: fetchError } = await supabase
         .from('buscar')
         .select('*')
@@ -1014,48 +963,50 @@ export default function App() {
       const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
 
       if (posiblesRivales && posiblesRivales.length > 0) {
-        
-         for (let rival of posiblesRivales) {
-          const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
+        for (let rival of posiblesRivales) {
+          const rivalStartMins = getMins(rival.hora_inicio);
+          const rivalEndMins = getMins(rival.hora_fin);
+
+          // Lógica de cruce de rangos: (Inicio A < Fin B) Y (Fin A > Inicio B)
+          const hayCruceHorario = (startMins < rivalEndMins && endMins > rivalStartMins);
           
           if (hayCruceHorario) {
-            const inicioCruce = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
-            const finCruce = endTime < rival.hora_fin ? endTime : rival.hora_fin;
-            
-            // Resta pura de minutos
-            const inicioMins = getMins(inicioCruce);
-            const finMins = getMins(finCruce);
-            const horasCruce = (finMins - inicioMins) / 60;
+            const inicioCruceMins = Math.max(startMins, rivalStartMins);
+            const finCruceMins = Math.min(endMins, rivalEndMins);
+            const horasCruce = (finCruceMins - inicioCruceMins) / 60;
 
             const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
             const eloRival = perfilRival?.elo || 1000;
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
-            // Evaluamos con 1.9 por si hay microsaltos decimales
             if (diferenciaElo <= 200 && horasCruce >= 1.9) {
-              const propInicio = inicioCruce;
-              
-              // Sumar 2 horas (120 mins) matemáticamente
-              const propFinMins = getMins(propInicio) + 120;
-              const propFinH = Math.floor(propFinMins / 60);
-              const propFinM = propFinMins % 60;
-              const propFin = `${String(propFinH).padStart(2, '0')}:${String(propFinM).padStart(2, '0')}`;
+              // Proponer el inicio del bloque de 2 horas
+              const propInicioMins = inicioCruceMins;
+              const propFinMins = propInicioMins + 120;
+
+              const hI = Math.floor(propInicioMins / 60);
+              const mI = propInicioMins % 60;
+              const hF = Math.floor(propFinMins / 60);
+              const mF = propFinMins % 60;
+
+              const propInicioStr = `${String(hI).padStart(2, '0')}:${String(mI).padStart(2, '0')}`;
+              const propFinStr = `${String(hF).padStart(2, '0')}:${String(mF).padStart(2, '0')}`;
 
               const { data: partidosCruce } = await supabase
                 .from('partidos')
                 .select('cancha_numero')
                 .eq('fecha', searchDate)
                 .eq('superficie', superficie)
-                .lt('hora_inicio', propFin)
-                .gt('hora_fin', propInicio);
+                .lt('hora_inicio', propFinStr)
+                .gt('hora_fin', propInicioStr);
 
               const canchasOcupadas = partidosCruce ? partidosCruce.map(p => p.cancha_numero) : [];
               const canchaLibre = inventario[superficie].find(n => !canchasOcupadas.includes(n));
 
               if (canchaLibre) {
                 matchEncontrado = rival;
-                matchInicio = propInicio;
-                matchFin = propFin;
+                matchInicio = propInicioStr;
+                matchFin = propFinStr;
                 canchaAsignada = canchaLibre;
                 break; 
               }
@@ -1065,6 +1016,7 @@ export default function App() {
       }
 
       if (matchEncontrado) {
+        // Intentar crear el partido
         const { error: insertMatchError } = await supabase
           .from('partidos')
           .insert([{
@@ -1078,13 +1030,17 @@ export default function App() {
             estado: 'confirmado'
           }]);
         
-        if (insertMatchError) throw new Error("Error Supabase: " + insertMatchError.message);
-
-        await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
-        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
-        setTab('partidos');
-        fetchPartidos();
+        if (!insertMatchError) {
+          await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
+          mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
+          setTab('partidos');
+          fetchPartidos();
+        } else {
+          // Si falló (ej. alguien más le ganó la cancha en ese microsegundo)
+          throw new Error("No se pudo confirmar el match.");
+        }
       } else {
+        // No hubo match, publicar búsqueda
         const { data: nuevaBusqueda, error: insertError } = await supabase
           .from('buscar')
           .insert([{ 
@@ -1216,7 +1172,7 @@ export default function App() {
       <header className="fixed top-0 left-0 w-full bg-[#F8F7F2]/90 backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b border-[#1A1C1E]/5">
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.1</span>
+          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.2</span>
         </h1>
       </header>
 
