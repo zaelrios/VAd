@@ -35,6 +35,10 @@ export default function App() {
 
   const [tab, setTab] = useState('home');
 
+  // --- LÓGICA PARA GESTOS DE DESLIZAMIENTO (SWIPE) ---
+  const [touchStartX, setTouchStartX] = useState(null);
+  const [touchEndX, setTouchEndX] = useState(null);
+
   // --- SISTEMA DE ALERTAS VAd. ---
   const [vadAlert, setVadAlert] = useState(null);
 
@@ -1165,8 +1169,47 @@ export default function App() {
     else setBookEnd(roundedTime);
   };
 
+  // --- MOTOR DE NAVEGACIÓN POR SWIPE ---
+  const handleTouchStart = (e) => {
+    setTouchEndX(null); // Limpiamos el último movimiento
+    setTouchStartX(e.targetTouches[0].clientX); // Guardamos la coordenada inicial X
+  };
+
+  const handleTouchMove = (e) => {
+    setTouchEndX(e.targetTouches[0].clientX); // Actualizamos la coordenada X mientras mueve el dedo
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX || !touchEndX) return;
+    
+    const distancia = touchStartX - touchEndX;
+    const minSwipeDistance = 50; // Distancia mínima en pixeles para evitar cambios accidentales
+    
+    const isLeftSwipe = distancia > minSwipeDistance;
+    const isRightSwipe = distancia < -minSwipeDistance;
+
+    if (isLeftSwipe || isRightSwipe) {
+      const ordenTabs = ['home', 'jugar', 'partidos', 'perfil'];
+      const indiceActual = ordenTabs.indexOf(tab);
+      
+      if (isLeftSwipe && indiceActual < ordenTabs.length - 1) {
+        // Deslizó hacia la izquierda -> Pestaña siguiente
+        setTab(ordenTabs[indiceActual + 1]);
+      }
+      if (isRightSwipe && indiceActual > 0) {
+        // Deslizó hacia la derecha -> Pestaña anterior
+        setTab(ordenTabs[indiceActual - 1]);
+      }
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30">
+    <div 
+      className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       
       {/* =========================================
           NUEVO HEADER FIJO SUPERIOR VAd.
