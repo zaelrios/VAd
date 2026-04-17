@@ -451,7 +451,7 @@ export default function App() {
     let nuevaRacha = rachaActual + 1;
 
     if (nuevaRacha === 5 || nuevaRacha === 8 || nuevaRacha === 10 || nuevaRacha > 10) {
-       nuevaConfianza = Math.min(5.0, nuevaConfianza + 0.5);
+       nuevaConfianza = Math.min(5.0, nuevaConfianza + 1.0);
     }
     return { nuevaConfianza, nuevaRacha };
   };
@@ -758,12 +758,23 @@ export default function App() {
 
       await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
 
+      // ... (código anterior de handleConfirmReport) ...
       const perfilSeguro = { ...currentUser, elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha };
       setCurrentUser(perfilSeguro);
       localStorage.setItem('vad_session', JSON.stringify(perfilSeguro));
       
       fetchPartidos();
-      mostrarAlerta("¡Partido finalizado!", `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts`);
+
+      // --- NUEVO: AVISO INTELIGENTE DE CONFIABILIDAD ---
+      let mensajeFinal = `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`;
+      
+      // Si la confianza nueva es mayor que la que tenías, le agregamos el aviso
+      if (misNuevosDatos.nuevaConfianza > currentUser.confianza) {
+          mensajeFinal += `\n\n¡Felicidades! Por tu racha de asistencia (${misNuevosDatos.nuevaRacha}🔥) has recuperado 1 Pelota de Confiabilidad 🟢`;
+      }
+
+      mostrarAlerta("¡Partido finalizado!", mensajeFinal);
+      // ------------------------------------------------
     } catch (error) {
       console.error(error);
     }
@@ -1172,7 +1183,7 @@ export default function App() {
       <header className="fixed top-0 left-0 w-full bg-[#F8F7F2]/90 backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b border-[#1A1C1E]/5">
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.2</span>
+          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.3</span>
         </h1>
       </header>
 
@@ -1731,9 +1742,9 @@ export default function App() {
                                         </div>
                                         
                                         <div className="flex gap-2 items-center">
-                                          <input type="number" min="0" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                           <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">1</span>
-                                          <input type="number" min="0" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                         </div>
                                         
                                         <div className="flex gap-2 items-center">
