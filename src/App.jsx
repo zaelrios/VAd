@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './supabase' 
-import OneSignal from 'react-onesignal';
 
 export default function App() {
   // --- LÓGICA DE HORA INTELIGENTE INICIAL ---
@@ -191,50 +190,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // --- MOTOR DE NOTIFICACIONES PUSH (ACTUALIZADO) ---
-  useEffect(() => {
-    const initOneSignal = async () => {
-      try {
-        await OneSignal.init({
-          appId: "6363962e-fd58-401b-a273-2ca5186e7cce", 
-          safari_web_id: "web.onesignal.auto.2bb5f943-5f36-4c5b-98f3-fab8c5252044", 
-          allowLocalhostAsSecureOrigin: true,
-          notifyButton: { enable: false },
-        });
-        
-        // REVISAMOS SI YA TIENE PERMISO Y ACTUALIZAMOS LA INTERFAZ
-        const yaTienePermiso = OneSignal.Notifications.permission;
-        setPushActivo(yaTienePermiso);
-
-      } catch (error) {
-        console.error("Error iniciando OneSignal:", error);
-      }
-    };
-
-    initOneSignal();
-  }, []);
-
-  // --- VINCULAR CELULAR CON EL JUGADOR (CORREGIDO) ---
-  useEffect(() => {
-    const identificarCelular = async () => {
-      // Solo intentamos vincular si el usuario ya inició sesión y tenemos sus datos
-      if (isLoggedIn && currentUser && currentUser.id) {
-        try {
-          // Esperamos 2 segundos para darle tiempo a OneSignal de despertar por completo
-          setTimeout(async () => {
-            await OneSignal.login(currentUser.id);
-            console.log("📱 Celular vinculado al jugador:", currentUser.nombre);
-          }, 2000);
-        } catch (error) {
-          console.error("Error al vincular OneSignal:", error);
-        }
-      }
-    };
-
-    identificarCelular();
-  }, [isLoggedIn, currentUser]);
-
- // MEMORIA PERMANENTE
+    // MEMORIA PERMANENTE
   useEffect(() => {
     const savedUser = localStorage.getItem('vad_session');
     if (savedUser && savedUser !== 'null') {
