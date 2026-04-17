@@ -568,27 +568,24 @@ export default function App() {
           msj, 
           async () => {
             try {
-              // 🛡️ EL BLINDAJE: Verificamos si el partido sigue vivo antes de cobrar nada
-              const { data: matchCheck } = await supabase
+              // 🛡️ BLINDAJE ATÓMICO: Disparamos a borrar y vemos quién acertó primero.
+              const { data: deletedMatch, error: deleteError } = await supabase
                 .from('partidos')
-                .select('id')
+                .delete()
                 .eq('id', partido.id)
-                .maybeSingle(); // Usamos maybeSingle para que no tire error rojo si no existe
+                .select(); // <-- EL SECRETO: Exigimos que nos devuelva el registro borrado.
 
-              if (!matchCheck) {
-                  // Si ya no existe, significa que el rival le picó milisegundos antes que tú.
-                  mostrarAlerta("Partido ya cancelado", "El partido fue cancelado por tu rival hace un instante. Tú no pierdes comodines ni racha.");
+              // Si el arreglo está vacío, el otro celular ejecutó el borrado milisegundos antes.
+              if (!deletedMatch || deletedMatch.length === 0) {
+                  mostrarAlerta("Llegaste tarde", "El partido fue cancelado por tu rival hace una fracción de segundo. Tú estás a salvo, no pierdes comodines ni racha.");
                   fetchPartidos();
                   return; // Abortamos la misión para no auto-castigarnos
               }
 
+              // Si llegamos aquí, este celular fue el que logró borrar el partido. Aplicamos SU castigo.
               if (penalizacionWODirecto) {
                   await processSelfWO(partido, perfil);
               } else {
-                  // 1. Borramos el partido PRIMERO
-                  await supabase.from('partidos').delete().eq('id', partido.id);
-                  
-                  // 2. AHORA SÍ, cobramos el castigo SOLO al que le picó exitosamente
                   const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
 
                   await supabase.from('Perfiles').update({ 
@@ -597,7 +594,7 @@ export default function App() {
                       racha_asistencia: rachaFinal 
                   }).eq('id', perfil.id);
                   
-                  // 3. Regresamos al otro al radar
+                  // Regresamos al otro al radar
                   await supabase.from('buscar').insert([{
                       jugador_id: partido.rival.id,
                       nombre: partido.rival.nombre,
