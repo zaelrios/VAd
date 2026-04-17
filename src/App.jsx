@@ -919,18 +919,37 @@ export default function App() {
       return;
     }
 
+    // --- NUEVO BLINDAJE MATEMÁTICO PARA CRUCES (Reemplaza los hasOverlap de texto) ---
+    
+    // Función universal para convertir cualquier hora a minutos
+    const getMins = (timeStr) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return (h * 60) + m;
+    };
+
+    const startMins = getMins(startTime);
+    const endMins = getMins(endTime);
+
     const hasOverlap = activeSearches.some(search => {
       if (search.fecha !== searchDate) return false; 
-      return (startTime < search.hora_fin && endTime > search.hora_inicio);
+      const searchStart = getMins(search.hora_inicio);
+      const searchEnd = getMins(search.hora_fin);
+      return (startMins < searchEnd && endMins > searchStart);
     });
-    if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
+    
+    if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa cruzada con este horario.'); return; }
 
     const hasMatchOverlap = misPartidos.some(partido => {
       if (partido.fecha !== searchDate) return false; 
       if (partido.estado === 'finalizado' || partido.estado === 'wo') return false; 
-      return (startTime < partido.hora_fin && endTime > partido.hora_inicio);
+      const matchStart = getMins(partido.hora_inicio);
+      const matchEnd = getMins(partido.hora_fin);
+      return (startMins < matchEnd && endMins > matchStart);
     });
-    if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
+    
+    if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado que choca con este horario.'); return; }
+    // ---------------------------------------------------------------------------------
 
     try {
       // --- ESCÁNER DE DISPONIBILIDAD REAL ---
@@ -993,13 +1012,7 @@ export default function App() {
 
       if (posiblesRivales && posiblesRivales.length > 0) {
         
-        // Función auxiliar para convertir horas a minutos exactos
-        const getMins = (timeStr) => {
-          const [h, m] = timeStr.split(':').map(Number);
-          return (h * 60) + m;
-        };
-
-        for (let rival of posiblesRivales) {
+         for (let rival of posiblesRivales) {
           const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
           
           if (hayCruceHorario) {
