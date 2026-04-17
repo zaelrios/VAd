@@ -510,7 +510,7 @@ export default function App() {
     );
   };
 
-  // --- CANCELACIONES CON LÓGICA DE TIEMPO ---
+  // --- CANCELACIONES CON LÓGICA DE TIEMPO (BLINDADO CONTRA RACE CONDITIONS) ---
   const handleCancelMatch = async (partido) => {
     const [year, month, day] = partido.fecha.split('-');
     const [startH, startM] = partido.hora_inicio.split(':');
@@ -531,9 +531,11 @@ export default function App() {
         let nuevaConfianza = Number(perfil.confianza);
         let msj = "";
         let penalizacionWODirecto = false;
+        let pierdeRacha = true; // Variable para saber si es un castigo completo
 
         if (diffHoras >= 24) {
             msj = "✅ ZONA VERDE: Faltan más de 24 horas. Esta cancelación es LIBRE y no gasta tus comodines.\n\n¿Estás seguro de cancelar el partido?";
+            pierdeRacha = false; // En zona verde NO pierdes la racha
         } 
         else if (diffHoras < 24 && diffHoras >= 3) {
             if (comodines > 0) {
@@ -559,17 +561,36 @@ export default function App() {
           msj, 
           async () => {
             try {
+              // 🛡️ EL BLINDAJE: Verificamos si el partido sigue vivo antes de cobrar nada
+              const { data: matchCheck } = await supabase
+                .from('partidos')
+                .select('id')
+                .eq('id', partido.id)
+                .maybeSingle(); // Usamos maybeSingle para que no tire error rojo si no existe
+
+              if (!matchCheck) {
+                  // Si ya no existe, significa que el rival le picó milisegundos antes que tú.
+                  mostrarAlerta("Partido ya cancelado", "El partido fue cancelado por tu rival hace un instante. Tú no pierdes comodines ni racha.");
+                  fetchPartidos();
+                  return; // Abortamos la misión para no auto-castigarnos
+              }
+
               if (penalizacionWODirecto) {
                   await processSelfWO(partido, perfil);
               } else {
+                  // 1. Borramos el partido PRIMERO
+                  await supabase.from('partidos').delete().eq('id', partido.id);
+                  
+                  // 2. AHORA SÍ, cobramos el castigo SOLO al que le picó exitosamente
+                  const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
+
                   await supabase.from('Perfiles').update({ 
                       confianza: nuevaConfianza, 
                       comodines: comodines, 
-                      racha_asistencia: 0 
+                      racha_asistencia: rachaFinal 
                   }).eq('id', perfil.id);
                   
-                  await supabase.from('partidos').delete().eq('id', partido.id);
-                  
+                  // 3. Regresamos al otro al radar
                   await supabase.from('buscar').insert([{
                       jugador_id: partido.rival.id,
                       nombre: partido.rival.nombre,
@@ -580,7 +601,7 @@ export default function App() {
                       estado: 'activa'
                   }]);
 
-                  const updatedUser = { ...perfil, confianza: nuevaConfianza, comodines: comodines, racha_asistencia: 0 };
+                  const updatedUser = { ...perfil, confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal };
                   setCurrentUser(updatedUser);
                   localStorage.setItem('vad_session', JSON.stringify(updatedUser));
                   
