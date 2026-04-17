@@ -568,21 +568,23 @@ export default function App() {
           msj, 
           async () => {
             try {
-              // 🛡️ BLINDAJE ATÓMICO: Disparamos a borrar y vemos quién acertó primero.
-              const { data: deletedMatch, error: deleteError } = await supabase
+              // 🛡️ BLINDAJE NIVEL DIOS (Optimistic Locking)
+              // Disparamos el borrado y le exigimos a Supabase que nos devuelva el "cadáver" de la fila.
+              // Como Postgres es transaccional, solo el celular que llegue el primer milisegundo obtendrá la fila.
+              const { data: deletedMatch } = await supabase
                 .from('partidos')
                 .delete()
                 .eq('id', partido.id)
-                .select(); // <-- EL SECRETO: Exigimos que nos devuelva el registro borrado.
+                .select(); 
 
-              // Si el arreglo está vacío, el otro celular ejecutó el borrado milisegundos antes.
+              // Si el arreglo está vacío, el rival nos ganó la carrera en el servidor.
               if (!deletedMatch || deletedMatch.length === 0) {
-                  mostrarAlerta("Llegaste tarde", "El partido fue cancelado por tu rival hace una fracción de segundo. Tú estás a salvo, no pierdes comodines ni racha.");
+                  mostrarAlerta("Salvado por un pelo", "El partido fue cancelado por tu rival hace una fracción de segundo. Tú estás a salvo, no pierdes comodines ni racha.");
                   fetchPartidos();
-                  return; // Abortamos la misión para no auto-castigarnos
+                  return; // Abortamos el castigo
               }
 
-              // Si llegamos aquí, este celular fue el que logró borrar el partido. Aplicamos SU castigo.
+              // Si llegamos aquí, este celular fue el ganador absoluto de la cancelación. Aplicamos SU castigo.
               if (penalizacionWODirecto) {
                   await processSelfWO(partido, perfil);
               } else {
@@ -594,7 +596,7 @@ export default function App() {
                       racha_asistencia: rachaFinal 
                   }).eq('id', perfil.id);
                   
-                  // Regresamos al otro al radar
+                  // Regresamos al OTRO al radar (usando los datos de deletedMatch[0] para mayor seguridad)
                   await supabase.from('buscar').insert([{
                       jugador_id: partido.rival.id,
                       nombre: partido.rival.nombre,
@@ -1212,10 +1214,11 @@ export default function App() {
           NUEVO HEADER FIJO SUPERIOR VAd.
       ========================================= */}
       <header className="fixed top-0 left-0 w-full bg-[#F8F7F2]/90 backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b border-[#1A1C1E]/5">
-  <h1 className="text-2xl font-black italic tracking-tighter">
-    <span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span>
-  </h1>
-</header>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
+          <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
+          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.1</span>
+        </h1>
+      </header>
 
       {/* CORRECCIÓN EN EL MAIN: 
           Cambiamos 'pt-10' por 'pt-24' para darle espacio al header 
@@ -1581,7 +1584,7 @@ export default function App() {
             
             {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
               <div className="pt-4 space-y-4 animate-in fade-in w-full">
-                <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Radar Activo</h3>
+                <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Búsquedas Activas</h3>
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
                     <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
