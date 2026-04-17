@@ -166,9 +166,8 @@ export default function App() {
 
   const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
 
-  // ESTADOS DE PERSONALIZACIÓN Y NOTIFICACIONES
+  // ESTADOS DE PERSONALIZACIÓN
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [pushActivo, setPushActivo] = useState(false); // <-- AGREGA ESTE NUEVO
 
   const handleColorChange = async (newColor) => {
     const updatedUser = { ...currentUser, color: newColor };
@@ -992,18 +991,21 @@ export default function App() {
             const inicioCruce = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
             const finCruce = endTime < rival.hora_fin ? endTime : rival.hora_fin;
             
-            const startObj = new Date(`2000-01-01T${inicioCruce}`);
-            const endObj = new Date(`2000-01-01T${finCruce}`);
+            // EL FIX DE APPLE: Agregar ":00" para que Safari no tire "Invalid Date"
+            const startObj = new Date(`2000-01-01T${inicioCruce}:00`);
+            const endObj = new Date(`2000-01-01T${finCruce}:00`);
             const horasCruce = (endObj - startObj) / (1000 * 60 * 60);
 
             const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
             const eloRival = perfilRival?.elo || 1000;
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
-            if (diferenciaElo <= 200 && horasCruce >= 2) {
+            // Relajamos un milímetro la validación de horas a 1.9 para evitar errores de decimales
+            if (diferenciaElo <= 200 && horasCruce >= 1.9) {
               const propInicio = inicioCruce;
               
-              const propEndObj = new Date(`2000-01-01T${propInicio}`);
+              // EL FIX DE APPLE AQUÍ TAMBIÉN
+              const propEndObj = new Date(`2000-01-01T${propInicio}:00`);
               propEndObj.setHours(propEndObj.getHours() + 2);
               const propFin = propEndObj.toTimeString().substring(0,5);
 
@@ -1867,38 +1869,6 @@ export default function App() {
                   </p>
                 </div>
               </div>
-
-              <div className="flex gap-3 w-full border-t border-[#1A1C1E]/10 pt-6">
-                {/* ... (Aquí están las cajitas de ELO y Racha) ... */}
-              </div>
-
-              {/* INTERRUPTOR INTELIGENTE DE NOTIFICACIONES */}
-              {pushActivo ? (
-                <div className="w-full bg-[#29C454]/10 text-[#29C454] py-4 rounded-2xl font-black italic uppercase text-xs flex items-center justify-center gap-2 mt-6 border border-[#29C454]/30 shadow-sm">
-                  ✅ Alertas Activadas
-                </div>
-              ) : (
-                <button 
-                  onClick={async () => {
-                    try {
-                      // El celular pide el permiso
-                      const permisoConcedido = await OneSignal.Notifications.requestPermission();
-                      
-                      if (permisoConcedido) {
-                        setPushActivo(true);
-                        mostrarAlerta("¡Alertas Listas!", "A partir de ahora te avisaremos en cuanto encontremos a tu rival.");
-                      } else {
-                        mostrarError("Permiso Denegado", "Para recibir las alertas, necesitas dar permiso desde la configuración de tu celular.");
-                      }
-                    } catch (err) {
-                      console.error(err);
-                    }
-                  }}
-                  className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
-                >
-                  🔔 Activar Alertas de Partidos
-                </button>
-              )}
 
               {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
               {isLoggedIn && currentUser?.rol === 'admin' && (
