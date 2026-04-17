@@ -196,8 +196,8 @@ export default function App() {
     const initOneSignal = async () => {
       try {
         await OneSignal.init({
-          appId: "6278e71b-dc64-4195-988c-9ccae0bb5140", 
-          safari_web_id: "web.onesignal.auto.459ab5a0-25ed-43f1-a7b1-99d986ce9992", 
+          appId: "6363962e-fd58-401b-a273-2ca5186e7cce", 
+          safari_web_id: "web.onesignal.auto.2bb5f943-5f36-4c5b-98f3-fab8c5252044", 
           allowLocalhostAsSecureOrigin: true,
           notifyButton: { enable: false },
         });
