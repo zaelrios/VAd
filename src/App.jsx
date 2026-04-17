@@ -219,7 +219,11 @@ export default function App() {
           const busquedasValidas = [];
 
           for (let search of data) {
-            const searchStartObj = new Date(`${search.fecha}T${search.hora_inicio}:00`);
+            // FIX: Extraer números puros e ignorar los segundos mutantes de Supabase
+            const [year, month, day] = search.fecha.split('-').map(Number);
+            const [h, m] = search.hora_inicio.split(':').map(Number);
+            const searchStartObj = new Date(year, month - 1, day, h, m);
+
             const diffInHours = (searchStartObj - now) / (1000 * 60 * 60);
 
             if (diffInHours < 2) {
@@ -903,7 +907,11 @@ export default function App() {
     if (startTime >= endTime) { setSearchError('La hora límite debe ser después de inicio.'); return; }
     
     const now = new Date();
-    const searchStartObj = new Date(`${searchDate}T${startTime}:00`);
+    // FIX: Matemática pura para evaluar el inicio
+    const [year, month, day] = searchDate.split('-').map(Number);
+    const [sH, sM] = startTime.split(':').map(Number);
+    const searchStartObj = new Date(year, month - 1, day, sH, sM);
+    
     const diffInHoursNotice = (searchStartObj - now) / (1000 * 60 * 60);
 
     if (diffInHoursNotice < 2) {
@@ -984,6 +992,13 @@ export default function App() {
       const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
 
       if (posiblesRivales && posiblesRivales.length > 0) {
+        
+        // Función auxiliar para convertir horas a minutos exactos
+        const getMins = (timeStr) => {
+          const [h, m] = timeStr.split(':').map(Number);
+          return (h * 60) + m;
+        };
+
         for (let rival of posiblesRivales) {
           const hayCruceHorario = (startTime < rival.hora_fin && endTime > rival.hora_inicio);
           
@@ -991,23 +1006,24 @@ export default function App() {
             const inicioCruce = startTime > rival.hora_inicio ? startTime : rival.hora_inicio;
             const finCruce = endTime < rival.hora_fin ? endTime : rival.hora_fin;
             
-            // EL FIX DE APPLE: Agregar ":00" para que Safari no tire "Invalid Date"
-            const startObj = new Date(`2000-01-01T${inicioCruce}:00`);
-            const endObj = new Date(`2000-01-01T${finCruce}:00`);
-            const horasCruce = (endObj - startObj) / (1000 * 60 * 60);
+            // Resta pura de minutos
+            const inicioMins = getMins(inicioCruce);
+            const finMins = getMins(finCruce);
+            const horasCruce = (finMins - inicioMins) / 60;
 
             const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
             const eloRival = perfilRival?.elo || 1000;
             const diferenciaElo = Math.abs(currentUser.elo - eloRival);
             
-            // Relajamos un milímetro la validación de horas a 1.9 para evitar errores de decimales
+            // Evaluamos con 1.9 por si hay microsaltos decimales
             if (diferenciaElo <= 200 && horasCruce >= 1.9) {
               const propInicio = inicioCruce;
               
-              // EL FIX DE APPLE AQUÍ TAMBIÉN
-              const propEndObj = new Date(`2000-01-01T${propInicio}:00`);
-              propEndObj.setHours(propEndObj.getHours() + 2);
-              const propFin = propEndObj.toTimeString().substring(0,5);
+              // Sumar 2 horas (120 mins) matemáticamente
+              const propFinMins = getMins(propInicio) + 120;
+              const propFinH = Math.floor(propFinMins / 60);
+              const propFinM = propFinMins % 60;
+              const propFin = `${String(propFinH).padStart(2, '0')}:${String(propFinM).padStart(2, '0')}`;
 
               const { data: partidosCruce } = await supabase
                 .from('partidos')
