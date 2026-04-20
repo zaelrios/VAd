@@ -36,7 +36,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ (VERSIÓN MAESTRA) ---
-  const APP_VERSION = '1.4'; // <--- CAMBIAREMOS ESTE NÚMERO EN CADA ACTUALIZACIÓN
+  const APP_VERSION = '1.6'; // <--- VERSIÓN ACTUALIZADA PARA FORZAR EL MODO OSCURO
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -57,6 +57,27 @@ export default function App() {
     }
   }, []);
   // -------------------------------------------------------------
+
+  // --- MODO OSCURO (UX/UI) ---
+  const [modoOscuro, setModoOscuro] = useState(() => {
+    return localStorage.getItem('vad_theme') === 'dark';
+  });
+
+  const toggleTheme = () => {
+    const newTheme = !modoOscuro;
+    setModoOscuro(newTheme);
+    localStorage.setItem('vad_theme', newTheme ? 'dark' : 'light');
+  };
+
+  // Diccionario inteligente de colores (Azul Medianoche vs Blanco Perla)
+  const theme = {
+    bg: modoOscuro ? 'bg-[#0F172A]' : 'bg-[#F8F7F2]',
+    text: modoOscuro ? 'text-[#F8F9FA]' : 'text-[#1A1C1E]',
+    card: modoOscuro ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]',
+    border: modoOscuro ? 'border-[#F8F9FA]/10' : 'border-[#1A1C1E]/10',
+    muted: modoOscuro ? 'text-[#F8F9FA]/50' : 'text-[#1A1C1E]/50',
+    nav: modoOscuro ? 'bg-[#0F172A]/90' : 'bg-[#F8F7F2]/90'
+  };
 
   // --- LÓGICA PARA GESTOS DE DESLIZAMIENTO (SWIPE) ---
   const [touchStartX, setTouchStartX] = useState(null);
@@ -594,8 +615,6 @@ export default function App() {
           async () => {
             try {
               // 🛡️ BLINDAJE NIVEL DIOS (Optimistic Locking)
-              // Disparamos el borrado y le exigimos a Supabase que nos devuelva el "cadáver" de la fila.
-              // Como Postgres es transaccional, solo el celular que llegue el primer milisegundo obtendrá la fila.
               const { data: deletedMatch } = await supabase
                 .from('partidos')
                 .delete()
@@ -609,7 +628,7 @@ export default function App() {
                   return; // Abortamos el castigo
               }
 
-              // Si llegamos aquí, este celular fue el ganador absoluto de la cancelación. Aplicamos SU castigo.
+              // Si llegamos aquí, este celular fue el ganador absoluto de la cancelación.
               if (penalizacionWODirecto) {
                   await processSelfWO(partido, perfil);
               } else {
@@ -621,7 +640,7 @@ export default function App() {
                       racha_asistencia: rachaFinal 
                   }).eq('id', perfil.id);
                   
-                  // Regresamos al OTRO al radar (usando los datos de deletedMatch[0] para mayor seguridad)
+                  // Regresamos al OTRO al radar
                   await supabase.from('buscar').insert([{
                       jugador_id: partido.rival.id,
                       nombre: partido.rival.nombre,
@@ -783,7 +802,7 @@ export default function App() {
 
       await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
 
-      // ... (código anterior de handleConfirmReport) ...
+      // Actualizar datos locales
       const perfilSeguro = { ...currentUser, elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha };
       setCurrentUser(perfilSeguro);
       localStorage.setItem('vad_session', JSON.stringify(perfilSeguro));
@@ -1214,20 +1233,21 @@ export default function App() {
   };
 
   return (
+    // 1. EL DIV PRINCIPAL (Fondo de toda la app)
     <div 
-      className="min-h-screen bg-[#F8F7F2] text-[#1A1C1E] font-sans pb-32 selection:bg-[#29C454]/30"
+      className={`min-h-screen font-sans pb-32 transition-colors duration-500 selection:bg-[#29C454]/30 ${theme.bg} ${theme.text}`}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       
       {/* =========================================
-          NUEVO HEADER FIJO SUPERIOR VAd.
+          NUEVO HEADER FIJO SUPERIOR VAd. (La barra de arriba)
       ========================================= */}
-      <header className="fixed top-0 left-0 w-full bg-[#F8F7F2]/90 backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b border-[#1A1C1E]/5">
+      <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.4</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.6</span>
         </h1>
       </header>
 
@@ -1242,13 +1262,13 @@ export default function App() {
             
             <section className="flex flex-col items-center">
               
-              <h2 className="text-[#1A1C1E] font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm">
+              <h2 className={`${theme.text} font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm`}>
                 Donde el tennis se vive
               </h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">
                 VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1268B0' }}>ADENTRO.</span>
               </h1>
-              <p className="text-[#1A1C1E] text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4">
+              <p className={`${theme.text} text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4`}>
                  La comunidad que premia a los que sí aparecen.<br/>Matchmaking inteligente con sistema ELO para un ranking justo y real.
               </p>
               <button onClick={() => isLoggedIn ? setTab('jugar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
@@ -1258,54 +1278,54 @@ export default function App() {
 
             <section className="w-full text-left space-y-6">
               
-              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
+              <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden`}>
                 <div className="absolute -right-4 -top-4 opacity-5 text-9xl">🔍</div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">El Matchmaking</h3>
-                <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">El buscador mas sencillo para encontrar con quien jugar tennis.</p>
-                <ul className="space-y-4 relative z-10 text-xs font-bold text-[#1A1C1E]/80">
+                <p className={`${theme.muted} text-sm font-bold mb-6 relative z-10 leading-relaxed`}>El buscador mas sencillo para encontrar con quien jugar tennis.</p>
+                <ul className={`space-y-4 relative z-10 text-xs font-bold ${theme.muted}`}>
                   <li className="flex gap-3">
                     <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda desde 2 horas de anticipacion.</span>
+                    <span className="text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda desde 2 horas de anticipacion.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda activa con hasta 1 semana de anticipación.</span>
+                    <span className="text-sm font-bold mb-1 relative z-10 leading-relaxed">Busqueda activa con hasta 1 semana de anticipación.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed">Emparejamiento por diferencia de puntos:<span className="text-[#1268B0]"> +/-200 puntos </span>.</span>
+                    <span className="text-sm font-bold mb-1 relative z-10 leading-relaxed">Emparejamiento por diferencia de puntos:<span className="text-[#1268B0]"> +/-200 puntos </span>.</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="text-[#1268B0] font-black leading-none pt-0.5">•</span>
-                    <span className="text-[#1A1C1E]/80 text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#1268B0]">Si el rival cancela, el buscador te reactivará automáticamente.</span></span>
+                    <span className="text-sm font-bold mb-1 relative z-10 leading-relaxed"><span className="text-[#1268B0]">Si el rival cancela, el buscador te reactivará automáticamente.</span></span>
                   </li>
                  </ul>
               </div>
 
-              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
+              <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden`}>
                 <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#29C454]/10 rounded-full blur-3xl"></div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Ranking ELO</h3>
-                <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">Transparencia total. Un sistema diseñado para que tu ascenso dependa de tu nivel real en la cancha.</p>
+                <p className={`${theme.muted} text-sm font-bold mb-6 relative z-10 leading-relaxed`}>Transparencia total. Un sistema diseñado para que tu ascenso dependa de tu nivel real en la cancha.</p>
                 
-                <div className="space-y-6 relative z-10 text-xs text-[#1A1C1E]">
-                  <div className="bg-[#F8F7F2] p-5 rounded-2xl border border-[#1A1C1E]/5 shadow-inner space-y-5">
+                <div className={`space-y-6 relative z-10 text-xs ${theme.text}`}>
+                  <div className={`${theme.bg} p-5 rounded-2xl border ${theme.border} shadow-inner space-y-5`}>
                     
                     <div>
                       <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#1268B0]">1.</span> Inicio y Fuerzas</p>
-                      <p className="font-bold leading-relaxed opacity-70">Todos inician en <span className="text-[#1268B0]">5ta Fuerza (1,200 pts)</span>. El sistema te empareja con rivales en un rango de ±200 puntos. El piso mínimo es de 1,000 pts (6ta Fuerza) para proteger tu progreso.</p>
+                      <p className={`font-bold leading-relaxed ${theme.muted}`}>Todos inician en <span className="text-[#1268B0]">5ta Fuerza (1,200 pts)</span>. El sistema te empareja con rivales en un rango de ±200 puntos. El piso mínimo es de 1,000 pts (6ta Fuerza) para proteger tu progreso.</p>
                     </div>
 
                     <div>
                       <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#1268B0]">2.</span> Velocidad K-Max (60)</p>
-                      <p className="font-bold leading-relaxed opacity-70">El 'Factor K' es la potencia de ascenso. Si juegas contra alguien de tu nivel, K es 40. Si el rival te supera por el límite de <span className="text-[#1268B0]">200 puntos</span>, K sube a <span className="text-[#1268B0]">60</span> para acelerar tu subida.</p>
+                      <p className={`font-bold leading-relaxed ${theme.muted}`}>El 'Factor K' es la potencia de ascenso. Si juegas contra alguien de tu nivel, K es 40. Si el rival te supera por el límite de <span className="text-[#1268B0]">200 puntos</span>, K sube a <span className="text-[#1268B0]">60</span> para acelerar tu subida.</p>
                     </div>
 
                     <div>
                       <p className="font-black uppercase tracking-wider text-[11px] mb-1.5 flex items-center gap-2"><span className="text-[#1268B0]">3.</span> Probabilidad Lineal VAd.</p>
-                      <p className="font-bold leading-relaxed opacity-70">A diferencia de otros sistemas, usamos un cálculo lineal: contra un rival 200 pts arriba, tu probabilidad de ganar es del 10%. Dar la sorpresa ahí te da el premio máximo de puntos.</p>
+                      <p className={`font-bold leading-relaxed ${theme.muted}`}>A diferencia de otros sistemas, usamos un cálculo lineal: contra un rival 200 pts arriba, tu probabilidad de ganar es del 10%. Dar la sorpresa ahí te da el premio máximo de puntos.</p>
                     </div>
 
-                    <div className="pt-2 border-t border-[#1A1C1E]/10">
+                    <div className={`pt-2 border-t ${theme.border}`}>
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#1268B0]">4.</span> Desglose de la Fórmula</p>
                       
                       <div className="bg-[#29C454] p-5 rounded-2xl shadow-lg shadow-[#29C454]/20 text-left relative overflow-hidden">
@@ -1325,14 +1345,14 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="pt-4 border-t border-[#1A1C1E]/10">
+                    <div className={`pt-4 border-t ${theme.border}`}>
                       <p className="font-black uppercase tracking-wider text-[11px] mb-3 flex items-center gap-2"><span className="text-[#1268B0]">5.</span> Ejemplos (Victoria 2-0)</p>
                       <div className="space-y-2">
                         
-                        <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
+                        <div className={`${theme.card} p-3.5 rounded-xl border ${theme.border} flex justify-between items-center shadow-sm gap-2`}>
                           <div className="flex-1 pr-2">
-                            <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">La Gran Sorpresa (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1400 pts</p>
+                            <p className={`font-black ${theme.text} text-[9px] uppercase tracking-wider`}>La Gran Sorpresa (K=60)</p>
+                            <p className={`text-[10px] font-bold ${theme.muted} leading-tight mt-0.5`}>1200 pts vs Rival de 1400 pts</p>
                           </div>
                           <div className="shrink-0 text-right">
                             <span className="bg-[#29C454] text-white px-3 py-1.5 rounded-lg font-black text-[11px] shadow-md shadow-[#29C454]/20 inline-block">
@@ -1341,10 +1361,10 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
+                        <div className={`${theme.card} p-3.5 rounded-xl border ${theme.border} flex justify-between items-center shadow-sm gap-2`}>
                           <div className="flex-1 pr-2">
-                            <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Duelo Equilibrado (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1200 pts vs Rival de 1200 pts</p>
+                            <p className={`font-black ${theme.text} text-[9px] uppercase tracking-wider`}>Duelo Equilibrado (K=60)</p>
+                            <p className={`text-[10px] font-bold ${theme.muted} leading-tight mt-0.5`}>1200 pts vs Rival de 1200 pts</p>
                           </div>
                           <div className="shrink-0 text-right">
                             <span className="bg-[#29C454]/10 text-[#29C454] px-3 py-1.5 rounded-lg font-black text-[11px] border border-[#29C454]/20 inline-block">
@@ -1353,13 +1373,13 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="bg-white p-3.5 rounded-xl border border-[#1A1C1E]/10 flex justify-between items-center shadow-sm gap-2">
+                        <div className={`${theme.card} p-3.5 rounded-xl border ${theme.border} flex justify-between items-center shadow-sm gap-2`}>
                           <div className="flex-1 pr-2">
-                            <p className="font-black text-[#1A1C1E] text-[9px] uppercase tracking-wider">Favorito (K=60)</p>
-                            <p className="text-[10px] font-bold opacity-50 leading-tight mt-0.5">1400 pts vs Rival de 1200 pts</p>
+                            <p className={`font-black ${theme.text} text-[9px] uppercase tracking-wider`}>Favorito (K=60)</p>
+                            <p className={`text-[10px] font-bold ${theme.muted} leading-tight mt-0.5`}>1400 pts vs Rival de 1200 pts</p>
                           </div>
                           <div className="shrink-0 text-right">
-                            <span className="bg-[#F8F7F2] text-[#1A1C1E]/60 px-3 py-1.5 rounded-lg font-black text-[11px] border border-[#1A1C1E]/10 inline-block">
+                            <span className={`${theme.bg} ${theme.muted} px-3 py-1.5 rounded-lg font-black text-[11px] border ${theme.border} inline-block`}>
                               +6 Pts
                             </span>
                           </div>
@@ -1372,19 +1392,19 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden">
+              <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden`}>
                 <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#E5B824]/10 rounded-full blur-3xl"></div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Confiabilidad</h3>
-                <p className="text-[#1A1C1E]/80 text-sm font-bold mb-6 relative z-10 leading-relaxed">En Ventaja Adentro respetamos el tiempo de todos. Tienes 5 Pelotas de Confiabilidad, protégelas:</p>
+                <p className={`${theme.muted} text-sm font-bold mb-6 relative z-10 leading-relaxed`}>En Ventaja Adentro respetamos el tiempo de todos. Tienes 5 Pelotas de Confiabilidad, protégelas:</p>
                 
-                <div className="space-y-4 relative z-10 text-xs text-[#1A1C1E]">
-                  <div className="bg-[#F8F7F2] p-5 rounded-2xl border border-[#1A1C1E]/5 shadow-inner space-y-5">
+                <div className={`space-y-4 relative z-10 text-xs ${theme.text}`}>
+                  <div className={`${theme.bg} p-5 rounded-2xl border ${theme.border} shadow-inner space-y-5`}>
                     
                     <div className="flex gap-4 items-start">
                       <span className="text-[#29C454] text-xl leading-none drop-shadow-sm">🟢</span>
                       <div>
                         <p className="font-black uppercase tracking-wider text-[11px] mb-1">Cancelación Libre (24h+)</p>
-                        <p className="font-bold leading-relaxed opacity-70">Avisar con más de un día de anticipación no tiene penalización. El buscador tiene tiempo para otro rival.</p>
+                        <p className={`font-bold leading-relaxed ${theme.muted}`}>Avisar con más de un día de anticipación no tiene penalización. El buscador tiene tiempo para otro rival.</p>
                       </div>
                     </div>
 
@@ -1392,7 +1412,7 @@ export default function App() {
                       <span className="text-[#E5B824] text-xl leading-none drop-shadow-sm">🟡</span>
                       <div>
                         <p className="font-black uppercase tracking-wider text-[11px] mb-1">Los 2 Comodines (24h a 3h)</p>
-                        <p className="font-bold leading-relaxed opacity-70">Tienes 2 cancelaciones al mes para imprevistos. <span className="text-[#E5B824]">Ojo: Solo 1 comodín</span> sirve para emergencias extremas (entre 3h y 30 mins antes). Si te los acabas, perderás Confiabilidad <span className="text-[#E5B824]">(-0.5 pelotas)</span>.</p>
+                        <p className={`font-bold leading-relaxed ${theme.muted}`}>Tienes 2 cancelaciones al mes para imprevistos. <span className="text-[#E5B824]">Ojo: Solo 1 comodín</span> sirve para emergencias extremas (entre 3h y 30 mins antes). Si te los acabas, perderás Confiabilidad <span className="text-[#E5B824]">(-0.5 pelotas)</span>.</p>
                       </div>
                     </div>
 
@@ -1400,7 +1420,7 @@ export default function App() {
                       <span className="text-red-500 text-xl leading-none drop-shadow-sm">🔴</span>
                       <div>
                         <p className="font-black uppercase tracking-wider text-[11px] mb-1">Walkover / W.O. (-30 mins)</p>
-                        <p className="font-bold leading-relaxed opacity-70">Faltar a la cancha o cancelar a menos de 30 mins es castigo máximo. <span className="text-[#F50514]">Tu ELO caerá (como perder 6-0, 6-0) y tu Confiabilidad se desplomará (-1 pelota)</span>.</p>
+                        <p className={`font-bold leading-relaxed ${theme.muted}`}>Faltar a la cancha o cancelar a menos de 30 mins es castigo máximo. <span className="text-[#F50514]">Tu ELO caerá (como perder 6-0, 6-0) y tu Confiabilidad se desplomará (-1 pelota)</span>.</p>
                       </div>
                     </div>
 
@@ -1408,15 +1428,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
+              <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm`}>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Buzón</h3>
-                <p className="text-[#1A1C1E]/70 text-sm font-bold mb-5 leading-relaxed">¿Ideas, reportes de error o sugerencias? Háznoslo saber.</p>
+                <p className={`${theme.muted} text-sm font-bold mb-5 leading-relaxed`}>¿Ideas, reportes de error o sugerencias? Háznoslo saber.</p>
                 <div className="space-y-3">
                   <textarea 
                     placeholder="Escribe tu comentario aquí..." 
                     value={comentario}
                     onChange={(e) => setComentario(e.target.value)}
-                    className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold text-sm focus:outline-none focus:border-[#29C454] resize-none h-28 shadow-inner"
+                    className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold text-sm focus:outline-none focus:border-[#29C454] resize-none h-28 shadow-inner`}
                   />
                   <button 
                     onClick={async (e) => {
@@ -1464,41 +1484,41 @@ export default function App() {
             {!isRegistering ? (
               <>
                 <div className="text-center">
-                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Acceso Oficial</h2>
-                  <p className="text-[#1A1C1E]/60 text-sm">Tu celular es tu identidad.</p>
+                  <h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight mb-2`}>Acceso Oficial</h2>
+                  <p className={`${theme.muted} text-sm`}>Tu celular es tu identidad.</p>
                 </div>
                 <form onSubmit={handleAuthSubmit} className="space-y-6">
                   <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Celular</label>
+                    <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Celular</label>
                     <div className="flex gap-2">
-                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className="w-1/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-2 py-4 text-[#1A1C1E] font-bold shadow-sm appearance-none cursor-pointer">
+                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-2xl px-2 py-4 ${theme.text} font-bold shadow-sm appearance-none cursor-pointer`}>
                         <option value="+52">🇲🇽 +52</option>
                         <option value="+1">🇺🇸 +1</option>
                       </select>
-                      <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className="w-2/3 bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold tracking-widest focus:outline-none focus:border-[#29C454]" />
+                      <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className={`w-2/3 ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold tracking-widest focus:outline-none focus:border-[#29C454]`} />
                     </div>
                   </div>
                   <div className="space-y-2 text-left mt-2">
-                    <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">PIN (4 dígitos)</label>
-                    <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] text-[#1A1C1E] font-black focus:outline-none focus:border-[#29C454]" />
+                    <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>PIN (4 dígitos)</label>
+                    <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] ${theme.text} font-black focus:outline-none focus:border-[#29C454]`} />
                   </div>
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
                   <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">
                     {authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}
                   </button>
                 </form>
-                <button onClick={() => setTab('home')} className="w-full text-[10px] font-black text-[#1A1C1E]/40 uppercase tracking-widest pt-2">Cancelar</button>
+                <button onClick={() => setTab('home')} className={`w-full text-[10px] font-black uppercase tracking-widest pt-2 ${theme.muted}`}>Cancelar</button>
               </>
             ) : (
               <div className="animate-in fade-in space-y-8">
                 <div className="text-center">
-                  <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight mb-2">Nuevo Jugador</h2>
-                  <p className="text-[#1A1C1E]/60 text-sm">Crea tu perfil ahora.</p>
+                  <h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight mb-2`}>Nuevo Jugador</h2>
+                  <p className={`${theme.muted} text-sm`}>Crea tu perfil ahora.</p>
                 </div>
                 <form onSubmit={handleCompleteRegistration} className="space-y-6">
-                  <input type="text" required placeholder="Nombre y Apellido" value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-bold focus:outline-none focus:border-[#29C454]" />
+                  <input type="text" required placeholder="Nombre y Apellido" value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold focus:outline-none focus:border-[#29C454]`} />
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{authError}</div>}
-                  <button type="submit" disabled={authLoading} className="w-full bg-[#1A1C1E] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg">Completar Registro ➜</button>
+                  <button type="submit" disabled={authLoading} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg`}>Completar Registro ➜</button>
                 </form>
               </div>
             )}
@@ -1509,41 +1529,41 @@ export default function App() {
         {tab === 'jugar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center pb-20">
             
-            <div className="bg-[#FFFFFF] p-1.5 rounded-2xl border border-[#1A1C1E]/10 shadow-sm flex w-full relative z-20">
+            <div className={`${theme.card} p-1.5 rounded-2xl border ${theme.border} shadow-sm flex w-full relative z-20`}>
               <button 
                 onClick={() => setModoCancha('match')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:bg-[#F8F7F2]'}`}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}
               >
                 🏆 Match (Puntos)
               </button>
               <button 
                 onClick={() => setModoCancha('libre')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : 'text-[#1A1C1E]/40 hover:bg-[#F8F7F2]'}`}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}
               >
                 🎾 Reserva Libre
               </button>
             </div>
 
             <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
-              <div className="bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full">
+              <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
                 
                 <div className="text-center mb-2">
                   <h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>
                     {modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}
                   </h2>
-                  <p className="text-[10px] font-bold text-[#1A1C1E]/50 mt-1">
+                  <p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>
                     {modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}
                   </p>
                 </div>
 
                 <div className="space-y-3 text-left w-full">
-                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Día de Juego</label>
-                  <input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none" />
+                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label>
+                  <input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} />
                 </div>
                 
                 <div className="space-y-3 text-left w-full">
-                  <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Superficie</label>
-                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none">
+                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
+                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
                     <option value="Dura">Cancha Dura (1 al 8)</option>
                     <option value="Césped">Césped (9 y 10)</option>
                   </select>
@@ -1567,7 +1587,7 @@ export default function App() {
                       value={modoCancha === 'match' ? startTime : bookStart} 
                       onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} 
                       required 
-                      className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
+                      className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
                     />
                     <input 
                       type="time" 
@@ -1575,7 +1595,7 @@ export default function App() {
                       value={modoCancha === 'match' ? endTime : bookEnd} 
                       onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} 
                       required 
-                      className={`w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl py-4 text-[#1A1C1E] font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
+                      className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} 
                     />
                   </div>
                 </div>
@@ -1595,19 +1615,19 @@ export default function App() {
             
             {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
               <div className="pt-4 space-y-4 animate-in fade-in w-full">
-                <h3 className="text-sm font-black italic text-[#1A1C1E] uppercase border-b border-[#1A1C1E]/10 pb-2">Búsquedas Activas</h3>
+                <h3 className={`text-sm font-black italic ${theme.text} uppercase border-b ${theme.border} pb-2`}>Búsquedas Activas</h3>
                 <div className="space-y-3">
                   {activeSearches.map((search) => (
-                    <div key={search.id} className="bg-[#FFFFFF] border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
+                    <div key={search.id} className={`${theme.card} border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden`}>
                       <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
                       <div className="pl-2 text-left">
-                        <p className="text-[10px] font-bold text-[#1A1C1E]/50 uppercase tracking-widest">
+                        <p className={`text-[10px] font-bold uppercase tracking-widest ${theme.muted}`}>
                           {new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} 
                           {search.superficie && ` • ${search.superficie}`}
                         </p>
-                        <p className="text-sm font-black text-[#1A1C1E] mt-1">{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
+                        <p className={`text-sm font-black mt-1 ${theme.text}`}>{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
                       </div>
-                      <button onClick={() => handleCancelSearch(search.id)} className="w-10 h-10 bg-[#F8F7F2] text-[#1A1C1E]/40 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">✕</button>
+                      <button onClick={() => handleCancelSearch(search.id)} className={`w-10 h-10 ${theme.bg} ${theme.muted} rounded-full hover:bg-red-50 hover:text-red-500 transition-colors`}>✕</button>
                     </div>
                   ))}
                 </div>
@@ -1619,31 +1639,31 @@ export default function App() {
         {/* VISTA: MIS PARTIDOS Y JUEZ DE SILLA */}
         {tab === 'partidos' && (
           <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto pb-20">
-            <h2 className="text-3xl font-black italic text-[#1A1C1E] uppercase tracking-tight text-center">Partidos</h2>
+            <h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight text-center`}>Partidos</h2>
             <div className={`space-y-4 text-left ${!isLoggedIn && 'opacity-80'}`}>
               
               {!isLoggedIn ? (
-                <div className="bg-[#FFFFFF] border-2 border-[#29C454]/30 rounded-[2rem] p-6 shadow-sm relative overflow-hidden">
+                <div className={`${theme.card} border-2 border-[#29C454]/30 rounded-[2rem] p-6 shadow-sm relative overflow-hidden`}>
                   <div className="absolute right-0 top-0 opacity-5 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
                   <div className="relative z-10">
                     <p className="text-xs font-bold uppercase tracking-widest text-[#29C454] mb-1">Jueves, 16 Abril</p>
-                    <h4 className="text-3xl font-black italic mb-4 text-[#1A1C1E]">6:00 PM - 8:00 PM</h4>
-                    <div className="flex items-center gap-4 bg-[#F8F7F2] p-3 rounded-xl shadow-inner border border-[#1A1C1E]/5 mb-4">
+                    <h4 className={`text-3xl font-black italic mb-4 ${theme.text}`}>6:00 PM - 8:00 PM</h4>
+                    <div className={`flex items-center gap-4 ${theme.bg} p-3 rounded-xl shadow-inner border ${theme.border} mb-4`}>
                       <div className="w-10 h-10 bg-[#1A1C1E] text-white rounded-full flex items-center justify-center font-black italic uppercase shadow-md">
                         MC
                       </div>
                       <div>
-                        <p className="text-[10px] uppercase tracking-widest font-black text-[#1A1C1E]/50">Rival Confirmado</p>
-                        <p className="font-black italic text-lg text-[#1A1C1E]">Mateo C.</p>
+                        <p className={`text-[10px] uppercase tracking-widest font-black ${theme.muted}`}>Rival Confirmado</p>
+                        <p className={`font-black italic text-lg ${theme.text}`}>Mateo C.</p>
                       </div>
                     </div>
                   </div>
                 </div>
               ) : misPartidos.length === 0 ? (
-                <div className="text-center bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm">
+                <div className={`text-center ${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm`}>
                   <p className="text-4xl mb-4 opacity-50">🕸️</p>
-                  <p className="text-[#1A1C1E]/60 font-bold text-sm">Aún no tienes partidos.</p>
-                  <button onClick={() => setTab('jugar')} className="mt-6 px-6 py-3 bg-[#F8F7F2] text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10">
+                  <p className={`${theme.muted} font-bold text-sm`}>Aún no tienes partidos.</p>
+                  <button onClick={() => setTab('jugar')} className={`mt-6 px-6 py-3 ${theme.bg} text-[#29C454] rounded-xl font-black uppercase tracking-widest text-[10px] border border-[#29C454]/20 hover:bg-[#29C454]/10`}>
                     Buscar Rival
                   </button>
                 </div>
@@ -1657,7 +1677,7 @@ export default function App() {
                   return (
                     <React.Fragment key={partido.id}>
                       {partido.estado === 'finalizado' || partido.estado === 'wo' ? (
-                        <div className={`bg-[#FFFFFF] border ${borderAcento} rounded-2xl p-4 shadow-sm flex items-center justify-between animate-in fade-in`}>
+                        <div className={`${theme.card} border ${borderAcento} rounded-2xl p-4 shadow-sm flex items-center justify-between animate-in fade-in`}>
                           <div className="flex items-center gap-3">
                             <div 
                               className="w-10 h-10 rounded-full flex items-center justify-center font-black italic uppercase shadow-inner text-white text-xs"
@@ -1666,7 +1686,7 @@ export default function App() {
                               {getInitials(partido.rival.nombre)}
                             </div>
                             <div>
-                              <p className="text-[9px] font-bold uppercase tracking-widest opacity-50 mb-0.5 text-[#1A1C1E]">
+                              <p className={`text-[9px] font-bold uppercase tracking-widest opacity-50 mb-0.5 ${theme.text}`}>
                                 {new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} • {partido.estado === 'wo' ? 'W.O.' : 'Terminó'}
                               </p>
                               <p className={`font-black italic text-sm ${colorAcento}`}>
@@ -1675,7 +1695,7 @@ export default function App() {
                                   : esVictoria 
                                     ? '🏆 W vs ' 
                                     : '❌ L vs '} 
-                                <span className="text-[#1A1C1E]">{partido.rival.nombre}</span>
+                                <span className={theme.text}>{partido.rival.nombre}</span>
                                 
                                 {((partido.jugador1_id === currentUser.id ? partido.puntos_j1 : partido.puntos_j2) !== undefined) && (
                                   <span className={`ml-2 text-[12px] px-1.5 py-0.5 rounded-md font-black ${
@@ -1698,7 +1718,7 @@ export default function App() {
                           </div>
                         </div>
                       ) : (
-                        <div className={`bg-[#FFFFFF] border-2 ${partido.estado === 'confirmado' ? 'border-[#29C454]/40' : 'border-[#E5B824]/40'} rounded-[2rem] p-6 shadow-sm relative overflow-hidden transition-colors`}>
+                        <div className={`${theme.card} border-2 ${partido.estado === 'confirmado' ? 'border-[#29C454]/40' : 'border-[#E5B824]/40'} rounded-[2rem] p-6 shadow-sm relative overflow-hidden transition-colors`}>
                           <div className="absolute right-0 top-0 opacity-5 text-8xl transform translate-x-4 -translate-y-4">🎾</div>
                           <div className="relative z-10">
                             <div className="flex justify-between items-start mb-1">
@@ -1711,10 +1731,10 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <h4 className="text-3xl font-black italic mb-4 text-[#1A1C1E]">
+                            <h4 className={`text-3xl font-black italic mb-4 ${theme.text}`}>
                               {formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}
                             </h4>
-                            <div className="flex items-center gap-4 bg-[#F8F7F2] p-3 rounded-xl border border-[#1A1C1E]/5 mb-4 shadow-inner">
+                            <div className={`flex items-center gap-4 ${theme.bg} p-3 rounded-xl border ${theme.border} mb-4 shadow-inner`}>
                               <div 
                                 className="w-12 h-12 rounded-full flex items-center justify-center font-black italic text-xl uppercase shadow-md text-white"
                                 style={{ backgroundColor: partido.rival.color || '#1A1C1E' }}
@@ -1722,8 +1742,8 @@ export default function App() {
                                 {getInitials(partido.rival.nombre)}
                               </div>
                               <div>
-                                <p className="text-[10px] uppercase tracking-widest font-black text-[#1A1C1E]/50">Rival Confirmado</p>
-                                <p className="font-black italic text-xl text-[#1A1C1E]">
+                                <p className={`text-[10px] uppercase tracking-widest font-black ${theme.muted}`}>Rival Confirmado</p>
+                                <p className={`font-black italic text-xl ${theme.text}`}>
                                   {partido.rival.nombre}
                                 </p>
                               </div>
@@ -1738,13 +1758,12 @@ export default function App() {
                                   const diffHrs = (start - currentTime) / (1000 * 60 * 60);
 
                                   return diffHrs > 0 ? (
-                                    // AÑADÍ pt-10 AQUÍ PARA DARLE ESPACIO AL BOTÓN
-                                    <div className="text-center pt-10 pb-6 bg-[#F8F7F2] rounded-[1.8rem] shadow-inner relative overflow-hidden border border-[#1A1C1E]/5">
+                                    <div className={`text-center pt-10 pb-6 ${theme.bg} rounded-[1.8rem] shadow-inner relative overflow-hidden border ${theme.border}`}>
                                       
                                       {diffHrs > 0.5 ? (
                                         <button 
                                           onClick={() => handleCancelMatch(partido)}
-                                          className="absolute top-3 right-4 w-8 h-8 bg-[#FFFFFF] text-[#1A1C1E]/40 border border-[#1A1C1E]/10 rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white hover:border-red-500 transition-all z-20 shadow-sm"
+                                          className={`absolute top-3 right-4 w-8 h-8 ${theme.card} ${theme.muted} border ${theme.border} rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white hover:border-red-500 transition-all z-20 shadow-sm`}
                                           title="Cancelar Partido"
                                         >
                                           ✕
@@ -1763,8 +1782,8 @@ export default function App() {
                                         El partido inicia en
                                       </p>
                                       
-                                      <div className="mx-auto w-fit bg-[#FFFFFF] px-7 py-2.5 rounded-xl border border-[#1A1C1E]/10 relative z-10 shadow-sm">
-                                        <p className="text-3xl font-black italic tracking-[0.1em] font-mono text-[#1A1C1E]">
+                                      <div className={`mx-auto w-fit ${theme.card} px-7 py-2.5 rounded-xl border ${theme.border} relative z-10 shadow-sm`}>
+                                        <p className={`text-3xl font-black italic tracking-[0.1em] font-mono ${theme.text}`}>
                                           {getCountdown(partido)}
                                         </p>
                                       </div>
@@ -1772,14 +1791,14 @@ export default function App() {
                                   ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
                                     <div className="text-center py-4 bg-[#29C454]/10 rounded-2xl border border-dashed border-[#29C454]/50">
                                       <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-[#29C454]">Partido en curso 🔥</p>
-                                      <p className="text-[9px] opacity-60 mt-1 text-[#1A1C1E]">El reporte se habilitará al terminar.</p>
+                                      <p className={`text-[9px] opacity-60 mt-1 ${theme.text}`}>El reporte se habilitará al terminar.</p>
                                     </div>
                                   ) : reportingMatch === partido.id ? (
-                                    <div className="mt-4 bg-[#F8F7F2] p-5 rounded-3xl space-y-5 animate-in fade-in border border-[#1A1C1E]/10 shadow-inner">
-                                      <p className="text-xs font-black uppercase tracking-widest text-center text-[#1A1C1E]">Reportar Resultado</p>
+                                    <div className={`mt-4 ${theme.bg} p-5 rounded-3xl space-y-5 animate-in fade-in border ${theme.border} shadow-inner`}>
+                                      <p className={`text-xs font-black uppercase tracking-widest text-center ${theme.text}`}>Reportar Resultado</p>
                                       
                                       <div className="space-y-3">
-                                        <div className="flex justify-between px-2 text-[9px] font-black uppercase tracking-widest text-[#1A1C1E]/50">
+                                        <div className={`flex justify-between px-2 text-[9px] font-black uppercase tracking-widest ${theme.muted}`}>
                                           <span className="w-1/3 text-center">Mi Score</span>
                                           <span className="w-1/3 text-center">Set</span>
                                           <span className="w-1/3 text-center">Su Score</span>
@@ -1787,32 +1806,32 @@ export default function App() {
                                         
                                         {/* SET 1 */}
                                         <div className="flex gap-2 items-center">
-                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
-                                          <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">1</span>
-                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-xl py-3 text-center ${theme.text} font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm`} />
+                                          <span className={`w-1/3 text-center font-black text-xs ${theme.muted}`}>1</span>
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-xl py-3 text-center ${theme.text} font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm`} />
                                         </div>
                                         
                                         {/* SET 2 */}
                                         <div className="flex gap-2 items-center">
-                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
-                                          <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">2</span>
-                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-xl py-3 text-center ${theme.text} font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm`} />
+                                          <span className={`w-1/3 text-center font-black text-xs ${theme.muted}`}>2</span>
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-xl py-3 text-center ${theme.text} font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm`} />
                                         </div>
 
                                         {/* SET 3 (Opcional) */}
                                         <div className={`flex gap-2 items-center transition-all duration-300 ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
-                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
-                                          <span className="w-1/3 text-center font-black text-[9px] text-[#1A1C1E]/50">3 (Opc)</span>
-                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-xl py-3 text-center ${theme.text} font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm`} />
+                                          <span className={`w-1/3 text-center font-black text-[9px] ${theme.muted}`}>3 (Opc)</span>
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-xl py-3 text-center ${theme.text} font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm`} />
                                         </div>
                                       </div>
 
                                       <div className="flex gap-3 pt-2">
-                                        <button onClick={() => setReportingMatch(null)} className="flex-1 bg-white border border-[#1A1C1E]/10 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-[#1A1C1E]/60 hover:bg-[#1A1C1E]/5 transition-colors shadow-sm">Cancelar</button>
-                                        <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#1A1C1E] py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-md hover:scale-95 transition-all">Enviar Final</button>
+                                        <button onClick={() => setReportingMatch(null)} className={`flex-1 ${theme.card} border ${theme.border} py-4 rounded-xl font-black text-xs uppercase tracking-widest ${theme.muted} hover:bg-[#1A1C1E]/5 transition-colors shadow-sm`}>Cancelar</button>
+                                        <button onClick={() => handleSubmitReport(partido)} className={`flex-1 ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-xl font-black text-xs uppercase tracking-widest shadow-md hover:scale-95 transition-all`}>Enviar Final</button>
                                       </div>
                                       
-                                      <div className="pt-4 border-t border-[#1A1C1E]/10">
+                                      <div className={`pt-4 border-t ${theme.border}`}>
                                         <button 
                                           onClick={() => handleWO(partido)} 
                                           className="w-full border-2 border-red-500/40 bg-red-500/10 text-red-600 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -1822,7 +1841,7 @@ export default function App() {
                                       </div>
                                     </div>
                                   ) : (
-                                    <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black uppercase italic text-xs shadow-md active:scale-95 transition-all">
+                                    <button onClick={() => setReportingMatch(partido.id)} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black uppercase italic text-xs shadow-md active:scale-95 transition-all`}>
                                       Reportar Resultado ➜
                                     </button>
                                   );
@@ -1833,15 +1852,15 @@ export default function App() {
                             {partido.estado === 'en_revision' && partido.reportado_por === currentUser.id && (
                               <div className="bg-[#E5B824]/10 p-4 rounded-xl text-center border border-[#E5B824]/30 mt-4">
                                 <p className="text-xs font-black uppercase tracking-widest text-[#E5B824]">⏳ Esperando confirmación</p>
-                                <p className="text-[10px] mt-1 text-[#1A1C1E]/60">El rival debe aceptar el marcador que pusiste.</p>
+                                <p className={`text-[10px] mt-1 ${theme.muted}`}>El rival debe aceptar el marcador que pusiste.</p>
                               </div>
                             )}
 
                             {partido.estado === 'en_revision' && partido.reportado_por !== currentUser.id && (
                               <div className="bg-[#007AFF]/5 p-5 rounded-2xl text-center border border-[#007AFF]/20 shadow-inner mt-4">
                                 <p className="text-[10px] font-black uppercase tracking-widest text-[#007AFF] mb-3">🚨 Acción Requerida</p>
-                                <div className="bg-white p-4 rounded-xl mb-5 border border-[#007AFF]/10 shadow-sm">
-                                  <p className="text-xs font-black mb-2 leading-snug text-[#1A1C1E]">
+                                <div className={`${theme.card} p-4 rounded-xl mb-5 border border-[#007AFF]/10 shadow-sm`}>
+                                  <p className={`text-xs font-black mb-2 leading-snug ${theme.text}`}>
                                     {partido.ganador_id === currentUser.id 
                                       ? `🏆 El rival reportó que TÚ ganaste:` 
                                       : `🏆 El rival reportó que ÉL ganó:`}
@@ -1853,7 +1872,7 @@ export default function App() {
                                 <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#007AFF] text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs mb-3 shadow-md active:scale-95 transition-all">
                                   ✅ Aceptar Resultado
                                 </button>
-                                <p className="text-[9px] text-[#1A1C1E]/50">Al aceptar, se ajustará el ELO de ambos.</p>
+                                <p className={`text-[9px] ${theme.muted}`}>Al aceptar, se ajustará el ELO de ambos.</p>
                               </div>
                             )}
 
@@ -1872,7 +1891,7 @@ export default function App() {
         {tab === 'perfil' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
             
-            <div className="w-full bg-[#FFFFFF] border border-[#1A1C1E]/10 rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
+            <div className={`w-full ${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden`}>
               
               <div 
                 className="absolute top-0 left-0 w-full py-4 shadow-md transition-colors duration-300"
@@ -1885,10 +1904,10 @@ export default function App() {
 
               <div className="relative mt-12 mb-4">
                 <div 
-                  className="w-28 h-28 bg-[#F8F7F2] rounded-full border-[5px] flex items-center justify-center font-black italic text-5xl uppercase shadow-inner transition-colors duration-300"
+                  className={`w-28 h-28 ${theme.bg} rounded-full border-[5px] flex items-center justify-center font-black italic text-5xl uppercase shadow-inner transition-colors duration-300`}
                   style={{ 
-                    borderColor: (isLoggedIn && currentUser?.color) ? currentUser.color : '#1A1C1E',
-                    color: (isLoggedIn && currentUser?.color) ? currentUser.color : '#1A1C1E' 
+                    borderColor: (isLoggedIn && currentUser?.color) ? currentUser.color : (modoOscuro ? '#F8F9FA' : '#1A1C1E'),
+                    color: (isLoggedIn && currentUser?.color) ? currentUser.color : (modoOscuro ? '#F8F9FA' : '#1A1C1E') 
                   }}
                 >
                   {isLoggedIn && currentUser ? getInitials(currentUser.nombre) : '🎾'}
@@ -1897,7 +1916,7 @@ export default function App() {
                 {isLoggedIn && (
                   <button 
                     onClick={() => setShowColorPicker(!showColorPicker)} 
-                    className="absolute bottom-0 right-0 bg-white p-1.5 rounded-full shadow-md border border-[#1A1C1E]/10 text-sm hover:scale-110 transition-transform active:scale-95"
+                    className={`absolute bottom-0 right-0 ${theme.card} p-1.5 rounded-full shadow-md border ${theme.border} text-sm hover:scale-110 transition-transform active:scale-95`}
                     title="Cambiar Color"
                   >
                     🎨
@@ -1906,7 +1925,7 @@ export default function App() {
               </div>
 
               {showColorPicker && (
-                <div className="flex gap-3 mb-6 p-3 bg-[#F8F7F2] rounded-2xl shadow-inner border border-[#1A1C1E]/10 animate-in fade-in slide-in-from-top-2">
+                <div className={`flex gap-3 mb-6 p-3 ${theme.bg} rounded-2xl shadow-inner border ${theme.border} animate-in fade-in slide-in-from-top-2`}>
                   {['#29C454', '#007AFF', '#FF3B30', '#AF52DE', '#FF9500', '#1A1C1E'].map(colorHex => (
                     <button 
                       key={colorHex} 
@@ -1920,17 +1939,17 @@ export default function App() {
               
               <h2 
                 className="text-4xl font-black italic uppercase tracking-tight transition-colors duration-300"
-                style={{ color: (isLoggedIn && currentUser?.color) ? currentUser.color : '#1A1C1E' }}
+                style={{ color: (isLoggedIn && currentUser?.color) ? currentUser.color : (modoOscuro ? '#F8F9FA' : '#1A1C1E') }}
               >
                 {isLoggedIn && currentUser ? currentUser.nombre : 'Jugador Pro'}
               </h2>
-              <p className="text-[#1A1C1E]/50 font-bold tracking-widest text-xs mb-6 uppercase mt-1">
+              <p className={`${theme.muted} font-bold tracking-widest text-xs mb-6 uppercase mt-1`}>
                 {isLoggedIn && currentUser ? `Miembro • ${currentUser.rol || 'Gratis'}` : 'Regístrate para jugar'}
               </p>
               
-              <div className="bg-[#F8F7F2] w-full rounded-2xl p-4 border border-[#1A1C1E]/5 mb-6">
+              <div className={`${theme.bg} w-full rounded-2xl p-4 border ${theme.border} mb-6`}>
                 <div className="flex justify-between items-center mb-2">
-                  <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest">Confiabilidad</p>
+                  <p className={`text-[9px] font-black uppercase tracking-widest ${theme.muted}`}>Confiabilidad</p>
                   {isLoggedIn && currentUser && (
                     <span className="text-[9px] font-black text-[#E5B824] uppercase tracking-widest bg-[#E5B824]/10 px-2 py-0.5 rounded-md">
                       Comodines: {currentUser.comodines !== undefined ? currentUser.comodines : 2}
@@ -1940,25 +1959,33 @@ export default function App() {
                 {renderBalls(isLoggedIn && currentUser ? currentUser.confianza : 5.0)}
               </div>
 
-              <div className="flex gap-3 w-full border-t border-[#1A1C1E]/10 pt-6">
-                <div className="flex-1 bg-white border border-[#1A1C1E]/10 rounded-2xl py-4 shadow-sm">
-                  <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Tu ELO</p>
+              <div className={`flex gap-3 w-full border-t ${theme.border} pt-6`}>
+                <div className={`flex-1 ${theme.card} border ${theme.border} rounded-2xl py-4 shadow-sm`}>
+                  <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${theme.muted}`}>Tu ELO</p>
                   <p className="text-2xl font-black italic text-[#29C454]">
                     {isLoggedIn && currentUser ? currentUser.elo : '1,000'}
                   </p>
                 </div>
                 
-                <div className="flex-1 bg-white border border-[#1A1C1E]/10 rounded-2xl py-4 shadow-sm relative overflow-hidden">
-                  <p className="text-[9px] font-black text-[#1A1C1E]/40 uppercase tracking-widest mb-1">Racha Actual</p>
-                  <p className="text-2xl font-black italic text-[#1A1C1E]">
+                <div className={`flex-1 ${theme.card} border ${theme.border} rounded-2xl py-4 shadow-sm relative overflow-hidden`}>
+                  <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${theme.muted}`}>Racha Actual</p>
+                  <p className={`text-2xl font-black italic ${theme.text}`}>
                     {isLoggedIn && currentUser ? `${currentUser.racha_asistencia || 0} 🔥` : '-'}
                   </p>
                 </div>
               </div>
 
+              {/* --- INTERRUPTOR DE MODO OSCURO --- */}
+              <button 
+                onClick={toggleTheme}
+                className={`w-full py-4 rounded-2xl font-black italic uppercase text-xs flex items-center justify-center gap-2 mt-6 border shadow-sm transition-all active:scale-95 ${modoOscuro ? 'bg-[#F8F9FA] text-[#0F172A] border-[#F8F9FA]/20' : 'bg-[#1A1C1E] text-white border-[#1A1C1E]/20'}`}
+              >
+                {modoOscuro ? '☀️ Activar Modo Claro' : '🌙 Activar Modo Oscuro'}
+              </button>
+
               {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
               {isLoggedIn && currentUser?.rol === 'admin' && (
-                <div className="w-full mt-8 pt-8 border-t border-[#1A1C1E]/10 space-y-4">
+                <div className={`w-full mt-8 pt-8 border-t ${theme.border} space-y-4`}>
                   <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola Master</h3>
                   
                   <div className="grid grid-cols-2 gap-3">
@@ -1967,7 +1994,7 @@ export default function App() {
                         cargarSugerenciasAdmin();
                         setTab('admin_buzon');
                       }}
-                      className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95"
+                      className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95`}
                     >
                       📩 Buzón 
                       {sugerenciasNuevas > 0 && (
@@ -1992,7 +2019,7 @@ export default function App() {
             </div>
 
             {isLoggedIn && (
-              <button onClick={handleLogout} className="w-full bg-transparent border-2 border-red-500/20 text-red-500/80 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-red-50 transition-colors mt-4">
+              <button onClick={handleLogout} className="w-full bg-transparent border-2 border-red-500/20 text-red-500/80 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-red-500/10 transition-colors mt-4">
                 Cerrar Sesión
               </button>
             )}
@@ -2004,28 +2031,28 @@ export default function App() {
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in fade-in pb-20">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-black italic uppercase text-[#1A1C1E]">Jugadores</h2>
+                <h2 className={`text-2xl font-black italic uppercase ${theme.text}`}>Jugadores</h2>
                 <p className="text-[10px] font-bold text-[#007AFF] uppercase tracking-widest">{listaUsuarios.length} registrados en el club</p>
               </div>
-              <button onClick={() => setTab('perfil')} className="bg-white p-3 rounded-xl shadow-sm border border-[#1A1C1E]/5 text-[10px] font-black uppercase">✕</button>
+              <button onClick={() => setTab('perfil')} className={`${theme.card} p-3 rounded-xl shadow-sm border ${theme.border} text-[10px] font-black uppercase ${theme.text}`}>✕</button>
             </div>
             
             <div className="space-y-3">
               {listaUsuarios.map((usr) => (
-                <div key={usr.id} className="bg-white border border-[#1A1C1E]/10 p-4 rounded-2xl shadow-sm flex items-center justify-between">
+                <div key={usr.id} className={`${theme.card} border ${theme.border} p-4 rounded-2xl shadow-sm flex items-center justify-between`}>
                   <div>
-                    <p className="font-black text-[11px] uppercase text-[#1A1C1E]">{usr.nombre}</p>
-                    <p className="text-[9px] font-bold text-[#1A1C1E]/50 uppercase mt-0.5">ELO: {usr.elo}</p>
+                    <p className={`font-black text-[11px] uppercase ${theme.text}`}>{usr.nombre}</p>
+                    <p className={`text-[9px] font-bold uppercase mt-0.5 ${theme.muted}`}>ELO: {usr.elo}</p>
                   </div>
                   
                   <select 
                     value={usr.rol || 'gratis'} 
                     onChange={(e) => actualizarRolUsuario(usr.id, e.target.value)}
                     className={`text-[9px] font-black uppercase tracking-widest px-3 py-2 rounded-xl border-none focus:outline-none focus:ring-4 focus:ring-black/10 cursor-pointer shadow-inner transition-colors ${
-                      usr.rol === 'admin' ? 'bg-[#1A1C1E] text-white' : 
+                      usr.rol === 'admin' ? (modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white') : 
                       usr.rol === 'pro' ? 'bg-[#AF52DE] text-white' : 
                       usr.rol === 'premium' ? 'bg-[#E5B824] text-[#1A1C1E]' : 
-                      'bg-[#F8F7F2] text-[#1A1C1E]/60'
+                      `${theme.bg} ${theme.muted}`
                     }`}
                   >
                     <option value="gratis">Gratis</option>
@@ -2044,53 +2071,53 @@ export default function App() {
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in fade-in pb-20">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-black italic uppercase text-[#1A1C1E]">Buzón VAd.</h2>
+                <h2 className={`text-2xl font-black italic uppercase ${theme.text}`}>Buzón VAd.</h2>
                 <p className="text-[10px] font-bold text-[#29C454] uppercase tracking-widest">{sugerenciasNuevas} mensajes sin leer</p>
               </div>
-              <button onClick={() => setTab('perfil')} className="bg-white p-3 rounded-xl shadow-sm border border-[#1A1C1E]/5 text-[10px] font-black uppercase">✕</button>
+              <button onClick={() => setTab('perfil')} className={`${theme.card} p-3 rounded-xl shadow-sm border ${theme.border} text-[10px] font-black uppercase ${theme.text}`}>✕</button>
             </div>
             
             <div className="space-y-4">
               {listaSugerencias.filter(sug => sug.estado !== 'archivada').length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-[2rem] border border-[#1A1C1E]/10 shadow-sm">
+                <div className={`text-center py-12 ${theme.card} rounded-[2rem] border ${theme.border} shadow-sm`}>
                   <p className="text-4xl mb-3">🍃</p>
-                  <p className="text-sm font-black text-[#1A1C1E] uppercase">Buzón Limpio</p>
-                  <p className="text-[10px] font-bold opacity-50 mt-1">Has atendido todos los mensajes.</p>
+                  <p className={`text-sm font-black uppercase ${theme.text}`}>Buzón Limpio</p>
+                  <p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>Has atendido todos los mensajes.</p>
                 </div>
               ) : (
                 listaSugerencias.filter(sug => sug.estado !== 'archivada').map((sug) => (
-                  <div key={sug.id} className={`bg-white border ${sug.estado === 'nueva' ? 'border-[#29C454]' : 'border-[#1A1C1E]/10'} p-5 rounded-[2rem] shadow-sm relative transition-all`}>
+                  <div key={sug.id} className={`${theme.card} border ${sug.estado === 'nueva' ? 'border-[#29C454]' : theme.border} p-5 rounded-[2rem] shadow-sm relative transition-all`}>
                     
                     <div className="flex justify-between items-start mb-3">
                       <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${
-                        sug.estado === 'nueva' ? 'bg-[#29C454] text-white' : 'bg-[#F8F7F2] text-[#1A1C1E]/40'
+                        sug.estado === 'nueva' ? 'bg-[#29C454] text-white' : `${theme.bg} ${theme.muted}`
                       }`}>
                         {sug.estado}
                       </span>
-                      <span className="text-[8px] font-bold opacity-30">{new Date(sug.created_at).toLocaleDateString()}</span>
+                      <span className={`text-[8px] font-bold opacity-30 ${theme.text}`}>{new Date(sug.created_at).toLocaleDateString()}</span>
                     </div>
 
-                    <p className="font-black text-[11px] uppercase text-[#1A1C1E] mb-1">{sug.nombre}</p>
-                    <p className="text-sm font-bold text-[#1A1C1E]/70 leading-relaxed mb-5">{sug.comentario}</p>
+                    <p className={`font-black text-[11px] uppercase mb-1 ${theme.text}`}>{sug.nombre}</p>
+                    <p className={`text-sm font-bold leading-relaxed mb-5 ${theme.muted}`}>{sug.comentario}</p>
 
-                    <div className="flex gap-2 border-t border-[#1A1C1E]/5 pt-4">
+                    <div className={`flex gap-2 border-t pt-4 ${theme.border}`}>
                       {sug.estado !== 'leida' && (
                         <button 
                           onClick={() => actualizarEstadoSugerencia(sug.id, 'leida')}
-                          className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-[#29C454]/10 hover:text-[#29C454] transition-colors"
+                          className={`flex-1 ${theme.bg} py-2 rounded-xl text-[9px] font-black uppercase hover:bg-[#29C454]/10 hover:text-[#29C454] transition-colors ${theme.muted}`}
                         >
                           ✓ Leída
                         </button>
                       )}
                       <button 
                         onClick={() => actualizarEstadoSugerencia(sug.id, 'en proceso')}
-                        className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-blue-50 hover:text-blue-500 transition-colors"
+                        className={`flex-1 ${theme.bg} py-2 rounded-xl text-[9px] font-black uppercase hover:bg-[#007AFF]/10 hover:text-[#007AFF] transition-colors ${theme.muted}`}
                       >
                         ⚙️ Proceso
                       </button>
                       <button 
                         onClick={() => actualizarEstadoSugerencia(sug.id, 'archivada')}
-                        className="flex-1 bg-[#F8F7F2] py-2 rounded-xl text-[9px] font-black uppercase hover:bg-red-50 hover:text-red-500 transition-colors"
+                        className={`flex-1 ${theme.bg} py-2 rounded-xl text-[9px] font-black uppercase hover:bg-red-500/10 hover:text-red-500 transition-colors ${theme.muted}`}
                       >
                         📁 Archivar
                       </button>
@@ -2105,17 +2132,17 @@ export default function App() {
 
       {/* --- MODAL DE ALERTAS PERSONALIZADO VAd. --- */}
       {vadAlert && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#1A1C1E]/40 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-[#F8F7F2] w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border border-[#1A1C1E]/10 animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#1A1C1E]/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className={`${theme.card} w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border ${theme.border} animate-in zoom-in-95 duration-300`}>
             
             <div className="text-center mb-6 mt-2">
               <div className="text-4xl mb-3">
                 {vadAlert.tipo === 'info' ? '🎾' : vadAlert.tipo === 'error' ? '🚨' : '⚠️'}
               </div>
-              <h3 className={`text-xl font-black italic uppercase tracking-tight mb-2 ${vadAlert.tipo === 'error' ? 'text-red-500' : 'text-[#1A1C1E]'}`}>
+              <h3 className={`text-xl font-black italic uppercase tracking-tight mb-2 ${vadAlert.tipo === 'error' ? 'text-red-500' : theme.text}`}>
                 {vadAlert.titulo}
               </h3>
-              <p className="text-[#1A1C1E]/70 font-bold text-sm leading-relaxed whitespace-pre-wrap">
+              <p className={`${theme.muted} font-bold text-sm leading-relaxed whitespace-pre-wrap`}>
                 {vadAlert.mensaje}
               </p>
             </div>
@@ -2125,7 +2152,7 @@ export default function App() {
                 <>
                   <button 
                     onClick={cerrarAlerta} 
-                    className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-[#1A1C1E]/50 bg-white border border-[#1A1C1E]/10 hover:bg-[#1A1C1E]/5 transition-colors"
+                    className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest ${theme.muted} ${theme.bg} border ${theme.border} hover:opacity-70 transition-opacity`}
                   >
                     Cancelar
                   </button>
@@ -2142,7 +2169,7 @@ export default function App() {
               ) : (
                 <button 
                   onClick={cerrarAlerta} 
-                  className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all ${vadAlert.tipo === 'error' ? 'bg-red-500 shadow-red-500/30' : 'bg-[#29C454]'}`}
+                  className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all ${vadAlert.tipo === 'error' ? 'bg-red-500 shadow-red-500/30' : 'bg-[#29C454] shadow-[#29C454]/30'}`}
                 >
                   Entendido
                 </button>
@@ -2152,7 +2179,7 @@ export default function App() {
         </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 w-full z-50 bg-[#F8F7F2]/90 backdrop-blur-lg border-t border-[#1A1C1E]/5 px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
+      <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <div className="flex justify-between items-center max-w-sm mx-auto px-4">
           {[
             { id: 'home', icon: '🏠', label: 'Inicio' }, 
@@ -2163,7 +2190,7 @@ export default function App() {
             <button 
               key={item.id} 
               onClick={() => setTab(item.id)} 
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70'}`}
+              className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}
             >
               <div className="relative flex flex-col items-center gap-1">
                 <span className="text-xl mb-0.5">{item.icon}</span>
@@ -2173,7 +2200,7 @@ export default function App() {
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
 
-                {/* NUEVO: Puntito Azul para Buzón de Admin */}
+                {/* Puntito Azul para Buzón de Admin */}
                 {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
                   <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
                 )}
