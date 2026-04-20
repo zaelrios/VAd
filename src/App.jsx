@@ -35,6 +35,29 @@ export default function App() {
 
   const [tab, setTab] = useState('home');
 
+  // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ (VERSIÓN MAESTRA) ---
+  const APP_VERSION = '1.4'; // <--- CAMBIAREMOS ESTE NÚMERO EN CADA ACTUALIZACIÓN
+
+  useEffect(() => {
+    const versionGuardada = localStorage.getItem('vad_app_version');
+    
+    if (versionGuardada !== APP_VERSION) {
+      console.log(`Actualizando de ${versionGuardada} a ${APP_VERSION}. Limpiando caché...`);
+      localStorage.setItem('vad_app_version', APP_VERSION);
+      
+      // Destruimos la memoria profunda de la PWA (Service Workers)
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach(name => caches.delete(name));
+        });
+      }
+      
+      // Forzamos a que el celular descargue el código nuevo de Vercel
+      window.location.reload(true); 
+    }
+  }, []);
+  // -------------------------------------------------------------
+
   // --- LÓGICA PARA GESTOS DE DESLIZAMIENTO (SWIPE) ---
   const [touchStartX, setTouchStartX] = useState(null);
   const [touchEndX, setTouchEndX] = useState(null);
@@ -1027,8 +1050,26 @@ export default function App() {
       }
 
       if (matchEncontrado) {
-        // Intentar crear el partido
-        const { error: insertMatchError } = await supabase
+        
+        // --- 🛡️ CANDADO 2: DOBLE VERIFICACIÓN ATÓMICA DE CANCHA ---
+        // Verificamos una última vez en este milisegundo exacto si la cancha sigue libre
+        const { data: choqueDeCancha } = await supabase
+          .from('partidos')
+          .select('id')
+          .eq('fecha', searchDate)
+          .eq('superficie', superficie)
+          .eq('cancha_numero', canchaAsignada)
+          .lt('hora_inicio', matchFin)
+          .gt('hora_fin', matchInicio);
+
+        if (choqueDeCancha && choqueDeCancha.length > 0) {
+          // Si alguien se nos adelantó en el servidor, abortamos la misión
+          throw new Error("¡Interferencia! Alguien reservó esta cancha una fracción de segundo antes que tú. Por favor, intenta buscar de nuevo.");
+        }
+        // -----------------------------------------------------------
+
+        // Si la cancha sigue libre, intentamos crear el partido y exigimos confirmación (.select)
+        const { data: matchConfirmado, error: insertMatchError } = await supabase
           .from('partidos')
           .insert([{
             jugador1_id: matchEncontrado.jugador_id,
@@ -1039,17 +1080,18 @@ export default function App() {
             superficie: superficie, 
             cancha_numero: canchaAsignada,
             estado: 'confirmado'
-          }]);
+          }])
+          .select();
         
-        if (!insertMatchError) {
-          await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
-          mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
-          setTab('partidos');
-          fetchPartidos();
-        } else {
-          // Si falló (ej. alguien más le ganó la cancha en ese microsegundo)
-          throw new Error("No se pudo confirmar el match.");
+        if (insertMatchError || !matchConfirmado || matchConfirmado.length === 0) {
+           throw new Error("Error en el servidor al confirmar el match.");
         }
+
+        // Si todo salió bien, matamos la búsqueda original de la base de datos
+        await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
+        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido confirmado en Cancha ${canchaAsignada} (${superficie}).`);
+        setTab('partidos');
+        fetchPartidos();
       } else {
         // No hubo match, publicar búsqueda
         const { data: nuevaBusqueda, error: insertError } = await supabase
@@ -1183,7 +1225,7 @@ export default function App() {
       <header className="fixed top-0 left-0 w-full bg-[#F8F7F2]/90 backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b border-[#1A1C1E]/5">
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.3</span>
+          <span className="text-[9px] font-bold text-[#1A1C1E]/30 mb-1.5">v1.4</span>
         </h1>
       </header>
 
@@ -1741,22 +1783,25 @@ export default function App() {
                                           <span className="w-1/3 text-center">Su Score</span>
                                         </div>
                                         
+                                        {/* SET 1 */}
                                         <div className="flex gap-2 items-center">
                                           <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                           <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">1</span>
                                           <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                         </div>
                                         
+                                        {/* SET 2 */}
                                         <div className="flex gap-2 items-center">
-                                          <input type="number" min="0" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                           <span className="w-1/3 text-center font-black text-xs text-[#1A1C1E]/50">2</span>
-                                          <input type="number" min="0" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" placeholder="0" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                         </div>
 
+                                        {/* SET 3 (Opcional) */}
                                         <div className={`flex gap-2 items-center transition-all duration-300 ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
-                                          <input type="number" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                           <span className="w-1/3 text-center font-black text-[9px] text-[#1A1C1E]/50">3 (Opc)</span>
-                                          <input type="number" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
+                                          <input type="number" inputMode="numeric" pattern="[0-9]*" min="0" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-1/3 bg-white border border-[#1A1C1E]/10 rounded-xl py-3 text-center text-[#1A1C1E] font-black text-xl focus:outline-none focus:border-[#29C454] transition-all shadow-sm" />
                                         </div>
                                       </div>
 
