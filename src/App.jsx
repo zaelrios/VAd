@@ -996,7 +996,7 @@ export default function App() {
       let matchFin = '';
       let canchaAsignada = null;
       
-      const inventario = { 'Sacate': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
+      const inventario = { 'Césped': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
 
       if (posiblesRivales && posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
@@ -1545,7 +1545,7 @@ export default function App() {
                   <label className="text-[10px] font-black text-[#1A1C1E]/50 uppercase tracking-widest ml-2">Superficie</label>
                   <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className="w-full bg-[#F8F7F2] border border-[#1A1C1E]/10 rounded-2xl px-5 py-4 text-[#1A1C1E] font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none">
                     <option value="Dura">Cancha Dura (1 al 8)</option>
-                    <option value="Sacate">Césped (9 y 10)</option>
+                    <option value="Césped">Césped (9 y 10)</option>
                   </select>
                 </div>
 
