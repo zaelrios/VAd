@@ -36,7 +36,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ (VERSIÓN MAESTRA) ---
-  const APP_VERSION = '1.6'; // <--- VERSIÓN ACTUALIZADA PARA FORZAR EL MODO OSCURO
+  const APP_VERSION = '1.7'; // <--- VERSIÓN ACTUALIZADA PARA FORZAR EL MODO OSCURO
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1247,7 +1247,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.6</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.7</span>
         </h1>
       </header>
 
@@ -1975,13 +1975,23 @@ export default function App() {
                 </div>
               </div>
 
-              {/* --- INTERRUPTOR DE MODO OSCURO --- */}
-              <button 
-                onClick={toggleTheme}
-                className={`w-full py-4 rounded-2xl font-black italic uppercase text-xs flex items-center justify-center gap-2 mt-6 border shadow-sm transition-all active:scale-95 ${modoOscuro ? 'bg-[#F8F9FA] text-[#0F172A] border-[#F8F9FA]/20' : 'bg-[#1A1C1E] text-white border-[#1A1C1E]/20'}`}
-              >
-                {modoOscuro ? '☀️ Activar Modo Claro' : '🌙 Activar Modo Oscuro'}
-              </button>
+              {/* --- INTERRUPTOR DE MODO OSCURO (TOGGLE NATIVO) --- */}
+              <div className={`w-full ${theme.card} border ${theme.border} rounded-2xl p-4 flex items-center justify-between shadow-sm mt-6`}>
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">{modoOscuro ? '🌙' : '☀️'}</span>
+                  <p className={`font-black uppercase tracking-widest text-[11px] ${theme.text}`}>
+                    Modo Oscuro
+                  </p>
+                </div>
+                
+                {/* El Switch */}
+                <button 
+                  onClick={toggleTheme}
+                  className={`w-14 h-8 flex items-center rounded-full p-1 transition-colors duration-300 shadow-inner ${modoOscuro ? 'bg-[#29C454]' : 'bg-[#1A1C1E]/20'}`}
+                >
+                  <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 ${modoOscuro ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                </button>
+              </div>
 
               {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
               {isLoggedIn && currentUser?.rol === 'admin' && (
