@@ -569,8 +569,9 @@ export default function App() {
         } 
         else if (diffHoras < 24 && diffHoras >= 3) {
             if (comodines > 0) {
-                msj = `🟡 ZONA AMARILLA: Faltan menos de 24 hrs. Usarás 1 COMODÍN (Te quedan ${comodines}). Tu confianza quedará intacta.\n\n¿Confirmar cancelación?`;
+                msj = `🟡 ZONA AMARILLA: Faltan menos de 24 hrs. Usarás 1 COMODÍN (Te quedan ${comodines}). Tu confianza y racha quedarán intactas.\n\n¿Confirmar cancelación?`;
                 comodines -= 1;
+                pierdeRacha = false; // 🛡️ EL COMODÍN SALVA LA RACHA AQUÍ
             } else {
                 msj = "⚠️ ADVERTENCIA: Te quedaste sin comodines. Cancelar ahora te costará -0.5 Pelotas de Confiabilidad y perderás tu racha.\n\n¿Confirmar de todos modos?";
                 nuevaConfianza = Math.max(0, nuevaConfianza - 0.5);
@@ -578,10 +579,11 @@ export default function App() {
         } 
         else if (diffHoras < 3 && diffHoras > 0.5) {
             if (comodines > 0) {
-                msj = `🟠 EMERGENCIA: Faltan menos de 3 hrs. Usarás 1 COMODÍN para salvarte del W.O. (Te quedan ${comodines}).\n\n¿Confirmar emergencia?`;
+                msj = `🟠 EMERGENCIA: Faltan menos de 3 hrs. Usarás 1 COMODÍN para salvarte del W.O. (Te quedan ${comodines}). Tu racha se mantiene.\n\n¿Confirmar emergencia?`;
                 comodines -= 1;
+                pierdeRacha = false; // 🛡️ EL COMODÍN SALVA LA RACHA AQUÍ TAMBIÉN
             } else {
-                msj = "🚨 PELIGRO: No tienes comodines y faltan menos de 3 hrs. Esto se marcará como W.O. EN TU CONTRA (-1 Confianza y pierdes ELO).\n\n¿Asumir la derrota y cancelar?";
+                msj = "🚨 PELIGRO: No tienes comodines y faltan menos de 3 hrs. Esto se marcará como W.O. EN TU CONTRA (-1 Confianza y pierdes ELO y racha).\n\n¿Asumir la derrota y cancelar?";
                 penalizacionWODirecto = true;
             }
         }
