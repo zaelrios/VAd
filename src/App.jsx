@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.26'; 
+  const APP_VERSION = '1.27'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -93,6 +93,9 @@ export default function App() {
   const [bloqueoActivo, setBloqueoActivo] = useState(null);
   const [bloqueoDuracion, setBloqueoDuracion] = useState(0.5);
   const [bloqueoMotivo, setBloqueoMotivo] = useState('Mantenimiento');
+  const [modalAccion, setModalAccion] = useState('bloqueo'); // Pestañas: 'bloqueo' o 'partido'
+  const [partidoJ1, setPartidoJ1] = useState('');
+  const [partidoJ2, setPartidoJ2] = useState('');
 
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
   
@@ -124,7 +127,7 @@ export default function App() {
   // ---------------------------------------------
 
   const cargarUsuariosAdmin = async () => {
-    if (currentUser?.rol !== 'admin') return;
+    if (currentUser?.rol !== 'admin' && currentUser?.rol !== 'club') return;
     const { data, error } = await supabase.from('Perfiles').select('id, nombre, elo, rol').order('nombre', { ascending: true });
     if (!error && data) setListaUsuarios(data);
   };
@@ -528,56 +531,44 @@ export default function App() {
   };
 
   const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
-    const cellStartMins = horaFloat * 60; const cellEndMins = cellStartMins + 30; // Celdas de 30 mins
-    return clubPartidos.find(p => {
-      if (p.cancha_numero !== canchaId || p.fecha !== fechaStr) return false;
-      const startMins = parseInt(p.hora_inicio.split(':')[0], 10) * 60 + parseInt(p.hora_inicio.split(':')[1], 10);
-      const endMins = parseInt(p.hora_fin.split(':')[0], 10) * 60 + parseInt(p.hora_fin.split(':')[1], 10);
-      return startMins < cellEndMins && endMins > cellStartMins;
-    });
+    const cellStartMins = horaFloat * 60; const cellEndMins = cellStartMins + 30;
+    return clubPartidos.find(p => p.fecha === fechaStr && p.cancha_numero === canchaId && (parseInt(p.hora_inicio.split(':')[0]) * 60 + parseInt(p.hora_inicio.split(':')[1])) < cellEndMins && (parseInt(p.hora_fin.split(':')[0]) * 60 + parseInt(p.hora_fin.split(':')[1])) > cellStartMins);
   };
 
-  const handleCellClick = (cancha, horaFloat, fechaStr) => {
+  const handleCellClick = async (cancha, horaFloat, fechaStr) => {
     const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
-         mostrarConfirmacion("Desbloquear Cancha", `¿Liberar la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} de ${formatTime(partido.hora_inicio)} a ${formatTime(partido.hora_fin)}?`, async () => {
-           await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos(); mostrarAlerta("Cancha Liberada", "La cancha vuelve a estar disponible para el motor VAd.");
-         });
-      } else { mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido de jugadores confirmado."); }
+        mostrarConfirmacion("Desbloquear", `¿Liberar Cancha ${cancha}?`, async () => {
+          await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos();
+        });
+      } else { mostrarAlerta("Ocupado", "Ya hay un partido aquí."); }
     } else {
-      // Abrimos el modal de bloqueo
       setBloqueoActivo({ cancha, horaFloat, fechaStr });
-      setBloqueoDuracion(0.5); // Reseteamos a 30 mins por defecto
+      setBloqueoDuracion(1); setModalAccion('bloqueo'); setPartidoJ1(''); setPartidoJ2('');
+      cargarUsuariosAdmin(); // Esto llena la lista de jugadores para el modal
     }
   };
 
-  const confirmarBloqueo = async () => {
+  const confirmarAccionModal = async () => {
     const { cancha, horaFloat, fechaStr } = bloqueoActivo;
-    const hInt = Math.floor(horaFloat); const mInt = horaFloat % 1 === 0 ? 0 : 30;
-    const endHora = horaFloat + bloqueoDuracion; const endH = Math.floor(endHora); const endM = endHora % 1 === 0 ? 0 : 30;
+    const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? 0 : 30;
+    const endH = hI + Math.floor(bloqueoDuracion); const endM = mI + (bloqueoDuracion % 1 === 0 ? 0 : 30);
+    const startStr = `${String(hI).padStart(2,'0')}:${String(mI).padStart(2,'0')}:00`;
+    const endStr = `${String(endH >= 24 ? 23 : endH).padStart(2,'0')}:${String(endH >= 24 ? 59 : (endM >= 60 ? 0 : endM)).padStart(2,'0')}:00`;
     
-    const startTimeStr = `${String(hInt).padStart(2,'0')}:${String(mInt).padStart(2,'0')}:00`;
-    const endTimeStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00`;
-    const sup = cancha <= 8 ? 'Dura' : 'Césped';
-
-    const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', cancha).lt('hora_inicio', endTimeStr).gt('hora_fin', startTimeStr);
-    if (choque && choque.length > 0) {
-       setBloqueoActivo(null); // Cerramos modal primero
-       mostrarError("Choque de Horario", "No puedes bloquear este rango porque ya hay un partido en medio.");
-       return;
-    }
+    const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', cancha).lt('hora_inicio', endStr).gt('hora_fin', startStr);
+    if (choque?.length > 0) { setBloqueoActivo(null); mostrarError("Conflicto", "Ya hay algo agendado en ese rango."); return; }
 
     try {
-      // FIX: Inyectamos el currentUser.id en jugador2_id para evitar el candado de NOT NULL de Supabase
-      const { error } = await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, jugador2_id: currentUser.id, fecha: fechaStr, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: sup, cancha_numero: cancha, estado: 'bloqueo_admin', marcador: bloqueoMotivo }]);
-      if (error) throw error;
-      fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Bloqueo Exitoso", `La cancha ha sido bloqueada por ${bloqueoMotivo}.`);
-    } catch (error) { 
-      console.error(error);
-      setBloqueoActivo(null); // Cerramos modal primero
-      mostrarError("Error de Servidor", `Motivo: ${error.message}`); // Mostramos el error real
-    }
+      if (modalAccion === 'bloqueo') {
+        await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, jugador2_id: currentUser.id, fecha: fechaStr, hora_inicio: startStr, hora_fin: endStr, superficie: cancha <= 8 ? 'Dura' : 'Césped', cancha_numero: cancha, estado: 'bloqueo_admin', marcador: bloqueoMotivo }]);
+      } else {
+        if (!partidoJ1 || !partidoJ2 || partidoJ1 === partidoJ2) throw new Error("Selecciona 2 jugadores distintos.");
+        await supabase.from('partidos').insert([{ jugador1_id: partidoJ1, jugador2_id: partidoJ2, fecha: fechaStr, hora_inicio: startStr, hora_fin: endStr, superficie: cancha <= 8 ? 'Dura' : 'Césped', cancha_numero: cancha, estado: 'confirmado' }]);
+      }
+      fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Éxito", "Agenda actualizada.");
+    } catch (e) { setBloqueoActivo(null); mostrarError("Error", e.message); }
   };
 
   return (
@@ -585,7 +576,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.26</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.27</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1136,44 +1127,35 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE BLOQUEO DE CANCHAS (B2B) --- */}
+      {/* MODAL DUAL B2B */}
       {bloqueoActivo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#1A1C1E]/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className={`${theme.card} w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border ${theme.border} animate-in zoom-in-95 duration-300`}>
-            <div className="text-center mb-6 mt-2">
-              <div className="text-4xl mb-3">🚧</div>
-              <h3 className={`text-2xl font-black italic uppercase tracking-tight mb-2 ${theme.text}`}>Bloquear Cancha {bloqueoActivo.cancha}</h3>
-              <p className={`${theme.muted} font-bold text-sm`}>
-                Día: <span className="text-[#007AFF]">{bloqueoActivo.fechaStr.split('-').reverse().join('/')}</span> <br/> 
-                A partir de las: <span className="text-[#007AFF]">{formatTime(`${Math.floor(bloqueoActivo.horaFloat)}:${bloqueoActivo.horaFloat % 1 === 0 ? '00' : '30'}`)}</span>
-              </p>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className={`${theme.card} w-full max-w-xs rounded-[2rem] p-6 shadow-2xl border ${theme.border} max-h-[85vh] overflow-y-auto`}>
+            <div className="flex bg-gray-500/10 p-1 rounded-xl mb-4">
+              <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg ${modalAccion === 'bloqueo' ? 'bg-red-500 text-white' : theme.muted}`}>Bloquear</button>
+              <button onClick={() => setModalAccion('partido')} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg ${modalAccion === 'partido' ? 'bg-[#007AFF] text-white' : theme.muted}`}>Partido</button>
             </div>
-            
-            <div className="space-y-4 mb-6">
-              <div className="text-left">
-                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Motivo del Bloqueo</label>
-                <select value={bloqueoMotivo} onChange={(e) => setBloqueoMotivo(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold focus:outline-none focus:border-red-500`}>
-                  <option value="Mantenimiento">Mantenimiento / Limpieza</option>
-                  <option value="Administrativo">Tema Administrativo</option>
-                  <option value="Clase">Clase / Academia</option>
-                  <option value="Torneo">Torneo Local</option>
+            <div className="text-center mb-4"><h3 className="font-black italic uppercase">Cancha {bloqueoActivo.cancha}</h3><p className="text-[10px] opacity-50">{bloqueoActivo.fechaStr}</p></div>
+            <div className="space-y-3 mb-6">
+              <div><label className="text-[9px] font-black uppercase opacity-40 ml-1">Duración</label>
+                <select value={bloqueoDuracion} onChange={e => setBloqueoDuracion(Number(e.target.value))} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}>
+                  <option value={0.5}>30 min</option><option value={1}>1 hr</option><option value={2}>2 hrs</option><option value={4}>4 hrs</option><option value={8}>8 hrs</option><option value={15}>Todo el día</option>
                 </select>
               </div>
-              <div className="text-left">
-                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Duración</label>
-                <select value={bloqueoDuracion} onChange={(e) => setBloqueoDuracion(Number(e.target.value))} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold focus:outline-none focus:border-red-500`}>
-                  <option value={0.5}>30 Minutos</option>
-                  <option value={1}>1 Hora</option>
-                  <option value={1.5}>1 Hora 30 Minutos</option>
-                  <option value={2}>2 Horas</option>
-                  <option value={3}>3 Horas</option>
-                </select>
-              </div>
+              {modalAccion === 'bloqueo' ? (
+                <div><label className="text-[9px] font-black uppercase opacity-40 ml-1">Motivo</label>
+                  <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}><option value="Mantenimiento">Mantenimiento</option><option value="Clase">Clase</option><option value="Torneo">Torneo</option></select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <select value={partidoJ1} onChange={e => setPartidoJ1(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}><option value="">Jugador 1...</option>{listaUsuarios.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}</select>
+                  <select value={partidoJ2} onChange={e => setPartidoJ2(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}><option value="">Jugador 2...</option>{listaUsuarios.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}</select>
+                </div>
+              )}
             </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setBloqueoActivo(null)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest ${theme.muted} ${theme.bg} border ${theme.border} hover:opacity-70 transition-opacity`}>Cancelar</button>
-              <button onClick={confirmarBloqueo} className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white bg-red-500 shadow-lg shadow-red-500/30 active:scale-95 transition-all">Bloquear</button>
+            <div className="flex gap-2">
+              <button onClick={() => setBloqueoActivo(null)} className="flex-1 py-3 text-[10px] font-black uppercase opacity-50">Cerrar</button>
+              <button onClick={confirmarAccionModal} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase text-white ${modalAccion === 'bloqueo' ? 'bg-red-500' : 'bg-[#007AFF]'}`}>Confirmar</button>
             </div>
           </div>
         </div>
