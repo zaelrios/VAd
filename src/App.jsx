@@ -36,7 +36,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ (VERSIÓN MAESTRA) ---
-  const APP_VERSION = '1.7'; // <--- VERSIÓN ACTUALIZADA PARA FORZAR EL MODO OSCURO
+  const APP_VERSION = '1.8'; // <--- VERSIÓN ACTUALIZADA PARA FORZAR EL MODO OSCURO
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1247,7 +1247,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.7</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.8</span>
         </h1>
       </header>
 
@@ -2036,6 +2036,73 @@ export default function App() {
           </div>
         )}
 
+        {/* =========================================
+            VISTA B2B: MASTER SCHEDULE DEL CLUB
+        ========================================= */}
+        {tab === 'club_agenda' && currentUser?.rol === 'club' && (
+          <div className="w-full max-w-sm mx-auto space-y-6 animate-in fade-in pb-20">
+            <div className="text-center mb-4">
+              <h2 className={`text-3xl font-black italic uppercase ${theme.text}`}>Agenda Club</h2>
+              <p className={`text-[10px] font-bold mt-1 uppercase tracking-widest text-[#007AFF]`}>Control de Canchas</p>
+            </div>
+
+            {/* Selector de Fecha */}
+            <div className={`w-full ${theme.card} border ${theme.border} rounded-2xl p-4 shadow-sm flex items-center justify-between`}>
+               <button className={`p-2 ${theme.bg} rounded-xl shadow-inner active:scale-95`}>◀</button>
+               <p className={`font-black text-sm uppercase tracking-widest ${theme.text}`}>Hoy, 21 Abr</p>
+               <button className={`p-2 ${theme.bg} rounded-xl shadow-inner active:scale-95`}>▶</button>
+            </div>
+
+            {/* LA CUADRÍCULA (Esqueleto Inicial) */}
+            <div className={`w-full ${theme.card} border ${theme.border} rounded-2xl p-2 shadow-sm overflow-x-auto`}>
+              <div className="min-w-[500px]">
+                {/* Encabezado de Canchas */}
+                <div className="flex border-b border-[#1A1C1E]/5 pb-2 mb-2">
+                  <div className="w-16 shrink-0"></div> {/* Espacio para la hora */}
+                  {[1,2,3,4,5,6,7,8,9,10].map(c => (
+                    <div key={c} className={`flex-1 text-center text-[10px] font-black ${c > 8 ? 'text-[#29C454]' : theme.muted}`}>
+                      C{c}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Filas de Horarios (De 7am a 10pm) */}
+                {[7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22].map(hora => (
+                  <div key={hora} className={`flex items-stretch border-b border-dashed ${theme.border} hover:bg-[#007AFF]/5 transition-colors`}>
+                    <div className={`w-16 shrink-0 py-3 text-[9px] font-black text-right pr-2 ${theme.muted}`}>
+                      {hora > 12 ? hora - 12 : hora}:00 {hora >= 12 ? 'PM' : 'AM'}
+                    </div>
+                    
+                    {/* Columnas de Canchas */}
+                    {[1,2,3,4,5,6,7,8,9,10].map(c => (
+                      <div key={`${hora}-${c}`} className="flex-1 p-0.5 relative group cursor-pointer" onClick={() => mostrarConfirmacion("Acción de Cancha", `¿Deseas bloquear la Cancha ${c} a las ${hora}:00?`, () => console.log('Bloqueado'))}>
+                        
+                        {/* Esto es un bloque vacío. Aquí insertaremos la lógica visual de bloqueos y partidos */}
+                        <div className={`w-full h-full min-h-[30px] rounded-md border border-transparent group-hover:border-[#007AFF]/30 transition-all`}>
+                        </div>
+                        
+                        {/* Simulación de un Partido VAd en Cancha 2 a las 8am */}
+                        {hora === 8 && c === 2 && (
+                          <div className="absolute inset-0 m-0.5 bg-[#007AFF] rounded-md shadow-sm z-10 flex items-center justify-center">
+                            <span className="text-[8px] text-white font-black">VAd</span>
+                          </div>
+                        )}
+                        {/* Simulación de un Bloqueo de Club en Cancha 5 a las 10am */}
+                        {hora === 10 && c === 5 && (
+                          <div className="absolute inset-0 m-0.5 bg-red-500 rounded-md shadow-sm z-10 flex items-center justify-center">
+                            <span className="text-[8px] text-white font-black">🔒</span>
+                          </div>
+                        )}
+
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* VISTA DEL PANEL DE USUARIOS ADMIN */}
         {tab === 'admin_usuarios' && currentUser?.rol === 'admin' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in fade-in pb-20">
@@ -2191,33 +2258,47 @@ export default function App() {
 
       <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <div className="flex justify-between items-center max-w-sm mx-auto px-4">
-          {[
-            { id: 'home', icon: '🏠', label: 'Inicio' }, 
-            { id: 'jugar', icon: '🎾', label: 'Jugar' }, 
-            { id: 'partidos', icon: '📋', label: 'Partidos' }, 
-            { id: 'perfil', icon: '👤', label: 'Perfil' }
-          ].map((item) => (
-            <button 
-              key={item.id} 
-              onClick={() => setTab(item.id)} 
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}
-            >
-              <div className="relative flex flex-col items-center gap-1">
-                <span className="text-xl mb-0.5">{item.icon}</span>
-                
-                {/* Puntito Azul para Partidos Pendientes */}
-                {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && (
-                  <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
-                )}
+          
+          {/* SI EL USUARIO ES EL CLUB, LE MOSTRAMOS SU PROPIO MENÚ */}
+          {isLoggedIn && currentUser?.rol === 'club' ? (
+            <>
+              <button onClick={() => setTab('club_agenda')} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === 'club_agenda' ? 'bg-[#007AFF] text-white scale-110 shadow-lg shadow-[#007AFF]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
+                <div className="relative flex flex-col items-center gap-1">
+                  <span className="text-xl mb-0.5">📅</span>
+                </div>
+              </button>
+              <button onClick={() => setTab('perfil')} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === 'perfil' ? 'bg-[#007AFF] text-white scale-110 shadow-lg shadow-[#007AFF]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
+                <div className="relative flex flex-col items-center gap-1">
+                  <span className="text-xl mb-0.5">⚙️</span>
+                </div>
+              </button>
+            </>
+          ) : (
+            /* SI ES JUGADOR NORMAL O ADMIN MAESTRO, VEN EL MENÚ CLÁSICO */
+            [
+              { id: 'home', icon: '🏠', label: 'Inicio' }, 
+              { id: 'jugar', icon: '🎾', label: 'Jugar' }, 
+              { id: 'partidos', icon: '📋', label: 'Partidos' }, 
+              { id: 'perfil', icon: '👤', label: 'Perfil' }
+            ].map((item) => (
+              <button 
+                key={item.id} 
+                onClick={() => setTab(item.id)} 
+                className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}
+              >
+                <div className="relative flex flex-col items-center gap-1">
+                  <span className="text-xl mb-0.5">{item.icon}</span>
+                  {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && (
+                    <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
+                  )}
+                  {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
+                    <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
+                  )}
+                </div>
+              </button>
+            ))
+          )}
 
-                {/* Puntito Azul para Buzón de Admin */}
-                {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
-                  <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
-                )}
-
-              </div>
-            </button>
-          ))}
         </div>
       </nav>
     </div>
