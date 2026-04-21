@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.27'; 
+  const APP_VERSION = '1.28'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -88,6 +88,11 @@ export default function App() {
   const [clubPartidos, setClubPartidos] = useState([]);
   const [filtroCanchas, setFiltroCanchas] = useState([1,2,3,4,5,6,7,8,9,10]); // Canchas visibles
   const [rangoHoras, setRangoHoras] = useState({ start: 3, end: 24 }); // Rango de horas
+
+  const [modalHoraInicio, setModalHoraInicio] = useState('');
+  const [modalHoraFin, setModalHoraFin] = useState('');
+  const [busquedaJ1, setBusquedaJ1] = useState('');
+  const [busquedaJ2, setBusquedaJ2] = useState('');
 
   // NUEVOS ESTADOS PARA EL MODAL DE BLOQUEO:
   const [bloqueoActivo, setBloqueoActivo] = useState(null);
@@ -544,21 +549,30 @@ export default function App() {
         });
       } else { mostrarAlerta("Ocupado", "Ya hay un partido aquí."); }
     } else {
+      // Formatear hora de inicio basada en el cuadro clickeado
+      const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? '00' : '30';
+      const startStr = `${String(hI).padStart(2,'0')}:${mI}`;
+      // Formatear hora de fin (default +1 hora)
+      const hF = Math.floor(horaFloat + 1); const mF = (horaFloat + 1) % 1 === 0 ? '00' : '30';
+      const endStr = `${String(hF >= 24 ? 23 : hF).padStart(2,'0')}:${hF >= 24 ? '59' : mF}`;
+
       setBloqueoActivo({ cancha, horaFloat, fechaStr });
-      setBloqueoDuracion(1); setModalAccion('bloqueo'); setPartidoJ1(''); setPartidoJ2('');
-      cargarUsuariosAdmin(); // Esto llena la lista de jugadores para el modal
+      setModalHoraInicio(startStr); setModalHoraFin(endStr);
+      setModalAccion('bloqueo'); setPartidoJ1(''); setPartidoJ2('');
+      setBusquedaJ1(''); setBusquedaJ2('');
+      cargarUsuariosAdmin();
     }
   };
 
   const confirmarAccionModal = async () => {
-    const { cancha, horaFloat, fechaStr } = bloqueoActivo;
-    const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? 0 : 30;
-    const endH = hI + Math.floor(bloqueoDuracion); const endM = mI + (bloqueoDuracion % 1 === 0 ? 0 : 30);
-    const startStr = `${String(hI).padStart(2,'0')}:${String(mI).padStart(2,'0')}:00`;
-    const endStr = `${String(endH >= 24 ? 23 : endH).padStart(2,'0')}:${String(endH >= 24 ? 59 : (endM >= 60 ? 0 : endM)).padStart(2,'0')}:00`;
+    const { cancha, fechaStr } = bloqueoActivo;
+    const startStr = `${modalHoraInicio}:00`;
+    const endStr = `${modalHoraFin}:00`;
     
+    if (modalHoraInicio >= modalHoraFin) { mostrarError("Error", "La hora de fin debe ser después del inicio."); return; }
+
     const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', cancha).lt('hora_inicio', endStr).gt('hora_fin', startStr);
-    if (choque?.length > 0) { setBloqueoActivo(null); mostrarError("Conflicto", "Ya hay algo agendado en ese rango."); return; }
+    if (choque?.length > 0) { mostrarError("Conflicto", "Ese horario ya tiene algo agendado."); return; }
 
     try {
       if (modalAccion === 'bloqueo') {
@@ -567,8 +581,8 @@ export default function App() {
         if (!partidoJ1 || !partidoJ2 || partidoJ1 === partidoJ2) throw new Error("Selecciona 2 jugadores distintos.");
         await supabase.from('partidos').insert([{ jugador1_id: partidoJ1, jugador2_id: partidoJ2, fecha: fechaStr, hora_inicio: startStr, hora_fin: endStr, superficie: cancha <= 8 ? 'Dura' : 'Césped', cancha_numero: cancha, estado: 'confirmado' }]);
       }
-      fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Éxito", "Agenda actualizada.");
-    } catch (e) { setBloqueoActivo(null); mostrarError("Error", e.message); }
+      fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Éxito", "Cancha actualizada.");
+    } catch (e) { mostrarError("Error", e.message); }
   };
 
   return (
@@ -576,7 +590,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.27</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.28</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1127,35 +1141,74 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL DUAL B2B */}
+      {/* --- MODAL DUAL B2B v1.30 --- */}
       {bloqueoActivo && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className={`${theme.card} w-full max-w-xs rounded-[2rem] p-6 shadow-2xl border ${theme.border} max-h-[85vh] overflow-y-auto`}>
-            <div className="flex bg-gray-500/10 p-1 rounded-xl mb-4">
-              <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg ${modalAccion === 'bloqueo' ? 'bg-red-500 text-white' : theme.muted}`}>Bloquear</button>
-              <button onClick={() => setModalAccion('partido')} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg ${modalAccion === 'partido' ? 'bg-[#007AFF] text-white' : theme.muted}`}>Partido</button>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+          <div className={`${theme.card} w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border ${theme.border} max-h-[90vh] overflow-y-auto`}>
+            
+            {/* Pestañas */}
+            <div className="flex bg-gray-500/10 p-1 rounded-2xl mb-6">
+              <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'bloqueo' ? 'bg-red-500 text-white shadow-md' : theme.muted}`}>Bloquear</button>
+              <button onClick={() => setModalAccion('partido')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'partido' ? 'bg-[#007AFF] text-white shadow-md' : theme.muted}`}>Partido</button>
             </div>
-            <div className="text-center mb-4"><h3 className="font-black italic uppercase">Cancha {bloqueoActivo.cancha}</h3><p className="text-[10px] opacity-50">{bloqueoActivo.fechaStr}</p></div>
-            <div className="space-y-3 mb-6">
-              <div><label className="text-[9px] font-black uppercase opacity-40 ml-1">Duración</label>
-                <select value={bloqueoDuracion} onChange={e => setBloqueoDuracion(Number(e.target.value))} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}>
-                  <option value={0.5}>30 min</option><option value={1}>1 hr</option><option value={2}>2 hrs</option><option value={4}>4 hrs</option><option value={8}>8 hrs</option><option value={15}>Todo el día</option>
+
+            {/* Rango de Tiempo (Igual que el buscador) */}
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              <div className="text-left">
+                <label className="text-[9px] font-black uppercase opacity-40 ml-2">Inicio</label>
+                <input type="time" step="1800" value={modalHoraInicio} onChange={(e)=>setModalHoraInicio(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-black ${theme.text}`} />
+              </div>
+              <div className="text-left">
+                <label className="text-[9px] font-black uppercase opacity-40 ml-2">Fin</label>
+                <input type="time" step="1800" value={modalHoraFin} onChange={(e)=>setModalHoraFin(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-black ${theme.text}`} />
+              </div>
+            </div>
+
+            {modalAccion === 'bloqueo' ? (
+              <div className="space-y-4 mb-8">
+                <label className="text-[9px] font-black uppercase opacity-40 ml-2">Motivo</label>
+                <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl p-4 text-sm font-bold`}>
+                  <option value="Administrativo">Administrativo</option>
+                  <option value="Mantenimiento">Mantenimiento</option>
+                  <option value="Clase">Clase</option>
+                  <option value="Torneo">Torneo</option>
                 </select>
               </div>
-              {modalAccion === 'bloqueo' ? (
-                <div><label className="text-[9px] font-black uppercase opacity-40 ml-1">Motivo</label>
-                  <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}><option value="Mantenimiento">Mantenimiento</option><option value="Clase">Clase</option><option value="Torneo">Torneo</option></select>
+            ) : (
+              <div className="space-y-4 mb-8">
+                {/* Buscador Jugador 1 */}
+                <div className="relative">
+                  <label className="text-[9px] font-black uppercase opacity-40 ml-2">Jugador 1</label>
+                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>setBusquedaJ1(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
+                  {busquedaJ1 && !partidoJ1 && (
+                    <div className={`absolute z-20 w-full mt-1 ${theme.card} border ${theme.border} rounded-xl shadow-xl max-h-40 overflow-y-auto`}>
+                      {listaUsuarios.filter(u => u.nombre.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
+                        <div key={u.id} onClick={()=>{setPartidoJ1(u.id); setBusquedaJ1(u.nombre);}} className="p-3 text-xs font-bold border-b border-gray-500/10 cursor-pointer hover:bg-[#007AFF]/10">{u.nombre}</div>
+                      ))}
+                    </div>
+                  )}
+                  {partidoJ1 && <button onClick={()=>{setPartidoJ1(''); setBusquedaJ1('');}} className="absolute right-3 top-9 text-red-500 text-xs">✕</button>}
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <select value={partidoJ1} onChange={e => setPartidoJ1(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}><option value="">Jugador 1...</option>{listaUsuarios.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}</select>
-                  <select value={partidoJ2} onChange={e => setPartidoJ2(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl p-3 text-xs font-bold`}><option value="">Jugador 2...</option>{listaUsuarios.map(u=><option key={u.id} value={u.id}>{u.nombre}</option>)}</select>
+
+                {/* Buscador Jugador 2 */}
+                <div className="relative">
+                  <label className="text-[9px] font-black uppercase opacity-40 ml-2">Jugador 2</label>
+                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>setBusquedaJ2(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
+                  {busquedaJ2 && !partidoJ2 && (
+                    <div className={`absolute z-20 w-full mt-1 ${theme.card} border ${theme.border} rounded-xl shadow-xl max-h-40 overflow-y-auto`}>
+                      {listaUsuarios.filter(u => u.nombre.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
+                        <div key={u.id} onClick={()=>{setPartidoJ2(u.id); setBusquedaJ2(u.nombre);}} className="p-3 text-xs font-bold border-b border-gray-500/10 cursor-pointer hover:bg-[#007AFF]/10">{u.nombre}</div>
+                      ))}
+                    </div>
+                  )}
+                  {partidoJ2 && <button onClick={()=>{setPartidoJ2(''); setBusquedaJ2('');}} className="absolute right-3 top-9 text-red-500 text-xs">✕</button>}
                 </div>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setBloqueoActivo(null)} className="flex-1 py-3 text-[10px] font-black uppercase opacity-50">Cerrar</button>
-              <button onClick={confirmarAccionModal} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase text-white ${modalAccion === 'bloqueo' ? 'bg-red-500' : 'bg-[#007AFF]'}`}>Confirmar</button>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setBloqueoActivo(null)} className="flex-1 py-4 font-black uppercase text-[10px] opacity-50">Cerrar</button>
+              <button onClick={confirmarAccionModal} className={`flex-1 py-4 rounded-2xl font-black uppercase text-[10px] text-white shadow-lg ${modalAccion === 'bloqueo' ? 'bg-red-500' : 'bg-[#007AFF]'}`}>Confirmar</button>
             </div>
           </div>
         </div>
