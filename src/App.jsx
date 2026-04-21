@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.24'; 
+  const APP_VERSION = '1.25'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -527,18 +527,23 @@ export default function App() {
     const endTimeStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00`;
     const sup = cancha <= 8 ? 'Dura' : 'Césped';
 
-    // Verificamos que no haya un partido a la mitad de las horas que quiere bloquear
     const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', cancha).lt('hora_inicio', endTimeStr).gt('hora_fin', startTimeStr);
     if (choque && choque.length > 0) {
+       setBloqueoActivo(null); // Cerramos modal primero
        mostrarError("Choque de Horario", "No puedes bloquear este rango porque ya hay un partido en medio.");
-       setBloqueoActivo(null); return;
+       return;
     }
 
     try {
-      const { error } = await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: fechaStr, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: sup, cancha_numero: cancha, estado: 'bloqueo_admin', marcador: bloqueoMotivo }]);
+      // FIX: Inyectamos el currentUser.id en jugador2_id para evitar el candado de NOT NULL de Supabase
+      const { error } = await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, jugador2_id: currentUser.id, fecha: fechaStr, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: sup, cancha_numero: cancha, estado: 'bloqueo_admin', marcador: bloqueoMotivo }]);
       if (error) throw error;
       fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Bloqueo Exitoso", `La cancha ha sido bloqueada por ${bloqueoMotivo}.`);
-    } catch (error) { mostrarError("Error", "Hubo un problema de conexión al bloquear la cancha."); }
+    } catch (error) { 
+      console.error(error);
+      setBloqueoActivo(null); // Cerramos modal primero
+      mostrarError("Error de Servidor", `Motivo: ${error.message}`); // Mostramos el error real
+    }
   };
 
   return (
@@ -546,7 +551,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.24</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.25</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1076,7 +1081,7 @@ export default function App() {
       </main>
 
       {vadAlert && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#1A1C1E]/60 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#1A1C1E]/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className={`${theme.card} w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border ${theme.border} animate-in zoom-in-95 duration-300`}>
             <div className="text-center mb-6 mt-2">
               <div className="text-4xl mb-3">{vadAlert.tipo === 'info' ? '🎾' : vadAlert.tipo === 'error' ? '🚨' : '⚠️'}</div>
