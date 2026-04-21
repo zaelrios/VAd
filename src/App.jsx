@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.23'; 
+  const APP_VERSION = '1.24'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -87,7 +87,12 @@ export default function App() {
   const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]); // Arreglo de varios días
   const [clubPartidos, setClubPartidos] = useState([]);
   const [filtroCanchas, setFiltroCanchas] = useState([1,2,3,4,5,6,7,8,9,10]); // Canchas visibles
-  const [rangoHoras, setRangoHoras] = useState({ start: 7, end: 22 }); // Rango de horas
+  const [rangoHoras, setRangoHoras] = useState({ start: 3, end: 24 }); // Rango de horas
+
+  // NUEVOS ESTADOS PARA EL MODAL DE BLOQUEO:
+  const [bloqueoActivo, setBloqueoActivo] = useState(null);
+  const [bloqueoDuracion, setBloqueoDuracion] = useState(0.5);
+  const [bloqueoMotivo, setBloqueoMotivo] = useState('Mantenimiento');
 
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
   
@@ -489,8 +494,7 @@ export default function App() {
   };
 
   const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
-    const cellStartMins = horaFloat * 60;
-    const cellEndMins = cellStartMins + 30; // La celda ahora mide exactamente 30 minutos
+    const cellStartMins = horaFloat * 60; const cellEndMins = cellStartMins + 30; // Celdas de 30 mins
     return clubPartidos.find(p => {
       if (p.cancha_numero !== canchaId || p.fecha !== fechaStr) return false;
       const startMins = parseInt(p.hora_inicio.split(':')[0], 10) * 60 + parseInt(p.hora_inicio.split(':')[1], 10);
@@ -499,26 +503,42 @@ export default function App() {
     });
   };
 
-  const toggleBloqueoCancha = async (cancha, horaFloat, fechaStr) => {
+  const handleCellClick = (cancha, horaFloat, fechaStr) => {
     const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
          mostrarConfirmacion("Desbloquear Cancha", `¿Liberar la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} de ${formatTime(partido.hora_inicio)} a ${formatTime(partido.hora_fin)}?`, async () => {
-           await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos(); mostrarAlerta("Cancha Liberada", "La cancha vuelve a estar disponible.");
+           await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos(); mostrarAlerta("Cancha Liberada", "La cancha vuelve a estar disponible para el motor VAd.");
          });
-      } else { mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido confirmado."); }
+      } else { mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido de jugadores confirmado."); }
     } else {
-      const hInt = Math.floor(horaFloat); const mInt = horaFloat % 1 === 0 ? 0 : 30;
-      const endHora = horaFloat + 1; const endH = Math.floor(endHora); const endM = endHora % 1 === 0 ? 0 : 30;
-      const displayTime = `${hInt > 12 ? hInt - 12 : hInt}:${mInt === 0 ? '00' : '30'} ${hInt >= 12 ? 'PM' : 'AM'}`;
-      
-      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} a las ${displayTime} por 1 hora?`, async () => {
-         const startTimeStr = `${String(hInt).padStart(2,'0')}:${String(mInt).padStart(2,'0')}:00`;
-         const endTimeStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00`;
-         await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: fechaStr, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: 'Dura', cancha_numero: cancha, estado: 'bloqueo_admin' }]);
-         fetchClubPartidos();
-      });
+      // Abrimos el modal de bloqueo
+      setBloqueoActivo({ cancha, horaFloat, fechaStr });
+      setBloqueoDuracion(0.5); // Reseteamos a 30 mins por defecto
     }
+  };
+
+  const confirmarBloqueo = async () => {
+    const { cancha, horaFloat, fechaStr } = bloqueoActivo;
+    const hInt = Math.floor(horaFloat); const mInt = horaFloat % 1 === 0 ? 0 : 30;
+    const endHora = horaFloat + bloqueoDuracion; const endH = Math.floor(endHora); const endM = endHora % 1 === 0 ? 0 : 30;
+    
+    const startTimeStr = `${String(hInt).padStart(2,'0')}:${String(mInt).padStart(2,'0')}:00`;
+    const endTimeStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00`;
+    const sup = cancha <= 8 ? 'Dura' : 'Césped';
+
+    // Verificamos que no haya un partido a la mitad de las horas que quiere bloquear
+    const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', cancha).lt('hora_inicio', endTimeStr).gt('hora_fin', startTimeStr);
+    if (choque && choque.length > 0) {
+       mostrarError("Choque de Horario", "No puedes bloquear este rango porque ya hay un partido en medio.");
+       setBloqueoActivo(null); return;
+    }
+
+    try {
+      const { error } = await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: fechaStr, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: sup, cancha_numero: cancha, estado: 'bloqueo_admin', marcador: bloqueoMotivo }]);
+      if (error) throw error;
+      fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Bloqueo Exitoso", `La cancha ha sido bloqueada por ${bloqueoMotivo}.`);
+    } catch (error) { mostrarError("Error", "Hubo un problema de conexión al bloquear la cancha."); }
   };
 
   return (
@@ -526,7 +546,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.23</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.24</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1021,31 +1041,27 @@ export default function App() {
                           </td>
                           {columnasGrid.map(col => {
                             const partido = obtenerEstadoCelda(col.c, horaFloat, col.day);
-                            const esVAd = partido && partido.estado !== 'bloqueo_admin';
-                            const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-                            const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? 'Bloqueado por Administración' : '';
-                            
-                            return (
-                              <td key={`${col.day}-${col.c}`} className={`p-0.5 border-l ${theme.border} h-14 relative group`} onClick={() => toggleBloqueoCancha(col.c, horaFloat, col.day)}>
-                                {esVAd && (
-                                  <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded flex items-center justify-center cursor-help shadow-sm overflow-hidden px-1">
-                                    <span className="text-[8px] text-white font-black text-center leading-tight truncate">
-                                      {partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
-                                    </span>
-                                  </div>
-                                )}
-                                {esBloqueo && (
-                                  <div title={tooltipText} className="w-full h-full bg-red-500 rounded flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors px-1">
-                                    <span className="text-[8px] text-white font-black text-center leading-tight truncate">
-                                      Bloqueado
-                                    </span>
-                                  </div>
-                                )}
-                                {!esVAd && !esBloqueo && (
-                                  <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
-                                )}
-                              </td>
-                            );
+                          const esVAd = partido && partido.estado !== 'bloqueo_admin';
+                          const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+                          const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? `Bloqueo: ${partido.marcador || 'Administración'}` : '';
+                          
+                          return (
+                            <td key={`${col.day}-${col.c}`} className={`p-0.5 border-l ${theme.border} h-14 relative group`} onClick={() => handleCellClick(col.c, horaFloat, col.day)}>
+                              {esVAd && (
+                                <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded flex items-center justify-center cursor-help shadow-sm overflow-hidden px-1">
+                                  <span className="text-[8px] text-white font-black text-center leading-tight truncate">{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}</span>
+                                </div>
+                              )}
+                              {esBloqueo && (
+                                <div title={tooltipText} className="w-full h-full bg-red-500 rounded flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors px-1">
+                                  <span className="text-[8px] text-white font-black text-center leading-tight truncate">{partido.marcador || 'Bloqueado'}</span>
+                                </div>
+                              )}
+                              {!esVAd && !esBloqueo && (
+                                <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
+                              )}
+                            </td>
+                          );
                           })}
                         </tr>
                       );
@@ -1076,6 +1092,49 @@ export default function App() {
               ) : (
                 <button onClick={cerrarAlerta} className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all ${vadAlert.tipo === 'error' ? 'bg-red-500 shadow-red-500/30' : 'bg-[#29C454] shadow-[#29C454]/30'}`}>Entendido</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE BLOQUEO DE CANCHAS (B2B) --- */}
+      {bloqueoActivo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#1A1C1E]/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className={`${theme.card} w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border ${theme.border} animate-in zoom-in-95 duration-300`}>
+            <div className="text-center mb-6 mt-2">
+              <div className="text-4xl mb-3">🚧</div>
+              <h3 className={`text-2xl font-black italic uppercase tracking-tight mb-2 ${theme.text}`}>Bloquear Cancha {bloqueoActivo.cancha}</h3>
+              <p className={`${theme.muted} font-bold text-sm`}>
+                Día: <span className="text-[#007AFF]">{bloqueoActivo.fechaStr.split('-').reverse().join('/')}</span> <br/> 
+                A partir de las: <span className="text-[#007AFF]">{formatTime(`${Math.floor(bloqueoActivo.horaFloat)}:${bloqueoActivo.horaFloat % 1 === 0 ? '00' : '30'}`)}</span>
+              </p>
+            </div>
+            
+            <div className="space-y-4 mb-6">
+              <div className="text-left">
+                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Motivo del Bloqueo</label>
+                <select value={bloqueoMotivo} onChange={(e) => setBloqueoMotivo(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold focus:outline-none focus:border-red-500`}>
+                  <option value="Mantenimiento">Mantenimiento / Limpieza</option>
+                  <option value="Administrativo">Tema Administrativo</option>
+                  <option value="Clase">Clase / Academia</option>
+                  <option value="Torneo">Torneo Local</option>
+                </select>
+              </div>
+              <div className="text-left">
+                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Duración</label>
+                <select value={bloqueoDuracion} onChange={(e) => setBloqueoDuracion(Number(e.target.value))} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold focus:outline-none focus:border-red-500`}>
+                  <option value={0.5}>30 Minutos</option>
+                  <option value={1}>1 Hora</option>
+                  <option value={1.5}>1 Hora 30 Minutos</option>
+                  <option value={2}>2 Horas</option>
+                  <option value={3}>3 Horas</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setBloqueoActivo(null)} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest ${theme.muted} ${theme.bg} border ${theme.border} hover:opacity-70 transition-opacity`}>Cancelar</button>
+              <button onClick={confirmarBloqueo} className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white bg-red-500 shadow-lg shadow-red-500/30 active:scale-95 transition-all">Bloquear</button>
             </div>
           </div>
         </div>
