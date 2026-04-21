@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.25'; 
+  const APP_VERSION = '1.26'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -423,9 +423,18 @@ export default function App() {
     if (!isLoggedIn || !currentUser) { handleLogout(); setTab('auth'); return; }
     const getMins = (timeStr) => { if (!timeStr) return 0; const p = timeStr.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
     const startMins = getMins(startTime); const endMins = getMins(endTime);
-    if (startMins >= endMins) { setSearchError('La hora límite debe ser después de inicio.'); return; }
+    
+    // --- FIX: RANGO MÍNIMO DE 1 HORA ---
+    if ((endMins - startMins) < 60) { 
+      setSearchError('El rango de búsqueda debe ser de al menos 1 hora.'); 
+      return; 
+    }
+    
     const now = new Date(); const [year, month, day] = searchDate.split('-').map(Number); const [sH, sM] = startTime.split(':').map(Number);
-    if ((new Date(year, month - 1, day, sH, sM) - now) / (1000 * 60 * 60) < 2) { setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.'); return; }
+    if ((new Date(year, month - 1, day, sH, sM) - now) / (1000 * 60 * 60) < 2) { 
+      setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.'); 
+      return; 
+    }
 
     const hasOverlap = activeSearches.some(s => s.fecha === searchDate && startMins < getMins(s.hora_fin) && endMins > getMins(s.hora_inicio));
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
@@ -433,9 +442,31 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
+      // 2. CHECK DE SATURACIÓN DE CANCHAS
+      const inventario = { 'Césped': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
+      const { data: ocupadas } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', endTime).gt('hora_fin', startTime);
+      
+      const canchasOcupadasIds = ocupadas ? [...new Set(ocupadas.map(o => o.cancha_numero))] : [];
+      const hayCanchasLibres = inventario[superficie].some(id => !canchasOcupadasIds.includes(id));
+
+      const publicarBusqueda = async (standby = false) => {
+        const { data: nb, error: eI } = await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'activa' }]).select().single();
+        if (eI) throw eI;
+        setActiveSearches([...activeSearches, nb]);
+        mostrarAlerta(standby ? "Lista de Espera" : "Búsqueda Publicada", standby ? "Las canchas están llenas, pero te avisaremos si alguien cancela." : "Te avisaremos al hacer match.");
+      };
+
+      if (!hayCanchasLibres) {
+        mostrarConfirmacion(
+          "Canchas Llenas", 
+          `Lo sentimos, todas las canchas de ${superficie} están ocupadas en este horario.\n\n¿Quieres publicarla de todos modos como "Lista de Espera" por si alguien cancela?`,
+          () => publicarBusqueda(true)
+        );
+        return;
+      }
+
       const { data: posiblesRivales } = await supabase.from('buscar').select('*').eq('fecha', searchDate).eq('superficie', superficie).neq('jugador_id', currentUser.id).eq('estado', 'activa');
       let matchEncontrado = null, matchInicio = '', matchFin = '', canchaAsignada = null;
-      const inventario = { 'Césped': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
 
       if (posiblesRivales && posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
@@ -443,9 +474,13 @@ export default function App() {
           if (startMins < rEndMins && endMins > rStartMins) {
             const startCruce = Math.max(startMins, rStartMins); const endCruce = Math.min(endMins, rEndMins);
             const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
-            if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) / 60 >= 1.9) {
+            
+            // --- FIX: MOTOR CALIBRADO A 60 MINUTOS ---
+            if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 60) {
               const propInicioStr = `${String(Math.floor(startCruce / 60)).padStart(2, '0')}:${String(startCruce % 60).padStart(2, '0')}`;
-              const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}`;
+              // Separamos el bloque sumando 60 mins exactos
+              const propFinStr = `${String(Math.floor((startCruce + 60) / 60)).padStart(2, '0')}:${String((startCruce + 60) % 60).padStart(2, '0')}`;
+              
               const { data: pCruce } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', propFinStr).gt('hora_fin', propInicioStr);
               const canchaLibre = inventario[superficie].find(n => !(pCruce ? pCruce.map(p => p.cancha_numero) : []).includes(n));
               if (canchaLibre) { matchEncontrado = rival; matchInicio = propInicioStr; matchFin = propFinStr; canchaAsignada = canchaLibre; break; }
@@ -462,8 +497,7 @@ export default function App() {
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
         mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada} (${superficie}).`); setTab('partidos'); fetchPartidos();
       } else {
-        const { data: nb, error: eI } = await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'activa' }]).select().single();
-        if (eI) throw new Error("Error: " + eI.message); setActiveSearches([...activeSearches, nb]); mostrarAlerta("Búsqueda Publicada", "Te avisaremos al hacer match.");
+        await publicarBusqueda(false);
       }
     } catch (error) { setSearchError(error.message || 'Error en el circuito.'); }
   };
@@ -551,7 +585,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.25</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.26</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
