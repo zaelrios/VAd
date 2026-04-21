@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.17'; 
+  const APP_VERSION = '1.18'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -523,7 +523,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.17</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.18</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -756,10 +756,25 @@ export default function App() {
                               obtenerEstadoTiempo(partido) === 'terminado' ? (
                                 reportingMatch === partido.id ? (
                                   <div className={`mt-4 ${theme.bg} p-4 rounded-2xl space-y-4 border ${theme.border}`}>
-                                    <div className="flex gap-2 items-center justify-between"><input type="number" placeholder="Mi" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /><span className="font-bold text-[10px] text-gray-500">Set 1</span><input type="number" placeholder="Su" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /></div>
-                                    <div className="flex gap-2 items-center justify-between"><input type="number" placeholder="Mi" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /><span className="font-bold text-[10px] text-gray-500">Set 2</span><input type="number" placeholder="Su" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /></div>
-                                    <div className={`flex gap-2 items-center justify-between transition-all ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}><input type="number" disabled={partidoDefinidoEnDosSets} placeholder="Mi" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /><span className="font-bold text-[10px] text-gray-500">Set 3</span><input type="number" disabled={partidoDefinidoEnDosSets} placeholder="Su" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /></div>
-                                    <div className="flex gap-2 pt-2"><button onClick={() => setReportingMatch(null)} className="flex-1 py-3 rounded-xl font-black text-xs bg-gray-500/10 hover:bg-gray-500/20">Cancelar</button><button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#29C454] text-white py-3 rounded-xl font-black text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Enviar</button></div>
+                                    <div className="flex gap-2 items-center justify-between">
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Mi" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <span className="font-bold text-[10px] text-gray-500">Set 1</span>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Su" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                    </div>
+                                    <div className="flex gap-2 items-center justify-between">
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Mi" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <span className="font-bold text-[10px] text-gray-500">Set 2</span>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Su" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                    </div>
+                                    <div className={`flex gap-2 items-center justify-between transition-all ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="Mi" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <span className="font-bold text-[10px] text-gray-500">Set 3</span>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="Su" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                    </div>
+                                    <div className="flex gap-2 pt-2">
+                                      <button onClick={() => setReportingMatch(null)} className="flex-1 py-3 rounded-xl font-black text-xs bg-gray-500/10 hover:bg-gray-500/20">Cancelar</button>
+                                      <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#29C454] text-white py-3 rounded-xl font-black text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Enviar</button>
+                                    </div>
                                     <button onClick={() => handleWO(partido)} className="w-full border-2 border-red-500/40 bg-red-500/10 text-red-600 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] mt-2 active:scale-95 transition-all">🚨 El rival no se presentó (W.O.)</button>
                                   </div>
                                 ) : (
