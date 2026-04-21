@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.18'; 
+  const APP_VERSION = '1.19'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -102,7 +102,7 @@ export default function App() {
   const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
 
   const fetchClubPartidos = async () => {
-    if (currentUser?.rol !== 'club') return;
+    if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
     try {
       const { data: matches, error } = await supabase.from('partidos').select('*').eq('fecha', getAgendaDateStr(agendaDate));
       if (error) throw error;
@@ -523,7 +523,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.18</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.19</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -756,21 +756,31 @@ export default function App() {
                               obtenerEstadoTiempo(partido) === 'terminado' ? (
                                 reportingMatch === partido.id ? (
                                   <div className={`mt-4 ${theme.bg} p-4 rounded-2xl space-y-4 border ${theme.border}`}>
+                                    
+                                    {/* Encabezados de Score */}
+                                    <div className={`flex justify-between px-1 text-[9px] font-black uppercase tracking-widest ${theme.muted}`}>
+                                      <span className="w-14 text-center text-[#29C454]">Mi Score</span>
+                                      <span className="text-center">Set</span>
+                                      <span className="w-14 text-center text-[#007AFF]">Su Score</span>
+                                    </div>
+
+                                    {/* Sets */}
                                     <div className="flex gap-2 items-center justify-between">
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Mi" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
-                                      <span className="font-bold text-[10px] text-gray-500">Set 1</span>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Su" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <span className="font-bold text-[10px] text-gray-500">1</span>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
                                     </div>
                                     <div className="flex gap-2 items-center justify-between">
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Mi" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
-                                      <span className="font-bold text-[10px] text-gray-500">Set 2</span>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Su" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <span className="font-bold text-[10px] text-gray-500">2</span>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
                                     </div>
                                     <div className={`flex gap-2 items-center justify-between transition-all ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="Mi" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
-                                      <span className="font-bold text-[10px] text-gray-500">Set 3</span>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="Su" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <span className="font-bold text-[10px] text-gray-500">3</span>
+                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
                                     </div>
+                                    
                                     <div className="flex gap-2 pt-2">
                                       <button onClick={() => setReportingMatch(null)} className="flex-1 py-3 rounded-xl font-black text-xs bg-gray-500/10 hover:bg-gray-500/20">Cancelar</button>
                                       <button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#29C454] text-white py-3 rounded-xl font-black text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Enviar</button>
@@ -884,6 +894,7 @@ export default function App() {
                 </button>
               </div>
 
+              {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
               {isLoggedIn && currentUser?.rol === 'admin' && (
                 <div className={`w-full mt-8 pt-8 border-t ${theme.border} space-y-4`}>
                   <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola Master</h3>
@@ -891,7 +902,12 @@ export default function App() {
                     <button onClick={() => { cargarSugerenciasAdmin(); setTab('admin_buzon'); }} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95`}>
                       📩 Buzón {sugerenciasNuevas > 0 && <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">{sugerenciasNuevas}</span>}
                     </button>
-                    <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">👥 Jugadores</button>
+                    <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                      👥 Jugadores
+                    </button>
+                    <button onClick={() => { fetchClubPartidos(); setTab('club_agenda'); }} className="col-span-2 w-full bg-[#E5B824] text-[#1A1C1E] py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                      📅 Master Schedule (Club)
+                    </button>
                   </div>
                 </div>
               )}
@@ -908,7 +924,7 @@ export default function App() {
         {/* =========================================
             VISTA B2B: MASTER SCHEDULE DEL CLUB (PANTALLA COMPLETA ANCHA)
         ========================================= */}
-        {tab === 'club_agenda' && currentUser?.rol === 'club' && (
+        {tab === 'club_agenda' && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') && (
           <div className="w-full px-2 md:px-8 space-y-4 animate-in fade-in pb-20 max-w-[1400px] mx-auto">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
               <div>
