@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.20'; 
+  const APP_VERSION = '1.21'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -83,6 +83,11 @@ export default function App() {
   // --- ESTADOS PARA LA AGENDA DEL CLUB ---
   const [agendaDate, setAgendaDate] = useState(new Date());
   const [clubPartidos, setClubPartidos] = useState([]);
+  const [filtroCanchas, setFiltroCanchas] = useState([1,2,3,4,5,6,7,8,9,10]); // Control de canchas visibles
+
+  const toggleFiltroCancha = (num) => {
+    setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
+  };
 
   const getAgendaDateStr = (dateObj) => {
     const d = dateObj || agendaDate;
@@ -100,6 +105,8 @@ export default function App() {
   const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1; 
   startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
   const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
+
+  
 
   const fetchClubPartidos = async () => {
     if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
@@ -523,7 +530,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.20</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.21</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -922,36 +929,60 @@ export default function App() {
         {/* =========================================
             VISTA B2B: MASTER SCHEDULE DEL CLUB (PANTALLA COMPLETA ANCHA)
         ========================================= */}
+        {/* =========================================
+            VISTA B2B: MASTER SCHEDULE (FULL SCREEN + FILTROS)
+        ========================================= */}
         {tab === 'club_agenda' && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') && (
-          <div className="w-full space-y-4 animate-in fade-in pb-20">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
+          <div className="w-full space-y-6 animate-in fade-in pb-20">
+            
+            {/* Cabecera Centrada */}
+            <div className="flex flex-col items-center text-center space-y-4 mb-4">
               <div>
-                <h2 className={`text-4xl font-black italic uppercase ${theme.text}`}>Punta Azul</h2>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#007AFF]">Control Total de Canchas</p>
+                <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Punta Azul</h2>
+                <p className="text-[10px] font-bold uppercase tracking-[0.5em] text-[#007AFF] mt-1">Control Maestro de Canchas</p>
               </div>
               
-              <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 scrollbar-hide">
-                <button onClick={() => changeWeek(-1)} className={`flex items-center justify-center px-4 rounded-lg font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95`}>◀</button>
-                {weekDays.map((date, i) => {
-                  const isSelected = date.toLocaleDateString() === agendaDate.toLocaleDateString();
-                  const dName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][date.getDay()];
-                  return (
-                    <button key={i} onClick={() => setAgendaDate(date)} className={`flex flex-col items-center justify-center p-3 rounded-xl min-w-[4.5rem] transition-all border active:scale-95 ${isSelected ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-lg' : `${theme.card} ${theme.text} ${theme.border}`}`}>
-                      <span className="text-[10px] uppercase font-black opacity-70">{dName}</span>
-                      <span className="text-xl font-black">{date.getDate()}</span>
-                    </button>
-                  );
-                })}
-                <button onClick={() => changeWeek(1)} className={`flex items-center justify-center px-4 rounded-lg font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95`}>▶</button>
+              {/* Selector de Fecha Centrado */}
+              <div className="flex items-center gap-3 bg-white/5 p-2 rounded-2xl border border-white/10 shadow-inner">
+                <button onClick={() => changeWeek(-1)} className={`p-3 ${theme.card} rounded-xl shadow-md active:scale-95 border ${theme.border} text-[#007AFF] font-black`}>◀</button>
+                <div className="flex gap-2 overflow-x-auto max-w-[90vw] md:max-w-none pb-1 scrollbar-hide">
+                  {weekDays.map((date, i) => {
+                    const isSelected = date.toLocaleDateString() === agendaDate.toLocaleDateString();
+                    const dName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][date.getDay()];
+                    return (
+                      <button key={i} onClick={() => setAgendaDate(date)} className={`flex flex-col items-center justify-center p-3 rounded-xl min-w-[4.5rem] transition-all border active:scale-95 ${isSelected ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-lg scale-105' : `${theme.card} ${theme.text} ${theme.border}`}`}>
+                        <span className="text-[10px] uppercase font-black opacity-70">{dName}</span>
+                        <span className="text-xl font-black">{date.getDate()}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button onClick={() => changeWeek(1)} className={`p-3 ${theme.card} rounded-xl shadow-md active:scale-95 border ${theme.border} text-[#007AFF] font-black`}>▶</button>
+              </div>
+
+              {/* Selector de Canchas (Filtros) */}
+              <div className="flex flex-wrap justify-center gap-2 mt-2">
+                <p className={`text-[9px] font-black uppercase tracking-widest w-full mb-1 opacity-50 ${theme.text}`}>Filtrar Canchas:</p>
+                {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                  <button 
+                    key={n} 
+                    onClick={() => toggleFiltroCancha(n)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all border ${filtroCanchas.includes(n) ? 'bg-[#29C454] text-white border-[#29C454]' : `${theme.card} ${theme.muted} ${theme.border} opacity-40`}`}
+                  >
+                    C{n}
+                  </button>
+                ))}
+                <button onClick={() => setFiltroCanchas([1,2,3,4,5,6,7,8,9,10])} className={`px-3 py-1.5 rounded-lg text-[10px] font-black ${theme.bg} ${theme.text} border ${theme.border} active:scale-95`}>VER TODAS</button>
               </div>
             </div>
 
+            {/* Tabla Expandida y Filtrada */}
             <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto`}>
               <table className="w-full border-collapse">
                 <thead>
                   <tr>
                     <th className={`p-4 text-[11px] font-black uppercase ${theme.muted} text-right w-24`}>Hora</th>
-                    {[1,2,3,4,5,6,7,8,9,10].map(c => (
+                    {filtroCanchas.map(c => (
                       <th key={c} className={`p-4 text-[12px] font-black uppercase ${theme.text} border-l ${theme.border}`}>Cancha {c}</th>
                     ))}
                   </tr>
@@ -962,7 +993,7 @@ export default function App() {
                       <td className={`p-4 text-[11px] font-black text-right ${theme.muted}`}>
                         {hora > 12 ? hora - 12 : hora}:00 {hora >= 12 ? 'PM' : 'AM'}
                       </td>
-                      {[1,2,3,4,5,6,7,8,9,10].map(c => {
+                      {filtroCanchas.map(c => {
                         const partido = obtenerEstadoCelda(c, hora);
                         const esVAd = partido && partido.estado !== 'bloqueo_admin';
                         const esBloqueo = partido && partido.estado === 'bloqueo_admin';
