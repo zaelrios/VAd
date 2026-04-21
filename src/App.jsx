@@ -3,8 +3,7 @@ import { supabase } from './supabase'
 
 export default function App() {
   const getInitialTimes = () => {
-    const now = new Date();
-    now.setMinutes(0, 0, 0); now.setHours(now.getHours() + 1);
+    const now = new Date(); now.setMinutes(0, 0, 0); now.setHours(now.getHours() + 1);
     const startObj = new Date(now); startObj.setHours(startObj.getHours() + 3);
     const endObj = new Date(startObj); endObj.setHours(endObj.getHours() + 4);
     const formatTime = (dateObj) => dateObj.toTimeString().substring(0, 5);
@@ -16,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.15'; 
+  const APP_VERSION = '1.17'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -50,6 +49,7 @@ export default function App() {
   const [pin, setPin] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  
   const [isRegistering, setIsRegistering] = useState(false);
   const [regNombre, setRegNombre] = useState('');
   const [regApellido, setRegApellido] = useState('');
@@ -80,7 +80,7 @@ export default function App() {
   const [listaUsuarios, setListaUsuarios] = useState([]);
   const [listaSugerencias, setListaSugerencias] = useState([]);
 
-  // --- ESTADOS PARA LA AGENDA DEL CLUB (B2B) ---
+  // --- ESTADOS PARA LA AGENDA DEL CLUB ---
   const [agendaDate, setAgendaDate] = useState(new Date());
   const [clubPartidos, setClubPartidos] = useState([]);
 
@@ -96,13 +96,10 @@ export default function App() {
     setAgendaDate(newDate);
   };
 
-  // Generador de semana para la barra
   const startOfWeek = new Date(agendaDate);
-  const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1; // 0 Lunes
+  const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1; 
   startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
-  const weekDays = Array.from({length: 7}).map((_, i) => {
-    const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d;
-  });
+  const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
 
   const fetchClubPartidos = async () => {
     if (currentUser?.rol !== 'club') return;
@@ -118,7 +115,6 @@ export default function App() {
       } else { setClubPartidos([]); }
     } catch (error) { console.error("Error cargando agenda:", error); }
   };
-  // ---------------------------------------------
 
   const cargarUsuariosAdmin = async () => {
     if (currentUser?.rol !== 'admin') return;
@@ -156,7 +152,7 @@ export default function App() {
     if (savedUser && savedUser !== 'null') {
       const parsedUser = JSON.parse(savedUser);
       setCurrentUser(parsedUser); setIsLoggedIn(true);
-      if (parsedUser.rol === 'club') setTab('club_agenda'); // Redirección B2B
+      if (parsedUser.rol === 'club') setTab('club_agenda'); 
     } else { localStorage.removeItem('vad_session'); }
   }, []);
 
@@ -373,6 +369,7 @@ export default function App() {
     });
   };
 
+  // --- FUNCIONES DE ACCESO CORRECTAS ---
   const handleLoginSubmit = async (e) => {
     e.preventDefault(); setAuthError(''); setAuthLoading(true);
     if (phoneNumber.length < 10) { setAuthError('El celular debe tener 10 dígitos.'); setAuthLoading(false); return; }
@@ -389,7 +386,6 @@ export default function App() {
 
   const handleRegisterCheckPhone = async (e) => {
     e.preventDefault(); setAuthError(''); setAuthLoading(true); 
-    
     if (!regNombre.trim() || !regApellido.trim()) { setAuthError('Ingresa tu nombre y apellido.'); setAuthLoading(false); return; }
     if (phoneNumber.length < 10) { setAuthError('El celular debe tener 10 dígitos exactos.'); setAuthLoading(false); return; }
 
@@ -411,8 +407,10 @@ export default function App() {
     } catch (error) { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
   };
 
-  const handleLogout = () => { setIsLoggedIn(false); setCurrentUser(null); localStorage.removeItem('vad_session'); window.location.reload(true); };
-    
+  const handleLogout = () => { localStorage.removeItem('vad_session'); setIsLoggedIn(false); setCurrentUser(null); window.location.href = window.location.pathname; };
+  
+  // ------------------------------------
+
   const handleSearchSubmit = async (e) => {
     e.preventDefault(); setSearchError(''); 
     if (!isLoggedIn || !currentUser) { handleLogout(); setTab('auth'); return; }
@@ -488,7 +486,6 @@ export default function App() {
     if (dist < -50) { const idx = ['home', 'jugar', 'partidos', 'perfil'].indexOf(tab); if (idx > 0) setTab(['home', 'jugar', 'partidos', 'perfil'][idx - 1]); }
   };
 
-  // Lógica de Solapamiento Correjida para la Cuadrícula del Club
   const obtenerEstadoCelda = (canchaId, hora) => {
     const cellStartMins = hora * 60;
     const cellEndMins = cellStartMins + 60;
@@ -496,7 +493,6 @@ export default function App() {
       if (p.cancha_numero !== canchaId) return false;
       const startMins = parseInt(p.hora_inicio.split(':')[0], 10) * 60 + parseInt(p.hora_inicio.split(':')[1], 10);
       const endMins = parseInt(p.hora_fin.split(':')[0], 10) * 60 + parseInt(p.hora_fin.split(':')[1], 10);
-      // Ocurre superposición si el inicio del partido es menor al fin de la celda y el fin del partido es mayor al inicio de la celda
       return startMins < cellEndMins && endMins > cellStartMins;
     });
   };
@@ -506,13 +502,13 @@ export default function App() {
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
          mostrarConfirmacion("Desbloquear Cancha", `¿Deseas liberar la Cancha ${cancha} (Horario de ${formatTime(partido.hora_inicio)} a ${formatTime(partido.hora_fin)})?`, async () => {
-           await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos(); mostrarAlerta("Cancha Liberada", "La cancha vuelve a estar disponible para el motor VAd.");
+           await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos(); mostrarAlerta("Cancha Liberada", "La cancha vuelve a estar disponible.");
          });
       } else {
-         mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido de jugadores confirmado. Mueve el partido o declara una cancelación por emergencia antes de bloquear.");
+         mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido confirmado. Mueve el partido o declara una emergencia antes de bloquear.");
       }
     } else {
-      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} a las ${hora}:00 por 1 hora para uso interno (Mantenimiento, Clases, etc)?`, async () => {
+      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} a las ${hora}:00 por 1 hora para uso interno?`, async () => {
          const targetDate = getAgendaDateStr();
          const startTimeStr = `${String(hora).padStart(2,'0')}:00`;
          const endTimeStr = `${String(hora+1).padStart(2,'0')}:00`;
@@ -527,7 +523,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.15</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.17</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -537,26 +533,23 @@ export default function App() {
 
       <main className="pt-24 px-6 max-w-lg mx-auto w-full flex flex-col items-center">
         
-        {/* =========================================
-            VISTA HOME - DISEÑO UNIFICADO Y TEXTOS
-        ========================================= */}
+        {/* VISTA HOME */}
         {tab === 'home' && (
           <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10 px-2">
-            
             <section className="flex flex-col items-center">
               <h2 className={`${theme.text} font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm`}>Donde el tennis se vive</h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1268B0' }}>ADENTRO.</span></h1>
               <p className={`${theme.text} text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4`}>La comunidad que premia a los que sí aparecen.<br/>Matchmaking inteligente con sistema ELO para un ranking justo y real.</p>
               {isLoggedIn ? (
-                <button onClick={() => setTab('jugar')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all">
-                  Buscar rival ➜
+                <button onClick={() => setTab(currentUser?.rol === 'club' ? 'club_agenda' : 'jugar')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
+                  Buscar partido ➜
                 </button>
               ) : (
                 <div className="mt-8 flex gap-3 justify-center w-full max-w-sm mx-auto px-4">
-                  <button onClick={() => { setIsRegistering(false); setTab('auth'); }} className={`flex-1 ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg active:scale-95 transition-all`}>
+                  <button onClick={() => { setIsRegistering(false); setAuthError(''); setPhoneNumber(''); setPin(''); setTab('auth'); }} className={`flex-1 ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg active:scale-95 transition-all`}>
                     Iniciar Sesión
                   </button>
-                  <button onClick={() => { setIsRegistering(true); setTab('auth'); }} className="flex-1 bg-[#29C454] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">
+                  <button onClick={() => { setIsRegistering(true); setRegStep(1); setAuthError(''); setRegNombre(''); setRegApellido(''); setPhoneNumber(''); setPin(''); setTab('auth'); }} className="flex-1 bg-[#29C454] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">
                     Registrarte
                   </button>
                 </div>
@@ -564,8 +557,6 @@ export default function App() {
             </section>
 
             <section className="w-full text-left space-y-6">
-              
-              {/* Bloque: Matchmaking */}
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden`}>
                 <div className="absolute -right-4 -top-4 opacity-5 text-9xl">🔍</div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">El Matchmaking</h3>
@@ -578,7 +569,6 @@ export default function App() {
                 </ul>
               </div>
 
-              {/* Bloque: ELO */}
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden`}>
                 <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-[#29C454]/10 rounded-full blur-3xl"></div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Ranking ELO</h3>
@@ -608,7 +598,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bloque: Confiabilidad */}
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm relative overflow-hidden`}>
                 <div className="absolute -right-10 -top-10 w-40 h-40 bg-[#E5B824]/10 rounded-full blur-3xl"></div>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-5 relative z-10 tracking-tighter">Confiabilidad</h3>
@@ -622,7 +611,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bloque: Buzón */}
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm`}>
                 <h3 className="text-2xl font-black italic uppercase text-[#29C454] mb-2 tracking-tighter">Buzón</h3>
                 <p className={`${theme.muted} text-sm font-bold mb-5 leading-relaxed`}>¿Ideas, reportes de error o sugerencias? Háznoslo saber.</p>
@@ -689,7 +677,7 @@ export default function App() {
                 <div className="space-y-3 text-left w-full"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label><input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} /></div>
                 <div className="space-y-3 text-left w-full"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label><select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}><option value="Dura">Cancha Dura (1 al 8)</option><option value="Césped">Césped (9 y 10)</option></select></div>
                 <div className="space-y-3 text-left w-full">
-                  <div className="ml-2"><label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Franja Horaria</label>{modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}</div>
+                  <div className="ml-2"><label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>{modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}</div>
                   <div className="grid grid-cols-2 gap-3 w-full">
                     <input type="time" step="1800" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
                     <input type="time" step="1800" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
@@ -720,7 +708,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: MIS PARTIDOS */}
+        {/* VISTA: MIS PARTIDOS CON TODOS LOS BOTONES RESTAURADOS */}
         {tab === 'partidos' && (
           <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto pb-20">
             <h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight text-center`}>Partidos</h2>
@@ -755,13 +743,55 @@ export default function App() {
                           <div className="relative z-10">
                             <div className="flex justify-between items-start mb-1">
                               <p className={`text-xs font-bold uppercase tracking-widest ${partido.estado === 'confirmado' ? 'text-[#29C454]' : 'text-[#E5B824]'}`}>{new Date(partido.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}</p>
+                              {partido.cancha_numero && <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${partido.estado === 'confirmado' ? 'bg-[#29C454]/10 text-[#29C454] border border-[#29C454]/20' : 'bg-[#E5B824]/10 text-[#E5B824] border border-[#E5B824]/20'}`}>Cancha {partido.cancha_numero}</span>}
                             </div>
                             <h4 className={`text-3xl font-black italic mb-4 ${theme.text}`}>{formatTime(partido.hora_inicio)} - {formatTime(partido.hora_fin)}</h4>
                             <div className={`flex items-center gap-4 ${theme.bg} p-3 rounded-xl border ${theme.border} mb-4 shadow-inner`}>
                               <div className="w-12 h-12 rounded-full flex items-center justify-center font-black italic text-xl uppercase shadow-md text-white" style={{ backgroundColor: partido.rival.color || '#1A1C1E' }}>{getInitials(partido.rival.nombre)}</div>
                               <div><p className={`text-[10px] uppercase tracking-widest font-black ${theme.muted}`}>Rival Confirmado</p><p className={`font-black italic text-xl ${theme.text}`}>{partido.rival.nombre}</p></div>
                             </div>
-                            {/* Omitidos reportes visuales en minificación, conservando funcionalidad en código */}
+
+                            {/* LOGICA RESTAURADA DE BOTONES DE REPORTE Y CANCELACIÓN */}
+                            {partido.estado === 'confirmado' && (
+                              obtenerEstadoTiempo(partido) === 'terminado' ? (
+                                reportingMatch === partido.id ? (
+                                  <div className={`mt-4 ${theme.bg} p-4 rounded-2xl space-y-4 border ${theme.border}`}>
+                                    <div className="flex gap-2 items-center justify-between"><input type="number" placeholder="Mi" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /><span className="font-bold text-[10px] text-gray-500">Set 1</span><input type="number" placeholder="Su" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /></div>
+                                    <div className="flex gap-2 items-center justify-between"><input type="number" placeholder="Mi" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /><span className="font-bold text-[10px] text-gray-500">Set 2</span><input type="number" placeholder="Su" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /></div>
+                                    <div className={`flex gap-2 items-center justify-between transition-all ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}><input type="number" disabled={partidoDefinidoEnDosSets} placeholder="Mi" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /><span className="font-bold text-[10px] text-gray-500">Set 3</span><input type="number" disabled={partidoDefinidoEnDosSets} placeholder="Su" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" /></div>
+                                    <div className="flex gap-2 pt-2"><button onClick={() => setReportingMatch(null)} className="flex-1 py-3 rounded-xl font-black text-xs bg-gray-500/10 hover:bg-gray-500/20">Cancelar</button><button onClick={() => handleSubmitReport(partido)} className="flex-1 bg-[#29C454] text-white py-3 rounded-xl font-black text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Enviar</button></div>
+                                    <button onClick={() => handleWO(partido)} className="w-full border-2 border-red-500/40 bg-red-500/10 text-red-600 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] mt-2 active:scale-95 transition-all">🚨 El rival no se presentó (W.O.)</button>
+                                  </div>
+                                ) : (
+                                  <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#29C454] text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Reportar Resultado ➜</button>
+                                )
+                              ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
+                                <div className="text-center py-4 bg-[#29C454]/10 rounded-2xl border border-dashed border-[#29C454]/50"><p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-[#29C454]">Partido en curso 🔥</p><p className={`text-[9px] opacity-60 mt-1 ${theme.text}`}>El reporte se habilitará al terminar.</p></div>
+                              ) : (
+                                <div className={`text-center pt-8 pb-4 ${theme.bg} rounded-[1.8rem] shadow-inner relative overflow-hidden border ${theme.border}`}>
+                                  {((new Date(`${partido.fecha}T${partido.hora_inicio}`) - currentTime) / (1000 * 60 * 60)) > 0.5 ? (
+                                    <button onClick={() => handleCancelMatch(partido)} className={`absolute top-3 right-4 w-8 h-8 ${theme.card} ${theme.muted} border ${theme.border} rounded-full flex items-center justify-center text-xs font-black hover:bg-red-500 hover:text-white transition-all z-20`}>✕</button>
+                                  ) : (
+                                    <button onClick={() => handleSelfWO(partido)} className="absolute top-3 right-4 bg-red-500 text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-md hover:scale-105 active:scale-95 transition-all z-20">(W.O.)</button>
+                                  )}
+                                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#29C454] mb-3 relative z-10">El partido inicia en</p>
+                                  <p className={`text-3xl font-black italic tracking-[0.1em] font-mono ${theme.text}`}>{getCountdown(partido)}</p>
+                                </div>
+                              )
+                            )}
+
+                            {partido.estado === 'en_revision' && (
+                              <div className="bg-[#E5B824]/10 p-4 rounded-xl border border-[#E5B824]/30 mt-4">
+                                {partido.reportado_por === currentUser.id ? (
+                                  <p className="text-xs font-black uppercase text-[#E5B824] text-center">⏳ Esperando que el rival confirme</p>
+                                ) : (
+                                  <div className="text-center space-y-3">
+                                    <p className="text-xs font-black text-[#E5B824]">¿Confirmas el marcador {partido.marcador}?</p>
+                                    <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#007AFF] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md active:scale-95 transition-all">Confirmar y Finalizar</button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -773,7 +803,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: PERFIL (MODIFICADA PARA B2B) */}
+        {/* VISTA: PERFIL */}
         {tab === 'perfil' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
             <div className={`w-full ${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden`}>
@@ -861,7 +891,7 @@ export default function App() {
         )}
 
         {/* =========================================
-            VISTA B2B: MASTER SCHEDULE DEL CLUB (PANTALLA COMPLETA)
+            VISTA B2B: MASTER SCHEDULE DEL CLUB (PANTALLA COMPLETA ANCHA)
         ========================================= */}
         {tab === 'club_agenda' && currentUser?.rol === 'club' && (
           <div className="w-full px-2 md:px-8 space-y-4 animate-in fade-in pb-20 max-w-[1400px] mx-auto">
@@ -888,7 +918,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Cuadrícula Dinámica - Diseño Compacto */}
+            {/* Cuadrícula Dinámica - Diseño Compacto para Monitor */}
             <div className={`${theme.card} border ${theme.border} rounded-2xl p-2 shadow-xl overflow-x-auto`}>
               <table className="w-full border-collapse min-w-[800px]">
                 <thead>
@@ -914,11 +944,7 @@ export default function App() {
                         const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? 'Bloqueado por Administración' : '';
                         
                         return (
-                          <td 
-                            key={c} 
-                            className={`p-0.5 border-l ${theme.border} h-10 md:h-12 relative group`}
-                            onClick={() => toggleBloqueoCancha(c, hora)}
-                          >
+                          <td key={c} className={`p-0.5 border-l ${theme.border} h-10 md:h-12 relative group`} onClick={() => toggleBloqueoCancha(c, hora)}>
                             {esVAd && (
                               <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded flex items-center justify-center cursor-help shadow-sm overflow-hidden">
                                 <span className="text-[9px] text-white font-black px-1 text-center truncate">VAd</span>
@@ -967,7 +993,7 @@ export default function App() {
         </div>
       )}
 
-      {/* NAVEGACIÓN INFERIOR (Se Oculta Automáticamente para el CLUB) */}
+      {/* NAVEGACIÓN INFERIOR */}
       {(!isLoggedIn || currentUser?.rol !== 'club') && (
         <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
           <div className="flex justify-between items-center max-w-sm mx-auto px-4">
