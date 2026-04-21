@@ -16,7 +16,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.14'; 
+  const APP_VERSION = '1.15'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -527,7 +527,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.14</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.15</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -779,7 +779,9 @@ export default function App() {
             <div className={`w-full ${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden`}>
               
               <div className="absolute top-0 left-0 w-full py-4 shadow-md transition-colors duration-300" style={{ backgroundColor: (isLoggedIn && currentUser?.color) ? currentUser.color : '#29C454' }}>
-                <p className="text-sm font-black tracking-[0.4em] uppercase text-white drop-shadow-sm">{isLoggedIn && currentUser && currentUser.rol !== 'club' ? getFuerza(currentUser.elo) : 'Modo Espectador'}</p>
+                <p className="text-sm font-black tracking-[0.4em] uppercase text-white drop-shadow-sm">
+                  {isLoggedIn && currentUser ? (currentUser.rol === 'club' ? 'Modo Club' : getFuerza(currentUser.elo)) : 'Modo Espectador'}
+                </p>
               </div>
 
               <div className="relative mt-12 mb-4">
@@ -859,41 +861,41 @@ export default function App() {
         )}
 
         {/* =========================================
-            VISTA B2B: MASTER SCHEDULE DEL CLUB (SEMANAL/DIARIA)
+            VISTA B2B: MASTER SCHEDULE DEL CLUB (PANTALLA COMPLETA)
         ========================================= */}
         {tab === 'club_agenda' && currentUser?.rol === 'club' && (
-          <div className="w-full max-w-6xl mx-auto space-y-6 animate-in fade-in pb-20 px-2 lg:px-0">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
+          <div className="w-full px-2 md:px-8 space-y-4 animate-in fade-in pb-20 max-w-[1400px] mx-auto">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
               <div>
                 <h2 className={`text-4xl font-black italic uppercase ${theme.text}`}>Punta Azul</h2>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#007AFF]">Master Schedule • Vista Semanal</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#007AFF]">Master Schedule • Vista Diaria</p>
               </div>
               
               {/* Barra Semanal Dinámica */}
-              <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 scrollbar-hide">
-                <button onClick={() => changeWeek(-1)} className={`flex items-center justify-center px-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95`}>◀</button>
+              <div className="flex gap-1 md:gap-2 w-full md:w-auto overflow-x-auto pb-2 scrollbar-hide">
+                <button onClick={() => changeWeek(-1)} className={`flex items-center justify-center px-3 rounded-lg font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95`}>◀</button>
                 {weekDays.map((date, i) => {
                   const isSelected = date.toLocaleDateString() === agendaDate.toLocaleDateString();
                   const dName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][date.getDay()];
                   return (
-                    <button key={i} onClick={() => setAgendaDate(date)} className={`flex flex-col items-center justify-center p-3 rounded-xl min-w-[3rem] transition-all border active:scale-95 ${isSelected ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-md' : `${theme.card} ${theme.text} ${theme.border}`}`}>
+                    <button key={i} onClick={() => setAgendaDate(date)} className={`flex flex-col items-center justify-center p-2 md:p-3 rounded-lg min-w-[3rem] transition-all border active:scale-95 ${isSelected ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-md' : `${theme.card} ${theme.text} ${theme.border}`}`}>
                       <span className="text-[9px] uppercase font-black opacity-70 mb-0.5">{dName}</span>
-                      <span className="text-lg font-black leading-none">{date.getDate()}</span>
+                      <span className="text-base md:text-lg font-black leading-none">{date.getDate()}</span>
                     </button>
                   );
                 })}
-                <button onClick={() => changeWeek(1)} className={`flex items-center justify-center px-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95`}>▶</button>
+                <button onClick={() => changeWeek(1)} className={`flex items-center justify-center px-3 rounded-lg font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95`}>▶</button>
               </div>
             </div>
 
-            {/* Cuadrícula Dinámica */}
-            <div className={`${theme.card} border ${theme.border} rounded-[2rem] p-4 shadow-xl overflow-x-auto`}>
-              <table className="w-full border-collapse min-w-[600px]">
+            {/* Cuadrícula Dinámica - Diseño Compacto */}
+            <div className={`${theme.card} border ${theme.border} rounded-2xl p-2 shadow-xl overflow-x-auto`}>
+              <table className="w-full border-collapse min-w-[800px]">
                 <thead>
                   <tr>
-                    <th className={`p-2 text-[10px] font-black uppercase ${theme.muted} text-right w-16 md:w-20`}>Hora</th>
+                    <th className={`p-2 text-[10px] font-black uppercase ${theme.muted} text-right w-16`}>Hora</th>
                     {[1,2,3,4,5,6,7,8,9,10].map(c => (
-                      <th key={c} className={`p-2 text-[10px] font-black uppercase ${theme.text} border-l ${theme.border}`}>
+                      <th key={c} className={`p-2 text-[11px] font-black uppercase ${theme.text} border-l ${theme.border}`}>
                         <span className="hidden md:inline">Cancha </span>{c}
                       </th>
                     ))}
@@ -902,7 +904,7 @@ export default function App() {
                 <tbody>
                   {[7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22].map(hora => (
                     <tr key={hora} className={`border-t ${theme.border} hover:bg-[#007AFF]/5 transition-colors`}>
-                      <td className={`p-3 text-[10px] font-black text-right ${theme.muted}`}>
+                      <td className={`p-2 text-[10px] font-black text-right ${theme.muted} align-middle`}>
                         {hora > 12 ? hora - 12 : hora}:00 {hora >= 12 ? 'PM' : 'AM'}
                       </td>
                       {[1,2,3,4,5,6,7,8,9,10].map(c => {
@@ -914,21 +916,21 @@ export default function App() {
                         return (
                           <td 
                             key={c} 
-                            className={`p-1 border-l ${theme.border} h-12 md:h-14 relative group`}
+                            className={`p-0.5 border-l ${theme.border} h-10 md:h-12 relative group`}
                             onClick={() => toggleBloqueoCancha(c, hora)}
                           >
                             {esVAd && (
-                              <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded-md flex items-center justify-center cursor-help shadow-sm overflow-hidden">
+                              <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded flex items-center justify-center cursor-help shadow-sm overflow-hidden">
                                 <span className="text-[9px] text-white font-black px-1 text-center truncate">VAd</span>
                               </div>
                             )}
                             {esBloqueo && (
-                              <div title={tooltipText} className="w-full h-full bg-red-500 rounded-md flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors">
+                              <div title={tooltipText} className="w-full h-full bg-red-500 rounded flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors">
                                 <span className="text-white text-[10px]">🔒</span>
                               </div>
                             )}
                             {!esVAd && !esBloqueo && (
-                              <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded-md border-2 border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
+                              <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
                             )}
                           </td>
                         );
