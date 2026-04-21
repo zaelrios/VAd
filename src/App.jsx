@@ -16,15 +16,15 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.9'; 
+  const APP_VERSION = '1.10'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
     if (versionGuardada !== APP_VERSION) {
-      console.log(`Actualizando de ${versionGuardada} a ${APP_VERSION}. Limpiando caché...`);
       localStorage.setItem('vad_app_version', APP_VERSION);
-      if ('caches' in window) { caches.keys().then((names) => { names.forEach(name => caches.delete(name)); }); }
-      window.location.reload(true); 
+      if ('caches' in window) caches.keys().then(names => names.forEach(n => caches.delete(n)));
+      if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+      window.location.href = window.location.pathname + '?v=' + APP_VERSION;
     }
   }, []);
 
@@ -509,7 +509,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.9</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.10</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -529,9 +529,20 @@ export default function App() {
               <h2 className={`${theme.text} font-black uppercase tracking-[0.4em] text-[13px] mb-4 drop-shadow-sm`}>Donde el tennis se vive</h2>
               <h1 className="text-7xl font-black italic tracking-tighter leading-[0.9] uppercase mb-8 text-[#29C454]">VENTAJA <br /> <span className="text-transparent" style={{ WebkitTextStroke: '2px #1268B0' }}>ADENTRO.</span></h1>
               <p className={`${theme.text} text-lg max-w-sm leading-relaxed italic border-t-2 border-[#29C454] pt-4`}>La comunidad que premia a los que sí aparecen.<br/>Matchmaking inteligente con sistema ELO para un ranking justo y real.</p>
-              <button onClick={() => isLoggedIn ? setTab('jugar') : setTab('auth')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all hover:brightness-105">
-                {isLoggedIn ? "Buscar rival ➜" : "Únete al Circuito ➜"}
-              </button>
+              {isLoggedIn ? (
+                <button onClick={() => setTab('jugar')} className="mt-8 w-fit mx-auto block px-10 bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-xl shadow-[#29C454]/30 active:scale-95 transition-all">
+                  Buscar rival ➜
+                </button>
+              ) : (
+                <div className="mt-8 flex gap-3 justify-center w-full max-w-sm mx-auto px-4">
+                  <button onClick={() => { setIsRegistering(false); setTab('auth'); }} className={`flex-1 ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg active:scale-95 transition-all`}>
+                    Iniciar Sesión
+                  </button>
+                  <button onClick={() => { setIsRegistering(true); setTab('auth'); }} className="flex-1 bg-[#29C454] text-white py-4 rounded-2xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">
+                    Registrarte
+                  </button>
+                </div>
+              )}
             </section>
 
             <section className="w-full text-left space-y-6">
