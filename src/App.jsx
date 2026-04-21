@@ -16,7 +16,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.11'; 
+  const APP_VERSION = '1.12'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -51,7 +51,10 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [registrationName, setRegistrationName] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [regNombre, setRegNombre] = useState('');
+  const [regApellido, setRegApellido] = useState('');
+  const [regStep, setRegStep] = useState(1);
 
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
@@ -371,29 +374,37 @@ export default function App() {
     });
   };
 
-  const handleAuthSubmit = async (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault(); setAuthError(''); setAuthLoading(true); const fullPhone = `${phonePrefix}${phoneNumber}`;
     try {
       const { data: existingUser } = await supabase.from('Perfiles').select('*').eq('telefono', fullPhone).maybeSingle();
       if (existingUser) {
         if (existingUser.pin === pin) { setCurrentUser(existingUser); setIsLoggedIn(true); setTab(existingUser.rol === 'club' ? 'club_agenda' : 'home'); localStorage.setItem('vad_session', JSON.stringify(existingUser)); } 
         else { setAuthError('PIN incorrecto.'); }
-      } else { setIsRegistering(true); }
+      } else { setAuthError('Número no registrado. Regístrate primero.'); }
     } catch (error) { setAuthError('Error de conexión.'); } finally { setAuthLoading(false); }
   };
 
-  const handleCompleteRegistration = async (e) => {
-    e.preventDefault(); const nameParts = registrationName.trim().split(/\s+/);
-    if (nameParts.length < 2) { setAuthError('Ingresa nombre y apellido reales.'); return; }
-    setAuthError(''); setAuthLoading(true); const fullPhone = `${phonePrefix}${phoneNumber}`;
+  const handleRegisterCheckPhone = async (e) => {
+    e.preventDefault(); setAuthError(''); setAuthLoading(true); const fullPhone = `${phonePrefix}${phoneNumber}`;
     try {
-      const { data: newUser, error: insertError } = await supabase.from('Perfiles').insert([{ telefono: fullPhone, pin: pin, nombre: registrationName.trim(), elo: 1200, confianza: 5.0, racha_asistencia: 0, comodines: 2, rol: 'gratis' }]).select().single();
-      if (insertError) throw insertError;
-      setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegistrationName(''); setTab('home'); localStorage.setItem('vad_session', JSON.stringify(newUser));
+      const { data: existingUser } = await supabase.from('Perfiles').select('id').eq('telefono', fullPhone).maybeSingle();
+      if (existingUser) setAuthError('Este número ya está registrado.');
+      else setRegStep(2);
+    } catch (error) { setAuthError('Error al verificar el número.'); } finally { setAuthLoading(false); }
+  };
+
+  const handleCompleteRegistration = async (e) => {
+    e.preventDefault(); if (pin.length < 4) { setAuthError('El PIN debe tener 4 dígitos.'); return; }
+    setAuthError(''); setAuthLoading(true); const fullPhone = `${phonePrefix}${phoneNumber}`; const fullName = `${regNombre.trim()} ${regApellido.trim()}`;
+    try {
+      const { data: newUser, error } = await supabase.from('Perfiles').insert([{ telefono: fullPhone, pin: pin, nombre: fullName, elo: 1200, confianza: 5.0, racha_asistencia: 0, comodines: 2, rol: 'gratis' }]).select().single();
+      if (error) throw error;
+      setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegNombre(''); setRegApellido(''); setRegStep(1); setPin(''); setTab('home'); localStorage.setItem('vad_session', JSON.stringify(newUser));
     } catch (error) { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
   };
 
-  const handleLogout = () => {setIsLoggedIn(false); setCurrentUser(null); localStorage.removeItem('vad_session'); window.location.reload(true);};
+  const handleLogout = () => { setIsLoggedIn(false); setCurrentUser(null); localStorage.removeItem('vad_session'); window.location.reload(true); };
     
   const handleSearchSubmit = async (e) => {
     e.preventDefault(); setSearchError(''); 
@@ -509,7 +520,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.11</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.12</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -627,19 +638,10 @@ export default function App() {
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
             {!isRegistering ? (
               <>
-                <div className="text-center"><h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight mb-2`}>Acceso Oficial</h2><p className={`${theme.muted} text-sm`}>Tu celular es tu identidad.</p></div>
-                <form onSubmit={handleAuthSubmit} className="space-y-6">
-                  <div className="space-y-2 text-left">
-                    <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Celular</label>
-                    <div className="flex gap-2">
-                      <select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-2xl px-2 py-4 ${theme.text} font-bold shadow-sm appearance-none cursor-pointer`}><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option></select>
-                      <input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className={`w-2/3 ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold tracking-widest focus:outline-none focus:border-[#29C454]`} />
-                    </div>
-                  </div>
-                  <div className="space-y-2 text-left mt-2">
-                    <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>PIN (4 dígitos)</label>
-                    <input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] ${theme.text} font-black focus:outline-none focus:border-[#29C454]`} />
-                  </div>
+                <div className="text-center"><h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight mb-2`}>Iniciar Sesión</h2><p className={`${theme.muted} text-sm`}>Ingresa con tu celular y PIN.</p></div>
+                <form onSubmit={handleLoginSubmit} className="space-y-6">
+                  <div className="space-y-2 text-left"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Celular</label><div className="flex gap-2"><select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-2xl px-2 py-4 ${theme.text} font-bold shadow-sm appearance-none cursor-pointer`}><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option></select><input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className={`w-2/3 ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold tracking-widest focus:outline-none focus:border-[#29C454]`} /></div></div>
+                  <div className="space-y-2 text-left mt-2"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>PIN (4 dígitos)</label><input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] ${theme.text} font-black focus:outline-none focus:border-[#29C454]`} /></div>
                   {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center animate-in fade-in">{authError}</div>}
                   <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">{authLoading ? 'Conectando...' : 'Entrar al Circuito ➜'}</button>
                 </form>
@@ -647,12 +649,24 @@ export default function App() {
               </>
             ) : (
               <div className="animate-in fade-in space-y-8">
-                <div className="text-center"><h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight mb-2`}>Nuevo Jugador</h2><p className={`${theme.muted} text-sm`}>Crea tu perfil ahora.</p></div>
-                <form onSubmit={handleCompleteRegistration} className="space-y-6">
-                  <input type="text" required placeholder="Nombre y Apellido" value={registrationName} onChange={(e) => setRegistrationName(e.target.value)} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold focus:outline-none focus:border-[#29C454]`} />
-                  {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{authError}</div>}
-                  <button type="submit" disabled={authLoading} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg`}>Completar Registro ➜</button>
-                </form>
+                <div className="text-center"><h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight mb-2`}>Nuevo Jugador</h2><p className={`${theme.muted} text-sm`}>{regStep === 1 ? 'Ingresa tus datos' : 'Crea tu PIN de seguridad'}</p></div>
+                {regStep === 1 ? (
+                  <form onSubmit={handleRegisterCheckPhone} className="space-y-4">
+                    <input type="text" required placeholder="Nombre" value={regNombre} onChange={(e) => setRegNombre(e.target.value)} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold focus:outline-none focus:border-[#29C454]`} />
+                    <input type="text" required placeholder="Apellido" value={regApellido} onChange={(e) => setRegApellido(e.target.value)} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold focus:outline-none focus:border-[#29C454]`} />
+                    <div className="flex gap-2"><select value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className={`w-1/3 ${theme.card} border ${theme.border} rounded-2xl px-2 py-4 ${theme.text} font-bold shadow-sm appearance-none cursor-pointer`}><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option></select><input type="tel" required maxLength="10" placeholder="123 456 7890" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))} className={`w-2/3 ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold tracking-widest focus:outline-none focus:border-[#29C454]`} /></div>
+                    {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{authError}</div>}
+                    <button type="submit" disabled={authLoading} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all`}>{authLoading ? 'Verificando...' : 'Siguiente ➜'}</button>
+                    <button type="button" onClick={() => { setIsRegistering(false); setAuthError(''); }} className={`w-full text-[10px] font-black uppercase tracking-widest pt-4 ${theme.muted}`}>Ya tengo cuenta</button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleCompleteRegistration} className="space-y-4">
+                    <div className="space-y-2 text-left"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>PIN (4 dígitos)</label><input type="password" inputMode="numeric" required maxLength="4" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className={`w-full ${theme.card} border ${theme.border} rounded-2xl px-5 py-4 text-center text-2xl tracking-[1em] ${theme.text} font-black focus:outline-none focus:border-[#29C454]`} /></div>
+                    {authError && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center">{authError}</div>}
+                    <button type="submit" disabled={authLoading} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all mt-4">{authLoading ? 'Creando...' : 'Finalizar Registro ➜'}</button>
+                    <button type="button" onClick={() => setRegStep(1)} className={`w-full text-[10px] font-black uppercase tracking-widest pt-4 ${theme.muted}`}>Volver</button>
+                  </form>
+                )}
               </div>
             )}
           </div>
