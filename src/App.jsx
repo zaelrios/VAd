@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.21'; 
+  const APP_VERSION = '1.22'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -80,48 +80,43 @@ export default function App() {
   const [listaUsuarios, setListaUsuarios] = useState([]);
   const [listaSugerencias, setListaSugerencias] = useState([]);
 
-  // --- ESTADOS PARA LA AGENDA DEL CLUB ---
-  const [agendaDate, setAgendaDate] = useState(new Date());
+  // --- ESTADOS PARA LA AGENDA DEL CLUB (B2B) ---
+  const getFormatDate = (d) => { const off = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - off).toISOString().split('T')[0]; };
+  
+  const [baseWeekDate, setBaseWeekDate] = useState(new Date());
+  const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]); // Arreglo de varios días
   const [clubPartidos, setClubPartidos] = useState([]);
-  const [filtroCanchas, setFiltroCanchas] = useState([1,2,3,4,5,6,7,8,9,10]); // Control de canchas visibles
+  const [filtroCanchas, setFiltroCanchas] = useState([1,2,3,4,5,6,7,8,9,10]); // Canchas visibles
+  const [rangoHoras, setRangoHoras] = useState({ start: 7, end: 22 }); // Rango de horas
 
-  const toggleFiltroCancha = (num) => {
-    setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
+  const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
+  
+  const toggleSelectedDay = (dateObj) => {
+    const dateStr = getFormatDate(dateObj);
+    setSelectedDays(prev => prev.includes(dateStr) ? (prev.length > 1 ? prev.filter(d => d !== dateStr) : prev) : [...prev, dateStr].sort());
   };
 
-  const getAgendaDateStr = (dateObj) => {
-    const d = dateObj || agendaDate;
-    const offset = d.getTimezoneOffset() * 60000;
-    return new Date(d.getTime() - offset).toISOString().split('T')[0];
-  };
+  const changeWeek = (dir) => { const n = new Date(baseWeekDate); n.setDate(n.getDate() + (dir * 7)); setBaseWeekDate(n); };
 
-  const changeWeek = (dir) => {
-    const newDate = new Date(agendaDate);
-    newDate.setDate(newDate.getDate() + (dir * 7));
-    setAgendaDate(newDate);
-  };
-
-  const startOfWeek = new Date(agendaDate);
+  const startOfWeek = new Date(baseWeekDate);
   const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1; 
   startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
   const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
 
-  
-
   const fetchClubPartidos = async () => {
     if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
     try {
-      const { data: matches, error } = await supabase.from('partidos').select('*').eq('fecha', getAgendaDateStr(agendaDate));
+      const { data: matches, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
       if (error) throw error;
       if (matches && matches.length > 0) {
         const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
         const { data: perfiles } = await supabase.from('Perfiles').select('id, nombre').in('id', userIds);
-        const perfilesMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
-        const enriched = matches.map(m => ({ ...m, j1_nombre: perfilesMap[m.jugador1_id] || 'Club', j2_nombre: perfilesMap[m.jugador2_id] || 'Reservado' }));
-        setClubPartidos(enriched);
+        const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
+        setClubPartidos(matches.map(m => ({ ...m, j1_nombre: pMap[m.jugador1_id] || 'Club', j2_nombre: pMap[m.jugador2_id] || 'Reservado' })));
       } else { setClubPartidos([]); }
-    } catch (error) { console.error("Error cargando agenda:", error); }
+    } catch (error) { console.error("Error agenda:", error); }
   };
+  // ---------------------------------------------
 
   const cargarUsuariosAdmin = async () => {
     if (currentUser?.rol !== 'admin') return;
@@ -205,7 +200,7 @@ export default function App() {
     } catch (error) { console.error(error); }
   };
 
-  useEffect(() => { fetchPartidos(); fetchClubPartidos(); if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); }, [currentUser, tab, agendaDate]);
+  useEffect(() => { fetchPartidos(); fetchClubPartidos(); if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); }, [currentUser, tab, selectedDays.join(',')]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -215,7 +210,7 @@ export default function App() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [currentUser, agendaDate]);
+  }, [currentUser, selectedDays.join(',')]);
 
   const formatTime = (time24) => {
     if (!time24) return ''; const [hourString, minute] = time24.split(':');
@@ -493,33 +488,22 @@ export default function App() {
     if (dist < -50) { const idx = ['home', 'jugar', 'partidos', 'perfil'].indexOf(tab); if (idx > 0) setTab(['home', 'jugar', 'partidos', 'perfil'][idx - 1]); }
   };
 
-  const obtenerEstadoCelda = (canchaId, hora) => {
-    const cellStartMins = hora * 60;
-    const cellEndMins = cellStartMins + 60;
-    return clubPartidos.find(p => {
-      if (p.cancha_numero !== canchaId) return false;
-      const startMins = parseInt(p.hora_inicio.split(':')[0], 10) * 60 + parseInt(p.hora_inicio.split(':')[1], 10);
-      const endMins = parseInt(p.hora_fin.split(':')[0], 10) * 60 + parseInt(p.hora_fin.split(':')[1], 10);
-      return startMins < cellEndMins && endMins > cellStartMins;
-    });
+  const obtenerEstadoCelda = (canchaId, hora, fechaStr) => {
+    const cellStartMins = hora * 60; const cellEndMins = cellStartMins + 60;
+    return clubPartidos.find(p => p.fecha === fechaStr && p.cancha_numero === canchaId && (parseInt(p.hora_inicio.split(':')[0]) * 60 + parseInt(p.hora_inicio.split(':')[1])) < cellEndMins && (parseInt(p.hora_fin.split(':')[0]) * 60 + parseInt(p.hora_fin.split(':')[1])) > cellStartMins);
   };
 
-  const toggleBloqueoCancha = async (cancha, hora) => {
-    const partido = obtenerEstadoCelda(cancha, hora);
+  const toggleBloqueoCancha = async (cancha, hora, fechaStr) => {
+    const partido = obtenerEstadoCelda(cancha, hora, fechaStr);
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
-         mostrarConfirmacion("Desbloquear Cancha", `¿Deseas liberar la Cancha ${cancha} (Horario de ${formatTime(partido.hora_inicio)} a ${formatTime(partido.hora_fin)})?`, async () => {
+         mostrarConfirmacion("Desbloquear Cancha", `¿Liberar la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} de ${formatTime(partido.hora_inicio)} a ${formatTime(partido.hora_fin)}?`, async () => {
            await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos(); mostrarAlerta("Cancha Liberada", "La cancha vuelve a estar disponible.");
          });
-      } else {
-         mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido confirmado. Mueve el partido o declara una emergencia antes de bloquear.");
-      }
+      } else { mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido confirmado."); }
     } else {
-      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} a las ${hora}:00 por 1 hora para uso interno?`, async () => {
-         const targetDate = getAgendaDateStr();
-         const startTimeStr = `${String(hora).padStart(2,'0')}:00`;
-         const endTimeStr = `${String(hora+1).padStart(2,'0')}:00`;
-         await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: targetDate, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: 'Dura', cancha_numero: cancha, estado: 'bloqueo_admin' }]);
+      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} a las ${hora}:00?`, async () => {
+         await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: fechaStr, hora_inicio: `${String(hora).padStart(2,'0')}:00`, hora_fin: `${String(hora+1).padStart(2,'0')}:00`, superficie: 'Dura', cancha_numero: cancha, estado: 'bloqueo_admin' }]);
          fetchClubPartidos();
       });
     }
@@ -530,7 +514,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.21</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.22</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -927,91 +911,128 @@ export default function App() {
         )}
 
         {/* =========================================
-            VISTA B2B: MASTER SCHEDULE DEL CLUB (PANTALLA COMPLETA ANCHA)
-        ========================================= */}
-        {/* =========================================
             VISTA B2B: MASTER SCHEDULE (FULL SCREEN + FILTROS)
         ========================================= */}
-        {tab === 'club_agenda' && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') && (
-          <div className="w-full space-y-6 animate-in fade-in pb-20">
-            
-            {/* Cabecera Centrada */}
-            <div className="flex flex-col items-center text-center space-y-4 mb-4">
-              <div>
-                <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Punta Azul</h2>
-                <p className="text-[10px] font-bold uppercase tracking-[0.5em] text-[#007AFF] mt-1">Control Maestro de Canchas</p>
-              </div>
+        {tab === 'club_agenda' && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') && (() => {
+          
+          // Generamos las columnas basadas en los Días y las Canchas seleccionadas
+          const columnasGrid = selectedDays.flatMap(day => filtroCanchas.map(c => ({ day, c })));
+          // Generamos las filas basadas en el rango de horas
+          const horasGrid = Array.from({length: rangoHoras.end - rangoHoras.start + 1}, (_, i) => rangoHoras.start + i);
+
+          return (
+            <div className="w-full px-2 md:px-8 space-y-6 animate-in fade-in pb-20 max-w-[1600px] mx-auto">
               
-              {/* Selector de Fecha Centrado */}
-              <div className="flex items-center gap-3 bg-white/5 p-2 rounded-2xl border border-white/10 shadow-inner">
-                <button onClick={() => changeWeek(-1)} className={`p-3 ${theme.card} rounded-xl shadow-md active:scale-95 border ${theme.border} text-[#007AFF] font-black`}>◀</button>
-                <div className="flex gap-2 overflow-x-auto max-w-[90vw] md:max-w-none pb-1 scrollbar-hide">
-                  {weekDays.map((date, i) => {
-                    const isSelected = date.toLocaleDateString() === agendaDate.toLocaleDateString();
-                    const dName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][date.getDay()];
-                    return (
-                      <button key={i} onClick={() => setAgendaDate(date)} className={`flex flex-col items-center justify-center p-3 rounded-xl min-w-[4.5rem] transition-all border active:scale-95 ${isSelected ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-lg scale-105' : `${theme.card} ${theme.text} ${theme.border}`}`}>
-                        <span className="text-[10px] uppercase font-black opacity-70">{dName}</span>
-                        <span className="text-xl font-black">{date.getDate()}</span>
-                      </button>
-                    );
-                  })}
+              {/* CABECERA CENTRADA Y BOTONERA */}
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div>
+                  <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Punta Azul</h2>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#007AFF] mt-1">Control Maestro de Canchas</p>
                 </div>
-                <button onClick={() => changeWeek(1)} className={`p-3 ${theme.card} rounded-xl shadow-md active:scale-95 border ${theme.border} text-[#007AFF] font-black`}>▶</button>
-              </div>
-
-              {/* Selector de Canchas (Filtros) */}
-              <div className="flex flex-wrap justify-center gap-2 mt-2">
-                <p className={`text-[9px] font-black uppercase tracking-widest w-full mb-1 opacity-50 ${theme.text}`}>Filtrar Canchas:</p>
-                {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                  <button 
-                    key={n} 
-                    onClick={() => toggleFiltroCancha(n)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all border ${filtroCanchas.includes(n) ? 'bg-[#29C454] text-white border-[#29C454]' : `${theme.card} ${theme.muted} ${theme.border} opacity-40`}`}
-                  >
-                    C{n}
-                  </button>
-                ))}
-                <button onClick={() => setFiltroCanchas([1,2,3,4,5,6,7,8,9,10])} className={`px-3 py-1.5 rounded-lg text-[10px] font-black ${theme.bg} ${theme.text} border ${theme.border} active:scale-95`}>VER TODAS</button>
-              </div>
-            </div>
-
-            {/* Tabla Expandida y Filtrada */}
-            <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto`}>
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr>
-                    <th className={`p-4 text-[11px] font-black uppercase ${theme.muted} text-right w-24`}>Hora</th>
-                    {filtroCanchas.map(c => (
-                      <th key={c} className={`p-4 text-[12px] font-black uppercase ${theme.text} border-l ${theme.border}`}>Cancha {c}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {[7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22].map(hora => (
-                    <tr key={hora} className={`border-t ${theme.border} hover:bg-[#007AFF]/5 transition-colors`}>
-                      <td className={`p-4 text-[11px] font-black text-right ${theme.muted}`}>
-                        {hora > 12 ? hora - 12 : hora}:00 {hora >= 12 ? 'PM' : 'AM'}
-                      </td>
-                      {filtroCanchas.map(c => {
-                        const partido = obtenerEstadoCelda(c, hora);
-                        const esVAd = partido && partido.estado !== 'bloqueo_admin';
-                        const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+                
+                {/* Panel de Filtros */}
+                <div className={`w-full max-w-4xl ${theme.card} border ${theme.border} p-4 rounded-3xl shadow-sm space-y-4`}>
+                  
+                  {/* Selector de Días (Multi-Select) */}
+                  <div className="flex items-center gap-2 justify-center bg-[#007AFF]/5 p-2 rounded-2xl border border-[#007AFF]/10">
+                    <button onClick={() => changeWeek(-1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>◀</button>
+                    <div className="flex gap-2 overflow-x-auto max-w-[80vw] md:max-w-none pb-1 scrollbar-hide px-2">
+                      {weekDays.map((date, i) => {
+                        const dateStr = getFormatDate(date);
+                        const isSelected = selectedDays.includes(dateStr);
+                        const dName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][date.getDay()];
                         return (
-                          <td key={c} className={`p-1 border-l ${theme.border} h-16 relative group`} onClick={() => toggleBloqueoCancha(c, hora)}>
-                            {esVAd && <div title={`Partido VAd Confirmado:\n${partido.j1_nombre} vs ${partido.j2_nombre}`} className="w-full h-full bg-[#007AFF] rounded-lg flex items-center justify-center cursor-help shadow-md"><span className="text-[10px] text-white font-black">VAd</span></div>}
-                            {esBloqueo && <div title="Cancha Bloqueada por Administración" className="w-full h-full bg-red-500 rounded-lg flex items-center justify-center cursor-pointer shadow-md hover:bg-red-600 transition-colors"><span className="text-white text-xs">🔒</span></div>}
-                            {!esVAd && !esBloqueo && <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded-lg border-2 border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>}
-                          </td>
+                          <button key={i} onClick={() => toggleSelectedDay(date)} className={`flex flex-col items-center justify-center p-2 rounded-xl min-w-[4rem] transition-all border active:scale-95 ${isSelected ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-md scale-105' : `${theme.bg} ${theme.text} ${theme.border}`}`}>
+                            <span className="text-[9px] uppercase font-black opacity-70 mb-0.5">{dName}</span>
+                            <span className="text-lg font-black leading-none">{date.getDate()}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button onClick={() => changeWeek(1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>▶</button>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8 pt-2">
+                    {/* Selector de Canchas */}
+                    <div className="flex flex-wrap justify-center items-center gap-1.5">
+                      <span className={`text-[10px] font-black uppercase opacity-40 mr-1 ${theme.text}`}>Canchas:</span>
+                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                        <button key={n} onClick={() => toggleFiltroCancha(n)} className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all border ${filtroCanchas.includes(n) ? 'bg-[#29C454] text-white border-[#29C454] shadow-sm' : `${theme.bg} ${theme.muted} ${theme.border}`}`}>
+                          C{n}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Selector de Horas */}
+                    <div className={`flex items-center gap-2 md:border-l ${theme.border} md:pl-8`}>
+                      <span className={`text-[10px] font-black uppercase opacity-40 ${theme.text}`}>De:</span>
+                      <select value={rangoHoras.start} onChange={e => setRangoHoras(p => ({...p, start: Number(e.target.value)}))} className={`bg-transparent border ${theme.border} rounded-lg p-1.5 text-xs font-black ${theme.text} focus:outline-none`}>
+                        {[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22].map(h => <option key={h} value={h}>{h}:00</option>)}
+                      </select>
+                      <span className={`text-[10px] font-black uppercase opacity-40 ${theme.text}`}>Hasta:</span>
+                      <select value={rangoHoras.end} onChange={e => setRangoHoras(p => ({...p, end: Number(e.target.value)}))} className={`bg-transparent border ${theme.border} rounded-lg p-1.5 text-xs font-black ${theme.text} focus:outline-none`}>
+                        {[8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24].map(h => <option key={h} value={h}>{h}:00</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  
+                </div>
+              </div>
+
+              {/* CUADRÍCULA RESULTANTE (Dinámica) */}
+              <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto`}>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      <th className={`p-4 text-[11px] font-black uppercase ${theme.muted} text-right w-20 sticky left-0 z-10 ${theme.card}`}>Hora</th>
+                      {columnasGrid.map(col => {
+                        const [y, m, d] = col.day.split('-');
+                        return (
+                          <th key={`${col.day}-${col.c}`} className={`p-3 text-[11px] font-black uppercase ${theme.text} border-l ${theme.border} min-w-[80px]`}>
+                            <span className="text-[#007AFF] opacity-70 mr-1">{d}/{m}</span> C{col.c}
+                          </th>
                         );
                       })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {horasGrid.map(hora => (
+                      <tr key={hora} className={`border-t ${theme.border} hover:bg-[#007AFF]/5 transition-colors`}>
+                        <td className={`p-4 text-[10px] font-black text-right ${theme.muted} sticky left-0 z-10 ${theme.card}`}>
+                          {hora > 12 ? hora - 12 : hora}:00 {hora >= 12 ? 'PM' : 'AM'}
+                        </td>
+                        {columnasGrid.map(col => {
+                          const partido = obtenerEstadoCelda(col.c, hora, col.day);
+                          const esVAd = partido && partido.estado !== 'bloqueo_admin';
+                          const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+                          const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? 'Bloqueado por Administración' : '';
+                          
+                          return (
+                            <td key={`${col.day}-${col.c}`} className={`p-1 border-l ${theme.border} h-14 relative group`} onClick={() => toggleBloqueoCancha(col.c, hora, col.day)}>
+                              {esVAd && (
+                                <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded-md flex items-center justify-center cursor-help shadow-sm overflow-hidden">
+                                  <span className="text-[9px] text-white font-black px-1 text-center truncate">VAd</span>
+                                </div>
+                              )}
+                              {esBloqueo && (
+                                <div title={tooltipText} className="w-full h-full bg-red-500 rounded-md flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors">
+                                  <span className="text-white text-[10px]">🔒</span>
+                                </div>
+                              )}
+                              {!esVAd && !esBloqueo && (
+                                <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded-md border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
       </main>
 
