@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.22'; 
+  const APP_VERSION = '1.23'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -488,13 +488,19 @@ export default function App() {
     if (dist < -50) { const idx = ['home', 'jugar', 'partidos', 'perfil'].indexOf(tab); if (idx > 0) setTab(['home', 'jugar', 'partidos', 'perfil'][idx - 1]); }
   };
 
-  const obtenerEstadoCelda = (canchaId, hora, fechaStr) => {
-    const cellStartMins = hora * 60; const cellEndMins = cellStartMins + 60;
-    return clubPartidos.find(p => p.fecha === fechaStr && p.cancha_numero === canchaId && (parseInt(p.hora_inicio.split(':')[0]) * 60 + parseInt(p.hora_inicio.split(':')[1])) < cellEndMins && (parseInt(p.hora_fin.split(':')[0]) * 60 + parseInt(p.hora_fin.split(':')[1])) > cellStartMins);
+  const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
+    const cellStartMins = horaFloat * 60;
+    const cellEndMins = cellStartMins + 30; // La celda ahora mide exactamente 30 minutos
+    return clubPartidos.find(p => {
+      if (p.cancha_numero !== canchaId || p.fecha !== fechaStr) return false;
+      const startMins = parseInt(p.hora_inicio.split(':')[0], 10) * 60 + parseInt(p.hora_inicio.split(':')[1], 10);
+      const endMins = parseInt(p.hora_fin.split(':')[0], 10) * 60 + parseInt(p.hora_fin.split(':')[1], 10);
+      return startMins < cellEndMins && endMins > cellStartMins;
+    });
   };
 
-  const toggleBloqueoCancha = async (cancha, hora, fechaStr) => {
-    const partido = obtenerEstadoCelda(cancha, hora, fechaStr);
+  const toggleBloqueoCancha = async (cancha, horaFloat, fechaStr) => {
+    const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
          mostrarConfirmacion("Desbloquear Cancha", `¿Liberar la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} de ${formatTime(partido.hora_inicio)} a ${formatTime(partido.hora_fin)}?`, async () => {
@@ -502,8 +508,14 @@ export default function App() {
          });
       } else { mostrarAlerta("Horario Ocupado", "Esta cancha tiene un partido confirmado."); }
     } else {
-      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} a las ${hora}:00?`, async () => {
-         await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: fechaStr, hora_inicio: `${String(hora).padStart(2,'0')}:00`, hora_fin: `${String(hora+1).padStart(2,'0')}:00`, superficie: 'Dura', cancha_numero: cancha, estado: 'bloqueo_admin' }]);
+      const hInt = Math.floor(horaFloat); const mInt = horaFloat % 1 === 0 ? 0 : 30;
+      const endHora = horaFloat + 1; const endH = Math.floor(endHora); const endM = endHora % 1 === 0 ? 0 : 30;
+      const displayTime = `${hInt > 12 ? hInt - 12 : hInt}:${mInt === 0 ? '00' : '30'} ${hInt >= 12 ? 'PM' : 'AM'}`;
+      
+      mostrarConfirmacion("Bloquear Cancha", `¿Bloquear la Cancha ${cancha} el ${fechaStr.split('-').reverse().join('/')} a las ${displayTime} por 1 hora?`, async () => {
+         const startTimeStr = `${String(hInt).padStart(2,'0')}:${String(mInt).padStart(2,'0')}:00`;
+         const endTimeStr = `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}:00`;
+         await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, fecha: fechaStr, hora_inicio: startTimeStr, hora_fin: endTimeStr, superficie: 'Dura', cancha_numero: cancha, estado: 'bloqueo_admin' }]);
          fetchClubPartidos();
       });
     }
@@ -514,7 +526,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.22</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.23</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -917,8 +929,9 @@ export default function App() {
           
           // Generamos las columnas basadas en los Días y las Canchas seleccionadas
           const columnasGrid = selectedDays.flatMap(day => filtroCanchas.map(c => ({ day, c })));
-          // Generamos las filas basadas en el rango de horas
-          const horasGrid = Array.from({length: rangoHoras.end - rangoHoras.start + 1}, (_, i) => rangoHoras.start + i);
+          // Generamos las filas en intervalos de 30 minutos (0.5)
+          const horasGrid = [];
+          for (let h = rangoHoras.start; h <= rangoHoras.end; h += 0.5) { horasGrid.push(h); }
 
           return (
             <div className="w-full px-2 md:px-8 space-y-6 animate-in fade-in pb-20 max-w-[1600px] mx-auto">
@@ -979,7 +992,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* CUADRÍCULA RESULTANTE (Dinámica) */}
+              {/* CUADRÍCULA RESULTANTE (Dinámica a 30 mins) */}
               <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto`}>
                 <table className="w-full border-collapse">
                   <thead>
@@ -988,7 +1001,7 @@ export default function App() {
                       {columnasGrid.map(col => {
                         const [y, m, d] = col.day.split('-');
                         return (
-                          <th key={`${col.day}-${col.c}`} className={`p-3 text-[11px] font-black uppercase ${theme.text} border-l ${theme.border} min-w-[80px]`}>
+                          <th key={`${col.day}-${col.c}`} className={`p-3 text-[11px] font-black uppercase ${theme.text} border-l ${theme.border} min-w-[90px]`}>
                             <span className="text-[#007AFF] opacity-70 mr-1">{d}/{m}</span> C{col.c}
                           </th>
                         );
@@ -996,37 +1009,47 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {horasGrid.map(hora => (
-                      <tr key={hora} className={`border-t ${theme.border} hover:bg-[#007AFF]/5 transition-colors`}>
-                        <td className={`p-4 text-[10px] font-black text-right ${theme.muted} sticky left-0 z-10 ${theme.card}`}>
-                          {hora > 12 ? hora - 12 : hora}:00 {hora >= 12 ? 'PM' : 'AM'}
-                        </td>
-                        {columnasGrid.map(col => {
-                          const partido = obtenerEstadoCelda(col.c, hora, col.day);
-                          const esVAd = partido && partido.estado !== 'bloqueo_admin';
-                          const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-                          const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? 'Bloqueado por Administración' : '';
-                          
-                          return (
-                            <td key={`${col.day}-${col.c}`} className={`p-1 border-l ${theme.border} h-14 relative group`} onClick={() => toggleBloqueoCancha(col.c, hora, col.day)}>
-                              {esVAd && (
-                                <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded-md flex items-center justify-center cursor-help shadow-sm overflow-hidden">
-                                  <span className="text-[9px] text-white font-black px-1 text-center truncate">VAd</span>
-                                </div>
-                              )}
-                              {esBloqueo && (
-                                <div title={tooltipText} className="w-full h-full bg-red-500 rounded-md flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors">
-                                  <span className="text-white text-[10px]">🔒</span>
-                                </div>
-                              )}
-                              {!esVAd && !esBloqueo && (
-                                <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded-md border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                    {horasGrid.map(horaFloat => {
+                      const hInt = Math.floor(horaFloat);
+                      const mInt = horaFloat % 1 === 0 ? 0 : 30;
+                      const isHalfHour = mInt === 30;
+                      
+                      return (
+                        <tr key={horaFloat} className={`${isHalfHour ? `border-t border-dashed ${theme.border} opacity-80` : `border-t-2 ${theme.border}`} hover:bg-[#007AFF]/5 transition-colors`}>
+                          <td className={`p-2 md:p-3 text-[10px] font-black text-right ${theme.muted} sticky left-0 z-10 ${theme.card}`}>
+                            {hInt > 12 ? hInt - 12 : hInt}:{mInt === 0 ? '00' : '30'} {hInt >= 12 ? 'PM' : 'AM'}
+                          </td>
+                          {columnasGrid.map(col => {
+                            const partido = obtenerEstadoCelda(col.c, horaFloat, col.day);
+                            const esVAd = partido && partido.estado !== 'bloqueo_admin';
+                            const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+                            const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? 'Bloqueado por Administración' : '';
+                            
+                            return (
+                              <td key={`${col.day}-${col.c}`} className={`p-0.5 border-l ${theme.border} h-14 relative group`} onClick={() => toggleBloqueoCancha(col.c, horaFloat, col.day)}>
+                                {esVAd && (
+                                  <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded flex items-center justify-center cursor-help shadow-sm overflow-hidden px-1">
+                                    <span className="text-[8px] text-white font-black text-center leading-tight truncate">
+                                      {partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
+                                    </span>
+                                  </div>
+                                )}
+                                {esBloqueo && (
+                                  <div title={tooltipText} className="w-full h-full bg-red-500 rounded flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors px-1">
+                                    <span className="text-[8px] text-white font-black text-center leading-tight truncate">
+                                      Bloqueado
+                                    </span>
+                                  </div>
+                                )}
+                                {!esVAd && !esBloqueo && (
+                                  <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
