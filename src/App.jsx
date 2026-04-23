@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.32'; 
+  const APP_VERSION = '1.33'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -29,7 +29,7 @@ export default function App() {
 
   const [modoOscuro, setModoOscuro] = useState(() => { return localStorage.getItem('vad_theme') === 'dark'; });
   const toggleTheme = () => { const newTheme = !modoOscuro; setModoOscuro(newTheme); localStorage.setItem('vad_theme', newTheme ? 'dark' : 'light'); };
-  const theme = { bg: modoOscuro ? 'bg-[#0F172A]' : 'bg-[#F8F7F2]', text: modoOscuro ? 'text-[#F8F9FA]' : 'text-[#1A1C1E]', card: modoOscuro ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]', border: modoOscuro ? 'border-[#F8F9FA]/10' : 'border-[#1A1C1E]/10', muted: modoOscuro ? 'text-[#F8F9FA]/50' : 'text-[#1A1C1E]/50', nav: modoOscuro ? 'bg-[#0F172A]/90' : 'bg-[#F8F7F2]/90' };
+  const theme = { bg: modoOscuro ? 'bg-[#0F172A]' : 'bg-[#F9F8F1]', text: modoOscuro ? 'text-[#F8F9FA]' : 'text-[#1A1C1E]', card: modoOscuro ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]', border: modoOscuro ? 'border-[#F8F9FA]/10' : 'border-[#1A1C1E]/10', muted: modoOscuro ? 'text-[#F8F9FA]/50' : 'text-[#1A1C1E]/50', nav: modoOscuro ? 'bg-[#0F172A]/90' : 'bg-[#F9F8F1]/90' };
 
   const [touchStartX, setTouchStartX] = useState(null);
   const [touchEndX, setTouchEndX] = useState(null);
@@ -334,7 +334,7 @@ export default function App() {
           const maxStart = Math.max(getMins(j1.hora_inicio), getMins(j2.hora_inicio), currentLibStart);
           const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
 
-          if (minEnd - maxStart >= 60) { 
+          if (minEnd - maxStart >= 120) { 
             const { data: p1 } = await supabase.from('Perfiles').select('elo').eq('id', j1.jugador_id).single();
             const { data: p2 } = await supabase.from('Perfiles').select('elo').eq('id', j2.jugador_id).single();
             
@@ -356,7 +356,7 @@ export default function App() {
                   await supabase.from('buscar').delete().in('id', [j1.id, j2.id]);
                   matchedUserIds.add(j1.jugador_id); 
                   matchedUserIds.add(j2.jugador_id);
-                  currentLibStart = maxStart + 60; 
+                  currentLibStart = maxStart + 120; 
                   break; 
                 }
               }
@@ -439,7 +439,12 @@ export default function App() {
 
       const dataUpdate = { estado: 'finalizado', puntos_j1: partido.jugador1_id === currentUser.id ? deltaMi : deltaRival, puntos_j2: partido.jugador1_id === currentUser.id ? deltaRival : deltaMi };
       await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); fetchPartidos();
-      mostrarAlerta("¡Partido finalizado!", `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`);
+      
+      let mensajeFinal = `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`;
+      if (misNuevosDatos.nuevaConfianza > currentUser.confianza) {
+        mensajeFinal += `\n\n🟢 ¡Felicidades! Tu confiabilidad subió a ${misNuevosDatos.nuevaConfianza.toFixed(1)}/5.0`;
+      }
+      mostrarAlerta("¡Partido finalizado!", mensajeFinal);
     } catch (error) {}
   };
 
@@ -658,7 +663,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.32</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.33</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1124,62 +1129,96 @@ export default function App() {
                 </div>
               </div>
 
-              {/* CUADRÍCULA RESULTANTE (Dinámica a 30 mins) */}
-              <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto`}>
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr>
-                      <th className={`p-4 text-[11px] font-black uppercase ${theme.muted} text-right w-20 sticky left-0 z-10 ${theme.card}`}>Hora</th>
-                      {columnasGrid.map(col => {
-                        const [y, m, d] = col.day.split('-');
-                        return (
-                          <th key={`${col.day}-${col.c}`} className={`p-3 text-[11px] font-black uppercase ${theme.text} border-l ${theme.border} min-w-[90px]`}>
-                            <span className="text-[#007AFF] opacity-70 mr-1">{d}/{m}</span> C{col.c}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
+              {/* CUADRÍCULA RESULTANTE (Transpuesta - Línea de Tiempo Horizontal con División de Días) */}
+              <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto overflow-y-auto max-h-[75vh] custom-scrollbar`}>
+                <div className="flex flex-col gap-1.5 min-w-max pb-4 pr-4">
+                  
+                  {/* ENCABEZADO DE HORAS (Eje X Fijo Superior) */}
+                  <div className={`flex gap-1.5 sticky top-0 z-20 ${theme.card} pb-2 border-b ${theme.border}`}>
+                    <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-30 ${theme.card} flex items-end justify-end pr-4`}>
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${theme.muted} mb-1`}>Línea de Tiempo ➜</span>
+                    </div>
                     {horasGrid.map(horaFloat => {
                       const hInt = Math.floor(horaFloat);
                       const mInt = horaFloat % 1 === 0 ? 0 : 30;
                       const isHalfHour = mInt === 30;
-                      
                       return (
-                        <tr key={horaFloat} className={`${isHalfHour ? `border-t border-dashed ${theme.border} opacity-80` : `border-t-2 ${theme.border}`} hover:bg-[#007AFF]/5 transition-colors`}>
-                          <td className={`p-2 md:p-3 text-[10px] font-black text-right ${theme.muted} sticky left-0 z-10 ${theme.card}`}>
-                            {hInt > 12 ? hInt - 12 : hInt}:{mInt === 0 ? '00' : '30'} {hInt >= 12 ? 'PM' : 'AM'}
-                          </td>
-                          {columnasGrid.map(col => {
-                            const partido = obtenerEstadoCelda(col.c, horaFloat, col.day);
-                          const esVAd = partido && partido.estado !== 'bloqueo_admin';
-                          const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-                          const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? `Bloqueo: ${partido.marcador || 'Administración'}` : '';
-                          
-                          return (
-                            <td key={`${col.day}-${col.c}`} className={`p-0.5 border-l ${theme.border} h-14 relative group`} onClick={() => handleCellClick(col.c, horaFloat, col.day)}>
-                              {esVAd && (
-                                <div title={tooltipText} className="w-full h-full bg-[#007AFF] rounded flex items-center justify-center cursor-help shadow-sm overflow-hidden px-1">
-                                  <span className="text-[8px] text-white font-black text-center leading-tight truncate">{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}</span>
-                                </div>
-                              )}
-                              {esBloqueo && (
-                                <div title={tooltipText} className="w-full h-full bg-red-500 rounded flex items-center justify-center cursor-pointer shadow-sm hover:bg-red-600 transition-colors px-1">
-                                  <span className="text-[8px] text-white font-black text-center leading-tight truncate">{partido.marcador || 'Bloqueado'}</span>
-                                </div>
-                              )}
-                              {!esVAd && !esBloqueo && (
-                                <div className="w-full h-full opacity-0 group-hover:opacity-100 bg-[#007AFF]/10 rounded border border-dashed border-[#007AFF]/30 transition-all cursor-pointer"></div>
-                              )}
-                            </td>
-                          );
-                          })}
-                        </tr>
+                        <div key={horaFloat} className="w-20 md:w-24 shrink-0 flex flex-col items-center justify-end">
+                          <span className={`text-[10px] md:text-xs font-black ${isHalfHour ? theme.muted : theme.text} ${isHalfHour ? 'opacity-40' : 'opacity-100'}`}>
+                            {hInt > 12 ? hInt - 12 : hInt}:{mInt === 0 ? '00' : '30'}
+                          </span>
+                          <span className={`text-[8px] font-bold ${theme.muted} uppercase`}>{hInt >= 12 ? 'PM' : 'AM'}</span>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </div>
+
+                  {/* FILAS DE CANCHAS AGRUPADAS POR DÍA (Eje Y) */}
+                  {selectedDays.map((dayStr) => (
+                    <React.Fragment key={dayStr}>
+                      {/* DIVISIÓN DE CAMBIO DE DÍA */}
+                      {selectedDays.length > 1 && (
+                        <div className={`flex w-full sticky left-0 z-10 bg-[#007AFF]/10 border-y border-[#007AFF]/20 p-2 mt-4 mb-2 rounded-r-xl`}>
+                          <span className="text-[#007AFF] font-black text-xs uppercase tracking-widest">
+                            📅 {new Date(dayStr + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                          </span>
+                        </div>
+                      )}
+
+                      {filtroCanchas.map(c => {
+                        const [y, m, d] = dayStr.split('-');
+                        return (
+                          <div key={`${dayStr}-${c}`} className="flex gap-1.5 group">
+                            
+                            {/* Cabecera de Fila Fija Izquierda */}
+                            <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-10 ${theme.card} p-2 flex flex-col justify-center items-end pr-4 rounded-r-2xl shadow-[4px_0_10px_-4px_rgba(0,0,0,0.08)] border-r border-[#007AFF]/10`}>
+                              <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>Cancha {c}</span>
+                              {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
+                            </div>
+
+                            {/* Bloques de Tiempo Interactivos */}
+                            {horasGrid.map(horaFloat => {
+                              const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
+                              const esVAd = partido && partido.estado !== 'bloqueo_admin';
+                              const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+                              const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? `Bloqueo: ${partido.marcador || 'Administración'}` : '';
+                              
+                              return (
+                                <div 
+                                  key={`${dayStr}-${c}-${horaFloat}`} 
+                                  className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
+                                    !esVAd && !esBloqueo ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` : ''
+                                  }`}
+                                  onClick={() => handleCellClick(c, horaFloat, dayStr)}
+                                >
+                                  {esVAd && (
+                                    <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
+                                      <div className="flex flex-col items-center justify-center w-full">
+                                        <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">VAd</span>
+                                        <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
+                                          {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {esBloqueo && (
+                                    <div title={tooltipText} className="absolute inset-0 bg-[#FECACA] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10">
+                                      <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
+                                      <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
+                                        {partido.marcador || 'Bloqueado'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </div>
               </div>
             </div>
           );
@@ -1209,33 +1248,33 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DUAL B2B v1.30 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.40 --- */}
       {bloqueoActivo && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-          <div className={`${theme.card} w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl border ${theme.border} max-h-[90vh] overflow-y-auto`}>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
             
-            {/* Pestañas */}
-            <div className="flex bg-gray-500/10 p-1 rounded-2xl mb-6">
-              <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'bloqueo' ? 'bg-red-500 text-white shadow-md' : theme.muted}`}>Bloquear</button>
-              <button onClick={() => setModalAccion('partido')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'partido' ? 'bg-[#007AFF] text-white shadow-md' : theme.muted}`}>Partido</button>
+            {/* Selector de Pestañas */}
+            <div className="flex bg-black/5 p-1 rounded-2xl mb-6">
+              <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'bloqueo' ? 'bg-[#991B1B] text-white shadow-md' : 'text-black/40'}`}>Bloquear</button>
+              <button onClick={() => setModalAccion('partido')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'partido' ? 'bg-[#064E3B] text-white shadow-md' : 'text-black/40'}`}>Partido</button>
             </div>
 
-            {/* Rango de Tiempo (Igual que el buscador) */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
+            {/* Rango de Tiempo (UX mejorado) */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="text-left">
-                <label className="text-[9px] font-black uppercase opacity-40 ml-2">Inicio</label>
-                <input type="time" step="1800" value={modalHoraInicio} onChange={(e)=>setModalHoraInicio(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-black ${theme.text}`} />
+                <label className="text-[10px] font-black uppercase opacity-40 ml-2">Inicio</label>
+                <input type="time" step="1800" value={modalHoraInicio} onChange={(e)=>setModalHoraInicio(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
               </div>
               <div className="text-left">
-                <label className="text-[9px] font-black uppercase opacity-40 ml-2">Fin</label>
-                <input type="time" step="1800" value={modalHoraFin} onChange={(e)=>setModalHoraFin(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-black ${theme.text}`} />
+                <label className="text-[10px] font-black uppercase opacity-40 ml-2">Fin</label>
+                <input type="time" step="1800" value={modalHoraFin} onChange={(e)=>setModalHoraFin(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
               </div>
             </div>
 
             {modalAccion === 'bloqueo' ? (
-              <div className="space-y-4 mb-8">
-                <label className="text-[9px] font-black uppercase opacity-40 ml-2">Motivo</label>
-                <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl p-4 text-sm font-bold`}>
+              <div className="space-y-4 mb-8 text-left">
+                <label className="text-[10px] font-black uppercase opacity-40 ml-2">Motivo del Bloqueo</label>
+                <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className="w-full bg-white border border-black/10 rounded-xl p-4 text-lg font-bold text-black appearance-none shadow-sm">
                   <option value="Administrativo">Administrativo</option>
                   <option value="Mantenimiento">Mantenimiento</option>
                   <option value="Clase">Clase</option>
@@ -1243,40 +1282,49 @@ export default function App() {
                 </select>
               </div>
             ) : (
-              <div className="space-y-4 mb-8">
+              <div className="space-y-4 mb-8 text-left">
                 {/* Buscador Jugador 1 */}
                 <div className="relative">
-                  <label className="text-[9px] font-black uppercase opacity-40 ml-2">Jugador 1</label>
-                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>setBusquedaJ1(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
+                  <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 1</label>
+                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>setBusquedaJ1(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
                   {busquedaJ1 && !partidoJ1 && (
-                    <div className={`absolute z-20 w-full mt-1 ${theme.card} border ${theme.border} rounded-xl shadow-xl max-h-40 overflow-y-auto`}>
+                    <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
                       {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
-                        <div key={u.id} onClick={()=>{setPartidoJ1(u.id); setBusquedaJ1(u.nombre);}} className="p-3 text-xs font-bold border-b border-gray-500/10 cursor-pointer hover:bg-[#007AFF]/10">{u.nombre}</div>
+                        <div key={u.id} onClick={()=>{setPartidoJ1(u.id); setBusquedaJ1(u.nombre);}} className="p-4 text-sm font-bold border-b border-black/5 cursor-pointer hover:bg-[#064E3B]/5">{u.nombre}</div>
                       ))}
                     </div>
                   )}
-                  {partidoJ1 && <button onClick={()=>{setPartidoJ1(''); setBusquedaJ1('');}} className="absolute right-3 top-9 text-red-500 text-xs">✕</button>}
                 </div>
 
                 {/* Buscador Jugador 2 */}
                 <div className="relative">
-                  <label className="text-[9px] font-black uppercase opacity-40 ml-2">Jugador 2</label>
-                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>setBusquedaJ2(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
+                  <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 2</label>
+                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>setBusquedaJ2(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
                   {busquedaJ2 && !partidoJ2 && (
-                    <div className={`absolute z-20 w-full mt-1 ${theme.card} border ${theme.border} rounded-xl shadow-xl max-h-40 overflow-y-auto`}>
+                    <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
                       {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
-                        <div key={u.id} onClick={()=>{setPartidoJ2(u.id); setBusquedaJ2(u.nombre);}} className="p-3 text-xs font-bold border-b border-gray-500/10 cursor-pointer hover:bg-[#007AFF]/10">{u.nombre}</div>
+                        <div key={u.id} onClick={()=>{setPartidoJ2(u.id); setBusquedaJ2(u.nombre);}} className="p-4 text-sm font-bold border-b border-black/5 cursor-pointer hover:bg-[#064E3B]/5">{u.nombre}</div>
                       ))}
                     </div>
                   )}
-                  {partidoJ2 && <button onClick={()=>{setPartidoJ2(''); setBusquedaJ2('');}} className="absolute right-3 top-9 text-red-500 text-xs">✕</button>}
                 </div>
               </div>
             )}
 
-            <div className="flex gap-3">
-              <button onClick={() => setBloqueoActivo(null)} className="flex-1 py-4 font-black uppercase text-[10px] opacity-50">Cerrar</button>
-              <button onClick={confirmarAccionModal} className={`flex-1 py-4 rounded-2xl font-black uppercase text-[10px] text-white shadow-lg ${modalAccion === 'bloqueo' ? 'bg-red-500' : 'bg-[#007AFF]'}`}>Confirmar</button>
+            {/* Botones Fat-Finger */}
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={confirmarAccionModal} 
+                className={`w-full h-[56px] rounded-2xl font-bold text-[24px] text-[#F9F8F1] shadow-lg active:scale-[0.97] transition-all duration-100 ${modalAccion === 'bloqueo' ? 'bg-[#991B1B] shadow-[#991B1B]/20' : 'bg-[#064E3B] shadow-[#064E3B]/20'}`}
+              >
+                {modalAccion === 'bloqueo' ? 'Bloquear Cancha' : 'Agendar VAd.'}
+              </button>
+              <button 
+                onClick={() => setBloqueoActivo(null)} 
+                className="w-full h-[56px] font-bold text-[18px] text-black/40 uppercase tracking-widest active:scale-[0.97] transition-all duration-100"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
