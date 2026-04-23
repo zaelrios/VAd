@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.35'; 
+  const APP_VERSION = '1.36'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -234,15 +234,13 @@ export default function App() {
           
           if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
             const checkAdminCancel = async () => {
-              if (pBorrado.tipo_creacion === 'manual') {
-                mostrarAlerta('Aviso de Club', 'Tu partido fue cancelado por el club.');
-                return;
-              }
               const { data } = await supabase.from('buscar').select('id').eq('jugador_id', currentUser.id).eq('fecha', pBorrado.fecha).eq('hora_inicio', pBorrado.hora_inicio).maybeSingle();
               if (data) {
-                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club. Tu búsqueda se ha reactivado automáticamente.');
+                // Si el jugador está en la lista de búsqueda, fue el RIVAL quien canceló y disparó el rollback
+                mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
               } else {
-                mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva.');
+                // Si NO está en la lista de búsqueda, la Administración eliminó el partido
+                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
               }
             };
             checkAdminCancel();
@@ -580,9 +578,11 @@ export default function App() {
             const startCruce = Math.max(startMins, rStartMins); const endCruce = Math.min(endMins, rEndMins);
             const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
             
-            if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 60) {
+            // --- FIX: MOTOR CALIBRADO A 120 MINUTOS (2 HORAS) ---
+            if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 120) {
               const propInicioStr = `${String(Math.floor(startCruce / 60)).padStart(2, '0')}:${String(startCruce % 60).padStart(2, '0')}`;
-              const propFinStr = `${String(Math.floor((startCruce + 60) / 60)).padStart(2, '0')}:${String((startCruce + 60) % 60).padStart(2, '0')}`;
+              // Separamos el bloque sumando 120 mins exactos
+              const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}`;
               
               const { data: pCruce } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', propFinStr).gt('hora_fin', propInicioStr);
               const canchaLibre = inventario[superficie].find(n => !(pCruce ? pCruce.map(p => p.cancha_numero) : []).includes(n));
@@ -641,24 +641,14 @@ export default function App() {
       // BUG 3: Botón de Eliminar Partido Manual
       const esAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'club';
       if (esAdmin) {
-        const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿CANCELACIÓN ADMIN?\n\nSe notificará a los jugadores y volverán automáticamente al buscador.`;
+        const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿ELIMINAR PARTIDO?\n\nSe notificará a los jugadores pero NO se les regresará a la lista de espera.`;
         
         mostrarConfirmacion("Administrar Celda", msj, async () => {
             try {
-              // Solo regresa a lista de espera si NO fue un partido manual
-              if (partido.estado !== 'bloqueo_admin' && partido.tipo_creacion !== 'manual') {
-                const searchRollback = [
-                  { jugador_id: partido.jugador1_id, nombre: partido.j1_nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' },
-                  { jugador_id: partido.jugador2_id, nombre: partido.j2_nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }
-                ];
-                await supabase.from('buscar').insert(searchRollback);
-              }
-
-              // Eliminamos el partido
+              // Eliminamos el partido directamente (Sin rollback al buscador)
               await supabase.from('partidos').delete().eq('id', partido.id); 
               
               fetchClubPartidos();
-              // Gatillo para ver si los que acabamos de meter u otros hacen match
               resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
             } catch (err) { mostrarError("Error", "No se pudo procesar la cancelación."); }
         });
@@ -746,7 +736,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.35</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.36</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
