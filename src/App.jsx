@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.37'; 
+  const APP_VERSION = '1.38'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -233,11 +233,18 @@ export default function App() {
           const pBorrado = prev.find(p => p.id === payload.old.id);
           
           if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
-            if (payload.old.estado === 'cancelado_admin') {
-              mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
-            } else {
-              mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
-            }
+            const checkAdminCancel = async () => {
+              if (payload.old.estado === 'cancelado_admin') {
+                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
+                return;
+              }
+              
+              const { data } = await supabase.from('buscar').select('id').eq('jugador_id', currentUser.id).eq('fecha', pBorrado.fecha).eq('hora_inicio', pBorrado.hora_inicio).maybeSingle();
+              if (data) {
+                mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
+              }
+            };
+            checkAdminCancel();
           }
           return prev;
         });
@@ -411,9 +418,17 @@ export default function App() {
                   }
                   
                   mostrarAlerta("Cancelado", "Partido cancelado. El rival ha regresado a la sala de búsqueda.");
-              } fetchPartidos();
+              }
+              
               // --- EL GATILLO DE AUTO-MATCH ---
               resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+
+              // Retraso para evitar el parpadeo de pantalla y permitir la lectura del mensaje
+              setTimeout(() => {
+                fetchPartidos();
+                setTab('home');
+              }, 2500);
+
             } catch (error) { mostrarError("Error", "Error al cancelar."); }
         });
     } catch (error) { mostrarError("Error", "No se pudo leer tu perfil."); }
@@ -740,7 +755,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.37</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.38</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
