@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.34'; 
+  const APP_VERSION = '1.35'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -100,7 +100,17 @@ export default function App() {
   const [partidoJ1, setPartidoJ1] = useState('');
   const [partidoJ2, setPartidoJ2] = useState('');
 
+  const [frecuencia, setFrecuencia] = useState('unica'); // unica, diaria, semanal
+  const [iteraciones, setIteraciones] = useState(1);
+  const [diasRecurrencia, setDiasRecurrencia] = useState([]); // 0-6 (Dom-Sab)
+
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
+
+  const limpiarFiltrosAgenda = () => {
+    setFiltroCanchas([1,2,3,4,5,6,7,8,9,10]);
+    setSelectedDays([getFormatDate(new Date())]);
+    setRangoHoras({ start: 6, end: 23 });
+  };
   
   const toggleSelectedDay = (dateObj) => {
     const dateStr = getFormatDate(dateObj);
@@ -218,11 +228,24 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     const ch = supabase.channel('alertas-vad')
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, (payload) => { 
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, async (payload) => { 
         setMisPartidos(prev => {
           const pBorrado = prev.find(p => p.id === payload.old.id);
+          
           if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
-            mostrarError('Partido Cancelado', 'Tu rival ha cancelado. Revisa tu lista de espera.');
+            const checkAdminCancel = async () => {
+              if (pBorrado.tipo_creacion === 'manual') {
+                mostrarAlerta('Aviso de Club', 'Tu partido fue cancelado por el club.');
+                return;
+              }
+              const { data } = await supabase.from('buscar').select('id').eq('jugador_id', currentUser.id).eq('fecha', pBorrado.fecha).eq('hora_inicio', pBorrado.hora_inicio).maybeSingle();
+              if (data) {
+                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club. Tu búsqueda se ha reactivado automáticamente.');
+              } else {
+                mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva.');
+              }
+            };
+            checkAdminCancel();
           }
           return prev;
         });
@@ -349,7 +372,7 @@ export default function App() {
               if (!choque || choque.length === 0) {
                 const { data: nuevo, error } = await supabase.from('partidos').insert([{
                   jugador1_id: j1.jugador_id, jugador2_id: j2.jugador_id, fecha: fechaStr, 
-                  hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado'
+                  hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado', tipo_creacion: 'matchmaking'
                 }]).select();
 
                 if (!error && nuevo) {
@@ -572,7 +595,7 @@ export default function App() {
       if (matchEncontrado) {
         const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', searchDate).eq('cancha_numero', canchaAsignada).lt('hora_inicio', matchFin).gt('hora_fin', matchInicio);
         if (choque && choque.length > 0) throw new Error("¡Interferencia! Alguien reservó esta cancha. Intenta de nuevo.");
-        const { data: mc, error: eM } = await supabase.from('partidos').insert([{ jugador1_id: matchEncontrado.jugador_id, jugador2_id: currentUser.id, fecha: searchDate, hora_inicio: matchInicio, hora_fin: matchFin, superficie: superficie, cancha_numero: canchaAsignada, estado: 'confirmado' }]).select();
+        const { data: mc, error: eM } = await supabase.from('partidos').insert([{ jugador1_id: matchEncontrado.jugador_id, jugador2_id: currentUser.id, fecha: searchDate, hora_inicio: matchInicio, hora_fin: matchFin, superficie: superficie, cancha_numero: canchaAsignada, estado: 'confirmado', tipo_creacion: 'matchmaking' }]).select();
         if (eM || !mc || mc.length === 0) throw new Error("Error en el servidor.");
         await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
         mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada} (${superficie}).`); setTab('partidos'); fetchPartidos();
@@ -615,24 +638,51 @@ export default function App() {
   const handleCellClick = async (cancha, horaFloat, fechaStr) => {
     const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
     if (partido) {
-      if (partido.estado === 'bloqueo_admin') {
-        mostrarConfirmacion("Desbloquear", `¿Liberar Cancha ${cancha}?`, async () => {
-          await supabase.from('partidos').delete().eq('id', partido.id); 
-          fetchClubPartidos();
-          // --- EL GATILLO DE AUTO-MATCH PARA EL ADMIN ---
-          resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+      // BUG 3: Botón de Eliminar Partido Manual
+      const esAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'club';
+      if (esAdmin) {
+        const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿CANCELACIÓN ADMIN?\n\nSe notificará a los jugadores y volverán automáticamente al buscador.`;
+        
+        mostrarConfirmacion("Administrar Celda", msj, async () => {
+            try {
+              // Solo regresa a lista de espera si NO fue un partido manual
+              if (partido.estado !== 'bloqueo_admin' && partido.tipo_creacion !== 'manual') {
+                const searchRollback = [
+                  { jugador_id: partido.jugador1_id, nombre: partido.j1_nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' },
+                  { jugador_id: partido.jugador2_id, nombre: partido.j2_nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }
+                ];
+                await supabase.from('buscar').insert(searchRollback);
+              }
+
+              // Eliminamos el partido
+              await supabase.from('partidos').delete().eq('id', partido.id); 
+              
+              fetchClubPartidos();
+              // Gatillo para ver si los que acabamos de meter u otros hacen match
+              resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+            } catch (err) { mostrarError("Error", "No se pudo procesar la cancelación."); }
         });
-      } else { mostrarAlerta("Ocupado", "Ya hay un partido aquí."); }
+      }
     } else {
       const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? '00' : '30';
       const startStr = `${String(hI).padStart(2,'0')}:${mI}`;
-      const hF = Math.floor(horaFloat + 1); const mF = (horaFloat + 1) % 1 === 0 ? '00' : '30';
+      const hF = Math.floor(horaFloat + 2); const mF = (horaFloat + 2) % 1 === 0 ? '00' : '30';
       const endStr = `${String(hF >= 24 ? 23 : hF).padStart(2,'0')}:${hF >= 24 ? '59' : mF}`;
 
+      // --- LIMPIEZA ABSOLUTA DE FORMULARIO ---
+      setModalAccion('bloqueo');
+      setBloqueoMotivo('Mantenimiento');
+      setPartidoJ1('');
+      setPartidoJ2('');
+      setBusquedaJ1('');
+      setBusquedaJ2('');
+      setFrecuencia('unica');
+      setIteraciones(1);
+      setDiasRecurrencia([]);
+      
       setBloqueoActivo({ cancha, horaFloat, fechaStr });
-      setModalHoraInicio(startStr); setModalHoraFin(endStr);
-      setModalAccion('bloqueo'); setPartidoJ1(''); setPartidoJ2('');
-      setBusquedaJ1(''); setBusquedaJ2('');
+      setModalHoraInicio(startStr); 
+      setModalHoraFin(endStr);
       cargarUsuariosAdmin();
     }
   };
@@ -641,20 +691,53 @@ export default function App() {
     const { cancha, fechaStr } = bloqueoActivo;
     const startStr = `${modalHoraInicio}:00`;
     const endStr = `${modalHoraFin}:00`;
-    
     if (modalHoraInicio >= modalHoraFin) { mostrarError("Error", "La hora de fin debe ser después del inicio."); return; }
 
-    const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', cancha).lt('hora_inicio', endStr).gt('hora_fin', startStr);
-    if (choque?.length > 0) { mostrarError("Conflicto", "Ese horario ya tiene algo agendado."); return; }
-
     try {
-      if (modalAccion === 'bloqueo') {
-        await supabase.from('partidos').insert([{ jugador1_id: currentUser.id, jugador2_id: currentUser.id, fecha: fechaStr, hora_inicio: startStr, hora_fin: endStr, superficie: cancha <= 8 ? 'Dura' : 'Césped', cancha_numero: cancha, estado: 'bloqueo_admin', marcador: bloqueoMotivo }]);
-      } else {
+      if (modalAccion === 'partido') {
         if (!partidoJ1 || !partidoJ2 || partidoJ1 === partidoJ2) throw new Error("Selecciona 2 jugadores distintos.");
-        await supabase.from('partidos').insert([{ jugador1_id: partidoJ1, jugador2_id: partidoJ2, fecha: fechaStr, hora_inicio: startStr, hora_fin: endStr, superficie: cancha <= 8 ? 'Dura' : 'Césped', cancha_numero: cancha, estado: 'confirmado' }]);
+        const { data: choqueJ } = await supabase.from('partidos').select('jugador1_id, jugador2_id').eq('fecha', fechaStr).lt('hora_inicio', endStr).gt('hora_fin', startStr)
+          .or(`jugador1_id.in.(${partidoJ1},${partidoJ2}),jugador2_id.in.(${partidoJ1},${partidoJ2})`);
+        if (choqueJ?.length > 0) throw new Error("Uno de los jugadores ya tiene partido en ese horario.");
       }
-      fetchClubPartidos(); setBloqueoActivo(null); mostrarAlerta("Éxito", "Cancha actualizada.");
+
+      let fechasAProcesar = [fechaStr];
+      
+      if (modalAccion === 'bloqueo') {
+        if (frecuencia === 'diaria') {
+          fechasAProcesar = Array.from({ length: iteraciones }, (_, i) => {
+            const d = new Date(fechaStr + 'T12:00:00');
+            d.setDate(d.getDate() + i);
+            return d.toISOString().split('T')[0];
+          });
+        } else if (frecuencia === 'semanal') {
+          fechasAProcesar = [];
+          for (let w = 0; w < iteraciones; w++) {
+            diasRecurrencia.forEach(dayIdx => {
+              const d = new Date(fechaStr + 'T12:00:00');
+              const currentDay = d.getDay();
+              d.setDate(d.getDate() + (dayIdx - currentDay) + (w * 7));
+              if (d >= new Date(fechaStr + 'T12:00:00')) fechasAProcesar.push(d.toISOString().split('T')[0]);
+            });
+          }
+        }
+      }
+
+      const inserts = [...new Set(fechasAProcesar)].map(f => ({
+        jugador1_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ1,
+        jugador2_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ2,
+        fecha: f, hora_inicio: startStr, hora_fin: endStr,
+        superficie: cancha <= 8 ? 'Dura' : 'Césped',
+        cancha_numero: cancha,
+        estado: modalAccion === 'bloqueo' ? 'bloqueo_admin' : 'confirmado',
+        marcador: modalAccion === 'bloqueo' ? bloqueoMotivo : null,
+        tipo_creacion: modalAccion === 'bloqueo' ? 'bloqueo' : 'manual'
+      }));
+
+      const { error } = await supabase.from('partidos').insert(inserts);
+      if (error) throw error;
+      fetchClubPartidos(); setBloqueoActivo(null);
+      mostrarAlerta("Éxito", "Agenda actualizada correctamente.");
     } catch (e) { mostrarError("Error", e.message); }
   };
 
@@ -663,7 +746,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.34</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.35</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1124,8 +1207,15 @@ export default function App() {
                         {[8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24].map(h => <option key={h} value={h}>{h}:00</option>)}
                       </select>
                     </div>
+                    
+                    {/* Botón Limpiar Filtros */}
+                    <button 
+                      onClick={limpiarFiltrosAgenda}
+                      className={`md:border-l ${theme.border} md:pl-1 flex items-center gap- px-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${theme.muted} hover:bg-red-500/10 hover:text-red-500 active:scale-95`}
+                    >
+                      <span>🧹</span> Limpiar Filtros
+                    </button>
                   </div>
-                  
                 </div>
               </div>
 
@@ -1286,7 +1376,7 @@ export default function App() {
                 {/* Buscador Jugador 1 */}
                 <div className="relative">
                   <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 1</label>
-                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>setBusquedaJ1(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
+                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>{ const val = e.target.value; setBusquedaJ1(val); if (val === '') setPartidoJ1('');}} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
                   {busquedaJ1 && !partidoJ1 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
                       {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
@@ -1299,7 +1389,7 @@ export default function App() {
                 {/* Buscador Jugador 2 */}
                 <div className="relative">
                   <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 2</label>
-                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>setBusquedaJ2(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
+                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>{ const val = e.target.value; setBusquedaJ2(val); if (val === '') setPartidoJ2('');}} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
                   {busquedaJ2 && !partidoJ2 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
                       {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
@@ -1308,6 +1398,53 @@ export default function App() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {modalAccion === 'bloqueo' && (
+              <div className="space-y-4 mb-6 p-4 bg-white border border-black/10 rounded-2xl text-left">
+                <div>
+                  <label className="text-[10px] font-black uppercase opacity-40">Frecuencia</label>
+                  <select value={frecuencia} onChange={(e) => { setFrecuencia(e.target.value); setIteraciones(1); setDiasRecurrencia([]); }} className="w-full mt-1 bg-transparent text-sm font-bold outline-none">
+                    <option value="unica">Evento Único</option>
+                    <option value="diaria">Repetición Diaria</option>
+                    <option value="semanal">Repetición Semanal</option>
+                  </select>
+                </div>
+
+                {frecuencia === 'diaria' && (
+                  <div className="pt-2 border-t border-black/5 animate-in fade-in">
+                    <label className="text-[10px] font-black uppercase opacity-40">¿Cuántos días seguidos?</label>
+                    <input type="number" min="1" max="30" value={iteraciones} onChange={(e) => setIteraciones(parseInt(e.target.value))} className="w-full mt-1 bg-black/5 rounded-lg p-2 font-bold" />
+                  </div>
+                )}
+
+                {frecuencia === 'semanal' && (
+                  <div className="pt-2 border-t border-black/5 space-y-3 animate-in fade-in">
+                    <label className="text-[10px] font-black uppercase opacity-40">Días de la semana</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['D','L','M','M','J','V','S'].map((d, i) => (
+                        <button key={i} onClick={() => setDiasRecurrencia(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])} className={`w-8 h-8 rounded-full text-[10px] font-black transition-all ${diasRecurrencia.includes(i) ? 'bg-[#064E3B] text-white' : 'bg-black/5 text-black/40'}`}>{d}</button>
+                      ))}
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase opacity-40">¿Cuántas semanas? (Máx 52)</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="52" 
+                        value={iteraciones} 
+                        onChange={(e) => {
+                          let val = parseInt(e.target.value);
+                          if (val > 52) val = 52; // Validación: Tope automático en 52
+                          setIteraciones(isNaN(val) ? '' : val);
+                        }}
+                        onBlur={() => { if (iteraciones === '' || iteraciones < 1) setIteraciones(1); }}
+                        className="w-full mt-1 bg-black/5 rounded-xl p-3 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" 
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
