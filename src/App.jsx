@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.33'; 
+  const APP_VERSION = '1.34'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -663,7 +663,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.33</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.34</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1076,8 +1076,8 @@ export default function App() {
               {/* CABECERA CENTRADA Y BOTONERA */}
               <div className="flex flex-col items-center text-center space-y-4">
                 <div>
-                  <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Punta Azul</h2>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#007AFF] mt-1">Control Maestro de Canchas</p>
+                  <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Control Maestro de Canchas</h2>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#007AFF] mt-1">Centro Tenistico de Alto Rendimiento Punta Azul</p>
                 </div>
                 
                 {/* Panel de Filtros */}
@@ -1085,7 +1085,7 @@ export default function App() {
                   
                   {/* Selector de Días (Multi-Select) */}
                   <div className="flex items-center gap-2 justify-center bg-[#007AFF]/5 p-2 rounded-2xl border border-[#007AFF]/10">
-                    <button onClick={() => changeWeek(-1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>◀</button>
+                    <button onClick={() => changeWeek(-1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>⇇</button>
                     <div className="flex gap-2 overflow-x-auto max-w-[80vw] md:max-w-none pb-1 scrollbar-hide px-2">
                       {weekDays.map((date, i) => {
                         const dateStr = getFormatDate(date);
@@ -1099,7 +1099,7 @@ export default function App() {
                         );
                       })}
                     </div>
-                    <button onClick={() => changeWeek(1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>▶</button>
+                    <button onClick={() => changeWeek(1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>⇉</button>
                   </div>
 
                   <div className="flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8 pt-2">
