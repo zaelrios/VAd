@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.30'; 
+  const APP_VERSION = '1.31'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -187,7 +187,7 @@ export default function App() {
         }
       }; cargarBúsquedas();
     } else { setActiveSearches([]); }
-  }, [currentUser?.id, tab]);
+  }, [currentUser, tab]);
 
   const fetchPartidos = async () => {
     if (!currentUser || currentUser.rol === 'club') return;
@@ -213,27 +213,17 @@ export default function App() {
     } catch (error) { console.error(error); }
   };
 
-  useEffect(() => { fetchPartidos(); fetchClubPartidos(); if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); }, [currentUser?.id, tab, selectedDays.join(',')]);
+  useEffect(() => { fetchPartidos(); fetchClubPartidos(); if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); }, [currentUser, tab, selectedDays.join(',')]);
 
   useEffect(() => {
     if (!currentUser) return;
     const ch = supabase.channel('alertas-vad')
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, (payload) => { 
-        setMisPartidos(prev => {
-          const pBorrado = prev.find(p => p.id === payload.old.id);
-          // Si el partido estaba en mi lista y NO era un bloqueo de admin, me avisa
-          if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
-            mostrarError('Partido Cancelado', 'Tu rival ha cancelado. Revisa tu lista de espera.');
-          }
-          return prev;
-        });
-        fetchPartidos(); fetchClubPartidos(); 
-      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); if(currentUser.rol!=='club') mostrarError('Partido Cancelado', 'Tu rival ha cancelado.'); })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [currentUser?.id, agendaDate]);
+  }, [currentUser, selectedDays.join(',')]);
 
   const formatTime = (time24) => {
     if (!time24) return ''; const [hourString, minute] = time24.split(':');
@@ -309,68 +299,6 @@ export default function App() {
     });
   };
 
-  // --- MOTOR DE RESOLUCIÓN AUTOMÁTICA EN CADENA (FIFO MEJORADO) ---
-  const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
-    try {
-      const { data: espera } = await supabase.from('buscar')
-        .select('*').eq('fecha', fechaStr).eq('superficie', superficie).eq('estado', 'activa')
-        .order('created_at', { ascending: true });
-
-      if (!espera || espera.length < 2) return; 
-
-      const getMins = (t) => { const p = t.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
-      let currentLibStart = getMins(horaLibreIn); // Lo hacemos variable para empujarlo
-      const libEnd = getMins(horaLibreFin);
-      
-      const matchedUserIds = new Set(); // Memoria temporal de quienes ya consiguieron partido
-
-      for (let i = 0; i < espera.length; i++) {
-        if (matchedUserIds.has(espera[i].jugador_id)) continue; // Si ya tiene partido, lo saltamos
-        
-        for (let j = i + 1; j < espera.length; j++) {
-          if (matchedUserIds.has(espera[j].jugador_id)) continue;
-
-          const j1 = espera[i]; const j2 = espera[j];
-          
-          const maxStart = Math.max(getMins(j1.hora_inicio), getMins(j2.hora_inicio), currentLibStart);
-          const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
-
-          if (minEnd - maxStart >= 60) { 
-            const { data: p1 } = await supabase.from('Perfiles').select('elo').eq('id', j1.jugador_id).single();
-            const { data: p2 } = await supabase.from('Perfiles').select('elo').eq('id', j2.jugador_id).single();
-            
-            if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
-              const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
-              const mEnd = `${String(Math.floor((maxStart+60)/60)).padStart(2,'0')}:${String((maxStart+60)%60).padStart(2,'0')}:00`;
-
-              // Candado B2B: Verificar que ese fragmento exacto sigue libre en DB
-              const { data: choque } = await supabase.from('partidos').select('id')
-                .eq('fecha', fechaStr).eq('cancha_numero', canchaNum)
-                .lt('hora_inicio', mEnd).gt('hora_fin', mStart);
-
-              if (!choque || choque.length === 0) {
-                const { data: nuevo, error } = await supabase.from('partidos').insert([{
-                  jugador1_id: j1.jugador_id, jugador2_id: j2.jugador_id, fecha: fechaStr, 
-                  hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado'
-                }]).select();
-
-                if (!error && nuevo) {
-                  await supabase.from('buscar').delete().in('id', [j1.id, j2.id]);
-                  matchedUserIds.add(j1.jugador_id); 
-                  matchedUserIds.add(j2.jugador_id);
-                  
-                  // Avanzamos el reloj de la cancha para el siguiente ciclo
-                  currentLibStart = maxStart + 60; 
-                  break; // Rompemos el loop de j2, y pasamos al siguiente jugador en la fila
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (err) { console.error("Error en Auto-Match:", err); }
-  };
-  
   const handleCancelMatch = async (partido) => {
     const [year, month, day] = partido.fecha.split('-'); const [startH, startM] = partido.hora_inicio.split(':');
     const diffHoras = (new Date(year, month - 1, day, startH, startM) - new Date()) / (1000 * 60 * 60);
@@ -386,17 +314,13 @@ export default function App() {
             try {
               const { data: deletedMatch } = await supabase.from('partidos').delete().eq('id', partido.id).select(); 
               if (!deletedMatch || deletedMatch.length === 0) { mostrarAlerta("Salvado", "El partido fue cancelado por tu rival hace un segundo."); fetchPartidos(); return; }
-              if (castigo) { await processSelfWO(partido, perfil); 
-                // (Dentro de handleCancelMatch) ...
-              } else {
+              if (castigo) { await processSelfWO(partido, perfil); } 
+              else {
                   const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
                   await supabase.from('Perfiles').update({ confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal }).eq('id', perfil.id);
                   await supabase.from('buscar').insert([{ jugador_id: partido.rival.id, nombre: partido.rival.nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }]);
                   mostrarAlerta("Cancelado", "Partido cancelado. El rival ha regresado a la sala de búsqueda.");
-              } 
-              fetchPartidos();
-              // --- EL GATILLO DE AUTO-MATCH ---
-              resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+              } fetchPartidos();
             } catch (error) { mostrarError("Error", "Error al cancelar."); }
         });
     } catch (error) { mostrarError("Error", "No se pudo leer tu perfil."); }
@@ -621,10 +545,7 @@ export default function App() {
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
         mostrarConfirmacion("Desbloquear", `¿Liberar Cancha ${cancha}?`, async () => {
-          await supabase.from('partidos').delete().eq('id', partido.id); 
-          fetchClubPartidos();
-          // --- EL GATILLO DE AUTO-MATCH PARA EL ADMIN ---
-          resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+          await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos();
         });
       } else { mostrarAlerta("Ocupado", "Ya hay un partido aquí."); }
     } else {
@@ -669,7 +590,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.30</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.31/span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1261,7 +1182,7 @@ export default function App() {
                   <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>setBusquedaJ1(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
                   {busquedaJ1 && !partidoJ1 && (
                     <div className={`absolute z-20 w-full mt-1 ${theme.card} border ${theme.border} rounded-xl shadow-xl max-h-40 overflow-y-auto`}>
-                      {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
+                      {listaUsuarios.filter(u => u.nombre.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
                         <div key={u.id} onClick={()=>{setPartidoJ1(u.id); setBusquedaJ1(u.nombre);}} className="p-3 text-xs font-bold border-b border-gray-500/10 cursor-pointer hover:bg-[#007AFF]/10">{u.nombre}</div>
                       ))}
                     </div>
@@ -1275,7 +1196,7 @@ export default function App() {
                   <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>setBusquedaJ2(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
                   {busquedaJ2 && !partidoJ2 && (
                     <div className={`absolute z-20 w-full mt-1 ${theme.card} border ${theme.border} rounded-xl shadow-xl max-h-40 overflow-y-auto`}>
-                      {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
+                      {listaUsuarios.filter(u => u.nombre.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
                         <div key={u.id} onClick={()=>{setPartidoJ2(u.id); setBusquedaJ2(u.nombre);}} className="p-3 text-xs font-bold border-b border-gray-500/10 cursor-pointer hover:bg-[#007AFF]/10">{u.nombre}</div>
                       ))}
                     </div>
