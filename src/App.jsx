@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.28'; 
+  const APP_VERSION = '1.29'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -218,12 +218,22 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     const ch = supabase.channel('alertas-vad')
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); if(currentUser.rol!=='club') mostrarError('Partido Cancelado', 'Tu rival ha cancelado.'); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, (payload) => { 
+        setMisPartidos(prev => {
+          const pBorrado = prev.find(p => p.id === payload.old.id);
+          // Si el partido estaba en mi lista y NO era un bloqueo de admin, me avisa
+          if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
+            mostrarError('Partido Cancelado', 'Tu rival ha cancelado. Revisa tu lista de espera.');
+          }
+          return prev;
+        });
+        fetchPartidos(); fetchClubPartidos(); 
+      })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [currentUser, selectedDays.join(',')]);
+  }, [currentUser, agendaDate]);
 
   const formatTime = (time24) => {
     if (!time24) return ''; const [hourString, minute] = time24.split(':');
@@ -299,6 +309,55 @@ export default function App() {
     });
   };
 
+  // --- MOTOR DE RESOLUCIÓN AUTOMÁTICA DE LISTA DE ESPERA (FIFO) ---
+  const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
+    try {
+      // 1. Traer la fila de espera en estricto orden de llegada (FIFO - created_at ascendente)
+      const { data: espera } = await supabase.from('buscar')
+        .select('*').eq('fecha', fechaStr).eq('superficie', superficie).eq('estado', 'activa')
+        .order('created_at', { ascending: true });
+
+      if (!espera || espera.length < 2) return; // Si no hay al menos 2 personas, no se puede armar partido
+
+      const getMins = (t) => { const p = t.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
+      const libStart = getMins(horaLibreIn); const libEnd = getMins(horaLibreFin);
+
+      // 2. Cruzar a los jugadores (El loop exterior da prioridad al que lleva más tiempo esperando)
+      for (let i = 0; i < espera.length; i++) {
+        for (let j = i + 1; j < espera.length; j++) {
+          const j1 = espera[i]; const j2 = espera[j];
+          
+          // Verificar intersección de tiempo entre J1, J2 y la Cancha Liberada
+          const maxStart = Math.max(getMins(j1.hora_inicio), getMins(j2.hora_inicio), libStart);
+          const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
+
+          if (minEnd - maxStart >= 60) { // Si logran cruzar al menos 1 hora
+            const { data: p1 } = await supabase.from('Perfiles').select('elo').eq('id', j1.jugador_id).single();
+            const { data: p2 } = await supabase.from('Perfiles').select('elo').eq('id', j2.jugador_id).single();
+            
+            // Validar ELO
+            if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
+              const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
+              const mEnd = `${String(Math.floor((maxStart+60)/60)).padStart(2,'0')}:${String((maxStart+60)%60).padStart(2,'0')}:00`;
+
+              // Crear el partido mágicamente en el backend
+              const { data: nuevo, error } = await supabase.from('partidos').insert([{
+                jugador1_id: j1.jugador_id, jugador2_id: j2.jugador_id, fecha: fechaStr, 
+                hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado'
+              }]).select();
+
+              if (!error && nuevo) {
+                // Borrarlos de la lista de espera
+                await supabase.from('buscar').delete().in('id', [j1.id, j2.id]);
+                return; // Matamos el ciclo. El problema está resuelto.
+              }
+            }
+          }
+        }
+      }
+    } catch (err) { console.error("Error en Auto-Match:", err); }
+  };
+  
   const handleCancelMatch = async (partido) => {
     const [year, month, day] = partido.fecha.split('-'); const [startH, startM] = partido.hora_inicio.split(':');
     const diffHoras = (new Date(year, month - 1, day, startH, startM) - new Date()) / (1000 * 60 * 60);
@@ -314,13 +373,17 @@ export default function App() {
             try {
               const { data: deletedMatch } = await supabase.from('partidos').delete().eq('id', partido.id).select(); 
               if (!deletedMatch || deletedMatch.length === 0) { mostrarAlerta("Salvado", "El partido fue cancelado por tu rival hace un segundo."); fetchPartidos(); return; }
-              if (castigo) { await processSelfWO(partido, perfil); } 
-              else {
+              if (castigo) { await processSelfWO(partido, perfil); 
+                // (Dentro de handleCancelMatch) ...
+              } else {
                   const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
                   await supabase.from('Perfiles').update({ confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal }).eq('id', perfil.id);
                   await supabase.from('buscar').insert([{ jugador_id: partido.rival.id, nombre: partido.rival.nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }]);
                   mostrarAlerta("Cancelado", "Partido cancelado. El rival ha regresado a la sala de búsqueda.");
-              } fetchPartidos();
+              } 
+              fetchPartidos();
+              // --- EL GATILLO DE AUTO-MATCH ---
+              resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
             } catch (error) { mostrarError("Error", "Error al cancelar."); }
         });
     } catch (error) { mostrarError("Error", "No se pudo leer tu perfil."); }
@@ -545,7 +608,10 @@ export default function App() {
     if (partido) {
       if (partido.estado === 'bloqueo_admin') {
         mostrarConfirmacion("Desbloquear", `¿Liberar Cancha ${cancha}?`, async () => {
-          await supabase.from('partidos').delete().eq('id', partido.id); fetchClubPartidos();
+          await supabase.from('partidos').delete().eq('id', partido.id); 
+          fetchClubPartidos();
+          // --- EL GATILLO DE AUTO-MATCH PARA EL ADMIN ---
+          resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
         });
       } else { mostrarAlerta("Ocupado", "Ya hay un partido aquí."); }
     } else {
@@ -590,7 +656,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.28</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.29</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
