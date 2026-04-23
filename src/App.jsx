@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.36'; 
+  const APP_VERSION = '1.37'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -182,7 +182,7 @@ export default function App() {
   useEffect(() => {
     if (currentUser && currentUser.rol !== 'club') {
       const cargarBúsquedas = async () => {
-        const { data } = await supabase.from('buscar').select('*').eq('jugador_id', currentUser.id).order('fecha', { ascending: true });
+        const { data } = await supabase.from('buscar').select('*').eq('jugador_id', currentUser.id).eq('estado', 'activa').order('fecha', { ascending: true });
         if (data) {
           const now = new Date(); const busquedasValidas = [];
           for (let search of data) {
@@ -233,17 +233,11 @@ export default function App() {
           const pBorrado = prev.find(p => p.id === payload.old.id);
           
           if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
-            const checkAdminCancel = async () => {
-              const { data } = await supabase.from('buscar').select('id').eq('jugador_id', currentUser.id).eq('fecha', pBorrado.fecha).eq('hora_inicio', pBorrado.hora_inicio).maybeSingle();
-              if (data) {
-                // Si el jugador está en la lista de búsqueda, fue el RIVAL quien canceló y disparó el rollback
-                mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
-              } else {
-                // Si NO está en la lista de búsqueda, la Administración eliminó el partido
-                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
-              }
-            };
-            checkAdminCancel();
+            if (payload.old.estado === 'cancelado_admin') {
+              mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
+            } else {
+              mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
+            }
           }
           return prev;
         });
@@ -374,8 +368,8 @@ export default function App() {
                 }]).select();
 
                 if (!error && nuevo) {
-                  await supabase.from('buscar').delete().in('id', [j1.id, j2.id]);
-                  matchedUserIds.add(j1.jugador_id); 
+                  await supabase.from('buscar').update({ estado: 'match' }).in('id', [j1.id, j2.id]);
+                  matchedUserIds.add(j1.jugador_id);
                   matchedUserIds.add(j2.jugador_id);
                   currentLibStart = maxStart + 120; 
                   break; 
@@ -401,16 +395,23 @@ export default function App() {
 
         mostrarConfirmacion("Cancelar Partido", msj, async () => {
             try {
+              await supabase.from('partidos').update({ estado: 'cancelado_jugador' }).eq('id', partido.id);
               const { data: deletedMatch } = await supabase.from('partidos').delete().eq('id', partido.id).select(); 
               if (!deletedMatch || deletedMatch.length === 0) { mostrarAlerta("Salvado", "El partido fue cancelado por tu rival hace un segundo."); fetchPartidos(); return; }
-              if (castigo) { await processSelfWO(partido, perfil); 
-              } else {
+              if (castigo) { await processSelfWO(partido, perfil); } 
+              else {
                   const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
                   await supabase.from('Perfiles').update({ confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal }).eq('id', perfil.id);
-                  await supabase.from('buscar').insert([{ jugador_id: partido.rival.id, nombre: partido.rival.nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }]);
+                  
+                  const { data: bRival } = await supabase.from('buscar').select('id').eq('jugador_id', partido.rival.id).eq('fecha', partido.fecha).eq('estado', 'match').maybeSingle();
+                  if (bRival) {
+                    await supabase.from('buscar').update({ estado: 'activa' }).eq('id', bRival.id);
+                  } else {
+                    await supabase.from('buscar').insert([{ jugador_id: partido.rival.id, nombre: partido.rival.nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }]);
+                  }
+                  
                   mostrarAlerta("Cancelado", "Partido cancelado. El rival ha regresado a la sala de búsqueda.");
-              } 
-              fetchPartidos();
+              } fetchPartidos();
               // --- EL GATILLO DE AUTO-MATCH ---
               resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
             } catch (error) { mostrarError("Error", "Error al cancelar."); }
@@ -597,7 +598,8 @@ export default function App() {
         if (choque && choque.length > 0) throw new Error("¡Interferencia! Alguien reservó esta cancha. Intenta de nuevo.");
         const { data: mc, error: eM } = await supabase.from('partidos').insert([{ jugador1_id: matchEncontrado.jugador_id, jugador2_id: currentUser.id, fecha: searchDate, hora_inicio: matchInicio, hora_fin: matchFin, superficie: superficie, cancha_numero: canchaAsignada, estado: 'confirmado', tipo_creacion: 'matchmaking' }]).select();
         if (eM || !mc || mc.length === 0) throw new Error("Error en el servidor.");
-        await supabase.from('buscar').delete().eq('id', matchEncontrado.id);
+        await supabase.from('buscar').update({ estado: 'match' }).eq('id', matchEncontrado.id);
+        await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'match' }]);
         mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada} (${superficie}).`); setTab('partidos'); fetchPartidos();
       } else {
         await publicarBusqueda(false);
@@ -645,7 +647,9 @@ export default function App() {
         
         mostrarConfirmacion("Administrar Celda", msj, async () => {
             try {
-              // Eliminamos el partido directamente (Sin rollback al buscador)
+              if (partido.estado !== 'bloqueo_admin') {
+                await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
+              }
               await supabase.from('partidos').delete().eq('id', partido.id); 
               
               fetchClubPartidos();
@@ -736,7 +740,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.36</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.37</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
