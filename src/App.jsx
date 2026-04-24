@@ -31,9 +31,6 @@ export default function App() {
   const toggleTheme = () => { const newTheme = !modoOscuro; setModoOscuro(newTheme); localStorage.setItem('vad_theme', newTheme ? 'dark' : 'light'); };
   const theme = { bg: modoOscuro ? 'bg-[#0F172A]' : 'bg-[#F9F8F1]', text: modoOscuro ? 'text-[#F8F9FA]' : 'text-[#1A1C1E]', card: modoOscuro ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]', border: modoOscuro ? 'border-[#F8F9FA]/10' : 'border-[#1A1C1E]/10', muted: modoOscuro ? 'text-[#F8F9FA]/50' : 'text-[#1A1C1E]/50', nav: modoOscuro ? 'bg-[#0F172A]/90' : 'bg-[#F9F8F1]/90' };
 
-  const [touchStartX, setTouchStartX] = useState(null);
-  const [touchEndX, setTouchEndX] = useState(null);
-
   const [vadAlert, setVadAlert] = useState(null);
   const mostrarAlerta = (titulo, mensaje) => setVadAlert({ tipo: 'info', titulo, mensaje });
   const mostrarError = (titulo, mensaje) => setVadAlert({ tipo: 'error', titulo, mensaje });
@@ -639,14 +636,6 @@ export default function App() {
   };
   const handleEndTimeChange = (rawTime, isMatch) => { if (!rawTime) return; const r = roundToHalfHour(rawTime); if (isMatch) setEndTime(r); else setBookEnd(r); };
 
-  const handleTouchStart = (e) => { setTouchEndX(null); setTouchStartX(e.targetTouches[0].clientX); };
-  const handleTouchMove = (e) => { setTouchEndX(e.targetTouches[0].clientX); };
-  const handleTouchEnd = () => {
-    if (!touchStartX || !touchEndX || currentUser?.rol === 'club') return; 
-    const dist = touchStartX - touchEndX; if (dist > 50) { const idx = ['home', 'jugar', 'partidos', 'perfil'].indexOf(tab); if (idx < 3) setTab(['home', 'jugar', 'partidos', 'perfil'][idx + 1]); }
-    if (dist < -50) { const idx = ['home', 'jugar', 'partidos', 'perfil'].indexOf(tab); if (idx > 0) setTab(['home', 'jugar', 'partidos', 'perfil'][idx - 1]); }
-  };
-
   const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
     const cellStartMins = horaFloat * 60; const cellEndMins = cellStartMins + 30;
     return clubPartidos.find(p => p.fecha === fechaStr && p.cancha_numero === canchaId && (parseInt(p.hora_inicio.split(':')[0]) * 60 + parseInt(p.hora_inicio.split(':')[1])) < cellEndMins && (parseInt(p.hora_fin.split(':')[0]) * 60 + parseInt(p.hora_fin.split(':')[1])) > cellStartMins);
@@ -751,7 +740,7 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 selection:bg-[#29C454]/30 ${theme.bg} ${theme.text}`} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+    <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 selection:bg-[#29C454]/30 ${theme.bg} ${theme.text}`}>
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
@@ -1481,7 +1470,7 @@ export default function App() {
         <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
           <div className="flex justify-between items-center max-w-sm mx-auto px-4">
             {[ { id: 'home', icon: '🏠', label: 'Inicio' }, { id: 'jugar', icon: '🎾', label: 'Jugar' }, { id: 'partidos', icon: '📋', label: 'Partidos' }, { id: 'perfil', icon: '👤', label: 'Perfil' } ].map((item) => (
-              <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-300 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
+              <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-150 active:scale-90 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
                 <div className="relative flex flex-col items-center gap-1">
                   <span className="text-xl mb-0.5">{item.icon}</span>
                   {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && ( <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span> )}
