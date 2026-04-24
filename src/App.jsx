@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.45'; 
+  const APP_VERSION = '1.46'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -945,7 +945,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.45</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.46</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1565,11 +1565,9 @@ export default function App() {
             </div>
           );
         })()}
-        {tab === 'admin_canchas' && (
+        {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (
           <div className="w-full max-w-xl space-y-6 animate-in fade-in pb-20">
-            {/* Gatillo de seguridad para cargar lista si está vacía */}
-            {useEffect(() => { fetchCanchas(); }, [])}
-            <button onClick={() => setTab('perfil')} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver al Perfil</button>
+            <button onClick={() => { fetchCanchas(); setTab('perfil'); }} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver al Perfil</button>
             <div className="text-center">
               <h2 className="text-4xl font-black italic uppercase tracking-tighter">Infraestructura</h2>
               <p className={`text-[10px] font-bold uppercase opacity-50 ${theme.text}`}>Gestión de Inventario de Canchas</p>
@@ -1591,11 +1589,11 @@ export default function App() {
 
             {/* Listado de Canchas (CRUD Completo) */}
             <div className="space-y-3">
-              <h3 className={`text-[10px] font-black uppercase tracking-widest ml-4 ${theme.muted}`}>Canchas Registradas ({listaCanchas.length})</h3>
-              {listaCanchas.length === 0 ? (
+              <h3 className={`text-[10px] font-black uppercase tracking-widest ml-4 ${theme.muted}`}>Canchas Registradas ({listaCanchas?.length || 0})</h3>
+              {!listaCanchas || listaCanchas.length === 0 ? (
                 <div className="text-center py-10 opacity-30 font-bold">Cargando inventario...</div>
               ) : (
-                listaCanchas.map(c => (
+                listaCanchas?.map(c => (
                   <div key={c.id} className={`${theme.card} border ${theme.border} p-5 rounded-[1.8rem] flex items-center justify-between shadow-sm`}>
                     <div className="flex items-center gap-4">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
@@ -1656,7 +1654,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.45 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.46 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
