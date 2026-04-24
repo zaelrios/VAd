@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.46'; 
+  const APP_VERSION = '1.47'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -945,7 +945,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.46</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.47</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1566,66 +1566,113 @@ export default function App() {
           );
         })()}
         {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (
-          <div className="w-full max-w-xl space-y-6 animate-in fade-in pb-20">
-            <button onClick={() => { fetchCanchas(); setTab('perfil'); }} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver al Perfil</button>
-            <div className="text-center">
-              <h2 className="text-4xl font-black italic uppercase tracking-tighter">Infraestructura</h2>
-              <p className={`text-[10px] font-bold uppercase opacity-50 ${theme.text}`}>Gestión de Inventario de Canchas</p>
-            </div>
+          <div className="w-full max-w-6xl space-y-8 animate-in fade-in pb-20 px-4">
             
-            {/* Formulario de Agregado */}
-            <div className={`${theme.card} p-6 rounded-[2.5rem] border ${theme.border} shadow-sm space-y-4`}>
-              <h3 className="text-sm font-black uppercase text-[#29C454] ml-2">Añadir Nueva Cancha</h3>
-              <div className="flex flex-col md:flex-row gap-2">
-                <input type="text" placeholder="Nombre (Ej. Cancha 11)" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`flex-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-bold focus:outline-none focus:border-[#29C454] shadow-inner`} />
-                <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className="...">
-                  <option value="Dura">Dura</option>
-                  <option value="Césped">Césped</option>
-                  <option value="Arcilla">Arcilla</option> {/* NUEVA OPCIÓN */}
-                </select>
-                <button onClick={agregarCancha} className="bg-[#29C454] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all">Añadir</button>
+            {/* Cabecera */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-6 border-black/5">
+              <div className="text-left">
+                <button onClick={() => setTab('perfil')} className={`mb-2 text-[10px] font-black uppercase tracking-widest ${theme.muted} hover:text-[#29C454] transition-colors`}>← Volver al Panel</button>
+                <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none">Infraestructura</h2>
+                <p className={`text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Configuración global de canchas y mantenimiento</p>
+              </div>
+              <div className="flex gap-4">
+                 <div className={`${theme.card} px-6 py-3 rounded-2xl border ${theme.border} text-center shadow-sm`}>
+                    <p className="text-[9px] font-black uppercase opacity-40">Total Canchas</p>
+                    <p className="text-2xl font-black italic">{listaCanchas?.length || 0}</p>
+                 </div>
               </div>
             </div>
 
-            {/* Listado de Canchas (CRUD Completo) */}
-            <div className="space-y-3">
-              <h3 className={`text-[10px] font-black uppercase tracking-widest ml-4 ${theme.muted}`}>Canchas Registradas ({listaCanchas?.length || 0})</h3>
-              {!listaCanchas || listaCanchas.length === 0 ? (
-                <div className="text-center py-10 opacity-30 font-bold">Cargando inventario...</div>
-              ) : (
-                listaCanchas?.map(c => (
-                  <div key={c.id} className={`${theme.card} border ${theme.border} p-5 rounded-[1.8rem] flex items-center justify-between shadow-sm`}>
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
-                        {c.id}
-                      </div>
-                      <div>
-                        <p className="font-black italic text-lg leading-none">{c.nombre}</p>
-                        <p className="text-[9px] font-bold uppercase opacity-40 mt-1">{c.superficie} • {c.estado}</p>
-                      </div>
+            {/* Layout en Grid: Formulario a la Izquierda, Lista a la Derecha */}
+            <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-8 items-start">
+              
+              {/* COLUMNA 1: Formulario de Agregado (Sticky en desktop) */}
+              <div className="lg:sticky lg:top-24 space-y-6">
+                <div className={`${theme.card} p-6 rounded-[2.5rem] border ${theme.border} shadow-xl relative overflow-hidden`}>
+                  <div className="absolute -right-4 -top-4 opacity-5 text-7xl rotate-12">🎾</div>
+                  <h3 className="text-lg font-black uppercase text-[#29C454] mb-6 relative z-10">Nueva Cancha</h3>
+                  
+                  <div className="space-y-4 relative z-10">
+                    <div className="text-left">
+                      <label className="text-[10px] font-black uppercase opacity-40 ml-2">Nombre o Número</label>
+                      <input type="text" placeholder="Ej. Cancha 11" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-bold focus:outline-none focus:border-[#29C454] shadow-inner`} />
                     </div>
                     
-                    <div className="flex items-center gap-3">
-                      {/* Toggle Mantenimiento */}
-                      <button 
-                        onClick={() => toggleEstadoCancha(c)} 
-                        className={`w-12 h-7 rounded-full p-1 transition-colors relative ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-red-500'}`}
-                        title={c.estado === 'activa' ? 'Poner en Mantenimiento' : 'Activar Cancha'}
-                      >
-                        <div className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-200 ${c.estado === 'activa' ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
-
-                      {/* Botón Eliminar */}
-                      <button 
-                        onClick={() => eliminarCancha(c.id)}
-                        className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all`}
-                      >
-                        🗑️
-                      </button>
+                    <div className="text-left">
+                      <label className="text-[10px] font-black uppercase opacity-40 ml-2">Tipo de Superficie</label>
+                      <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-black uppercase appearance-none cursor-pointer focus:outline-none focus:border-[#29C454]`}>
+                        <option value="Dura">Cancha Dura</option>
+                        <option value="Césped">Césped Natural</option>
+                        <option value="Arcilla">Arcilla / Polvo</option>
+                      </select>
                     </div>
+
+                    <button onClick={agregarCancha} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all mt-4 hover:brightness-110">
+                      Registrar Cancha ➜
+                    </button>
                   </div>
-                ))
-              )}
+                </div>
+                
+                <div className="p-6 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-[2rem] text-left">
+                  <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Nota de Mantenimiento</p>
+                  <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Al marcar una cancha en mantenimiento, el sistema la bloqueará automáticamente en el Master Schedule y los jugadores no podrán seleccionarla en el buscador.</p>
+                </div>
+              </div>
+
+              {/* COLUMNA 2: Listado de Canchas (Data Binding Fix) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-4">
+                  <h3 className={`text-[11px] font-black uppercase tracking-[0.3em] ${theme.muted}`}>Inventario de Canchas</h3>
+                  <button onClick={fetchCanchas} className="text-[10px] font-black uppercase text-[#29C454] hover:underline">🔄 Refrescar Lista</button>
+                </div>
+
+                {!listaCanchas || listaCanchas.length === 0 ? (
+                  <div className={`${theme.card} border-2 border-dashed ${theme.border} rounded-[2.5rem] py-20 text-center opacity-40`}>
+                    <p className="text-5xl mb-4">🏗️</p>
+                    <p className="font-black italic uppercase tracking-widest text-xs">No hay canchas registradas aún</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {listaCanchas?.map(c => (
+                      <div key={c.id} className={`${theme.card} border ${theme.border} p-5 rounded-[2rem] flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group`}>
+                        <div className="flex items-center gap-5">
+                          <div className={`w-14 h-14 rounded-[1.2rem] flex items-center justify-center font-black text-lg shadow-inner ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-600' : c.superficie === 'Arcilla' ? 'bg-orange-500/10 text-orange-600' : 'bg-green-500/10 text-green-600'}`}>
+                            {c.id}
+                          </div>
+                          <div className="text-left">
+                            <p className="font-black italic text-xl leading-none group-hover:text-[#29C454] transition-colors">{c.nombre}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[9px] font-black uppercase tracking-widest opacity-40">{c.superficie}</span>
+                              <span className="opacity-20">•</span>
+                              <span className={`text-[9px] font-black uppercase tracking-widest ${c.estado === 'activa' ? 'text-green-500' : 'text-red-500'}`}>{c.estado}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                          {/* Toggle Mantenimiento */}
+                          <button 
+                            onClick={() => toggleEstadoCancha(c)} 
+                            className={`w-14 h-8 rounded-full p-1 transition-all relative ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-red-500'}`}
+                          >
+                            <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
+                          </button>
+
+                          {/* Botón Eliminar */}
+                          <button 
+                            onClick={() => eliminarCancha(c.id)}
+                            className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all active:scale-90`}
+                            title="Eliminar Cancha"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         )}
@@ -1654,7 +1701,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.46 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.47 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
