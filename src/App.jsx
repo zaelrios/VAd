@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.39'; 
+  const APP_VERSION = '1.40'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -97,9 +97,10 @@ export default function App() {
   const [partidoJ1, setPartidoJ1] = useState('');
   const [partidoJ2, setPartidoJ2] = useState('');
 
-  const [frecuencia, setFrecuencia] = useState('unica'); // unica, diaria, semanal
+  const [frecuencia, setFrecuencia] = useState('unica'); 
   const [iteraciones, setIteraciones] = useState(1);
-  const [diasRecurrencia, setDiasRecurrencia] = useState([]); // 0-6 (Dom-Sab)
+  const [diasRecurrencia, setDiasRecurrencia] = useState([]); 
+  const [partidoAdmin, setPartidoAdmin] = useState(null); // Para el Override del Admin
 
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
 
@@ -121,12 +122,33 @@ export default function App() {
   startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
   const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
 
+  const checkExpiredPartidos = async (matches) => {
+    const now = new Date(); let changed = false;
+    for (let m of matches) {
+      if (m.estado === 'confirmado' && obtenerEstadoTiempo(m) === 'terminado') {
+        const [y, month, d] = m.fecha.split('-'); const [h, min] = m.hora_fin.split(':');
+        const endObj = new Date(y, month - 1, d, h, min);
+        if ((now - endObj) / (1000 * 60 * 60) >= 24) {
+          await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
+          const { data: p1 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador1_id).single();
+          const { data: p2 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador2_id).single();
+          if(p1) await supabase.from('Perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
+          if(p2) await supabase.from('Perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  };
+
   const fetchClubPartidos = async () => {
     if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
     try {
       const { data: matches, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
       if (error) throw error;
       if (matches && matches.length > 0) {
+        const changed = await checkExpiredPartidos(matches);
+        if(changed) { fetchClubPartidos(); return; }
         const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
         const { data: perfiles } = await supabase.from('Perfiles').select('id, nombre').in('id', userIds);
         const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
@@ -203,6 +225,8 @@ export default function App() {
       const { data: matches, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
       if (error) throw error;
       if (matches && matches.length > 0) {
+        const changed = await checkExpiredPartidos(matches);
+        if(changed) { fetchPartidos(); return; }
         const partidosConRivales = await Promise.all(matches.map(async (partido) => {
           const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
           const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
@@ -458,38 +482,90 @@ export default function App() {
     });
   };
 
-  const handleConfirmReport = async (partido) => {
+ const handleConfirmReport = async (partido) => {
     try {
       const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
       const yoGane = partido.ganador_id === currentUser.id;
-      const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, partido.marcador, yoGane);
-      const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, partido.marcador, !yoGane);
-      const deltaMi = miNuevoElo - currentUser.elo; const deltaRival = rivalNuevoElo - rivalDB.elo;
-      const misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
-      const rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
+      let miNuevoElo = currentUser.elo; let rivalNuevoElo = rivalDB.elo;
+      let misNuevosDatos = { nuevaConfianza: currentUser.confianza, nuevaRacha: currentUser.racha_asistencia };
+      let rivalNuevosDatos = { nuevaConfianza: rivalDB.confianza, nuevaRacha: rivalDB.racha_asistencia };
+      let deltaMi = 0; let deltaRival = 0;
+
+      if (partido.marcador === 'W.O.') {
+        miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, "0-6, 0-6", false);
+        rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, "6-0, 6-0", true);
+        misNuevosDatos.nuevaConfianza = Math.max(0, currentUser.confianza - 1.0);
+        misNuevosDatos.nuevaRacha = 0;
+        deltaMi = miNuevoElo - currentUser.elo; deltaRival = rivalNuevoElo - rivalDB.elo;
+      } else {
+        miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, partido.marcador, yoGane);
+        rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, partido.marcador, !yoGane);
+        deltaMi = miNuevoElo - currentUser.elo; deltaRival = rivalNuevoElo - rivalDB.elo;
+        misNuevosDatos = calcularNuevaConfianza(currentUser.confianza, currentUser.racha_asistencia);
+        rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
+      }
 
       await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
       await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha }).eq('id', rivalDB.id);
 
-      const dataUpdate = { estado: 'finalizado', puntos_j1: partido.jugador1_id === currentUser.id ? deltaMi : deltaRival, puntos_j2: partido.jugador1_id === currentUser.id ? deltaRival : deltaMi };
+      const dataUpdate = { estado: partido.marcador === 'W.O.' ? 'wo' : 'finalizado', puntos_j1: partido.jugador1_id === currentUser.id ? deltaMi : deltaRival, puntos_j2: partido.jugador1_id === currentUser.id ? deltaRival : deltaMi };
       await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); fetchPartidos();
       
       let mensajeFinal = `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`;
-      if (misNuevosDatos.nuevaConfianza > currentUser.confianza) {
-        mensajeFinal += `\n\n🟢 ¡Felicidades! Tu confiabilidad subió a ${misNuevosDatos.nuevaConfianza.toFixed(1)}/5.0`;
-      }
+      if (misNuevosDatos.nuevaConfianza > currentUser.confianza) mensajeFinal += `\n\n🟢 ¡Felicidades! Tu confiabilidad subió a ${misNuevosDatos.nuevaConfianza.toFixed(1)}/5.0`;
       mostrarAlerta("¡Partido finalizado!", mensajeFinal);
     } catch (error) {}
   };
 
+  const handleRejectReport = async (partido) => {
+    mostrarConfirmacion("Impugnar Resultado", "¿Seguro que el reporte es incorrecto? El partido pasará a revisión administrativa y podría haber sanciones si hay reportes falsos.", async () => {
+      await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', partido.id);
+      fetchPartidos(); mostrarAlerta("Disputa Abierta", "Un administrador revisará el caso.");
+    });
+  };
+
+  const handleAdminOverride = async (partido, isWO) => {
+    try {
+      let marcadorFinal = "W.O.";
+      let ganadorIdCalculado = partido.jugador1_id; 
+      
+      if (!isWO) {
+          const v1Mi = parseInt(s1Mi, 10); const v1Riv = parseInt(s1Rival, 10); const v2Mi = parseInt(s2Mi, 10); const v2Riv = parseInt(s2Rival, 10);
+          if (!isValidTennisSet(v1Mi, v1Riv) || !isValidTennisSet(v2Mi, v2Riv)) { mostrarError("Inválido", "Marcadores de set inválidos."); return; }
+          let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0); let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0); 
+          marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
+          if (setsMi === 1 && setsRiv === 1) {
+            const v3Mi = parseInt(s3Mi, 10); const v3Riv = parseInt(s3Rival, 10);
+            if (!isValidTennisSet(v3Mi, v3Riv)) { mostrarError("Inválido", "Tercer set inválido."); return; }
+            setsMi += (v3Mi > v3Riv ? 1 : 0); setsRiv += (v3Riv > v3Mi ? 1 : 0); marcadorFinal += `, ${v3Mi}-${v3Riv}`;
+          }
+          if (setsMi === setsRiv) { mostrarError("Error", "No puede haber empate."); return; }
+          ganadorIdCalculado = setsMi > setsRiv ? partido.jugador1_id : partido.jugador2_id;
+      }
+
+      const { data: p1 } = await supabase.from('Perfiles').select('*').eq('id', partido.jugador1_id).single();
+      const { data: p2 } = await supabase.from('Perfiles').select('*').eq('id', partido.jugador2_id).single();
+      const p1Gano = ganadorIdCalculado === partido.jugador1_id;
+      
+      let p1NuevoElo = calculateElo(p1.elo, p2.elo, isWO ? "6-0, 6-0" : marcadorFinal, p1Gano);
+      let p2NuevoElo = calculateElo(p2.elo, p1.elo, isWO ? "0-6, 0-6" : marcadorFinal, !p1Gano);
+      
+      await supabase.from('Perfiles').update({ elo: p1NuevoElo }).eq('id', p1.id);
+      await supabase.from('Perfiles').update({ elo: p2NuevoElo }).eq('id', p2.id);
+
+      const dataUpdate = { estado: isWO ? 'wo' : 'finalizado', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id, puntos_j1: p1NuevoElo - p1.elo, puntos_j2: p2NuevoElo - p2.elo };
+      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
+      
+      fetchClubPartidos(); setBloqueoActivo(null); setPartidoAdmin(null);
+      mostrarAlerta("Override Exitoso", "El partido ha sido cerrado administrativamente.");
+    } catch (error) { mostrarError("Error", error.message); }
+  };
+
   const handleWO = (partido) => {
-    mostrarConfirmacion("Reportar W.O.", "¿Seguro de reportar W.O.? Esto penalizará fuertemente al rival.", async () => {
+    mostrarConfirmacion("Reportar W.O.", "¿Seguro de reportar W.O. por inasistencia del rival? Tu rival tendrá que confirmarlo o se irá a disputa administrativa.", async () => {
         try {
-          const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
-          const miNuevoElo = calculateElo(currentUser.elo, rivalDB.elo, "6-0, 6-0", true); const rivalNuevoElo = calculateElo(rivalDB.elo, currentUser.elo, "6-0, 6-0", false);
-          await supabase.from('Perfiles').update({ elo: miNuevoElo }).eq('id', currentUser.id); await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
-          await supabase.from('partidos').update({ estado: 'wo', ganador_id: currentUser.id, puntos_j1: partido.jugador1_id === currentUser.id ? (miNuevoElo - currentUser.elo) : (rivalNuevoElo - rivalDB.elo), puntos_j2: partido.jugador1_id === currentUser.id ? (rivalNuevoElo - rivalDB.elo) : (miNuevoElo - currentUser.elo) }).eq('id', partido.id);
-          fetchPartidos(); mostrarAlerta("W.O. Exitoso", "Se ha reportado la inasistencia del rival.");
+          await supabase.from('partidos').update({ estado: 'en_revision', marcador: "W.O.", ganador_id: currentUser.id, reportado_por: currentUser.id }).eq('id', partido.id);
+          fetchPartidos(); mostrarAlerta("Enviado", "Reporte de W.O. enviado al rival para confirmación.");
         } catch (error) { mostrarError("Error", "No se pudo procesar el W.O."); }
     });
   };
@@ -644,9 +720,16 @@ export default function App() {
   const handleCellClick = async (cancha, horaFloat, fechaStr) => {
     const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
     if (partido) {
-      // BUG 3: Botón de Eliminar Partido Manual
-      const esAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'club';
+     const esAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'club';
       if (esAdmin) {
+        if (partido.estado !== 'bloqueo_admin' && (partido.estado === 'en_disputa' || obtenerEstadoTiempo(partido) === 'terminado')) {
+           setPartidoAdmin(partido);
+           setModalAccion('reportar_admin');
+           setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
+           setBloqueoActivo({ cancha, horaFloat, fechaStr });
+           return;
+        }
+        
         const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿ELIMINAR PARTIDO?\n\nSe notificará a los jugadores pero NO se les regresará a la lista de espera.`;
         
         mostrarConfirmacion("Administrar Celda", msj, async () => {
@@ -744,7 +827,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.39</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.40</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1032,10 +1115,21 @@ export default function App() {
                                   <p className="text-xs font-black uppercase text-[#E5B824] text-center">⏳ Esperando que el rival confirme</p>
                                 ) : (
                                   <div className="text-center space-y-3">
-                                    <p className="text-xs font-black text-[#E5B824]">¿Confirmas el marcador {partido.marcador}?</p>
-                                    <button onClick={() => handleConfirmReport(partido)} className="w-full bg-[#007AFF] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md active:scale-95 transition-all">Confirmar y Finalizar</button>
+                                    <p className="text-xs font-black text-[#E5B824] uppercase tracking-widest mb-2">
+                                      {partido.marcador === 'W.O.' ? '🚨 Tu rival reportó W.O. por inasistencia' : `Tu rival reportó: ${partido.marcador}`}
+                                    </p>
+                                    <div className="flex gap-2">
+                                      <button onClick={() => handleRejectReport(partido)} className="flex-1 bg-red-500 text-white py-3 rounded-xl font-black uppercase text-xs shadow-md active:scale-95 transition-all">Impugnar</button>
+                                      <button onClick={() => handleConfirmReport(partido)} className="flex-1 bg-[#007AFF] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md active:scale-95 transition-all">Confirmar</button>
+                                    </div>
                                   </div>
                                 )}
+                              </div>
+                            )}
+                            {partido.estado === 'en_disputa' && (
+                              <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/30 mt-4 text-center">
+                                <p className="text-xs font-black uppercase text-red-500 tracking-widest">⚠️ En Disputa Administrativa</p>
+                                <p className={`text-[9px] mt-1 opacity-70 ${theme.text}`}>El club resolverá el resultado pronto.</p>
                               </div>
                             )}
                           </div>
@@ -1267,15 +1361,16 @@ export default function App() {
                             {/* Bloques de Tiempo Interactivos */}
                             {horasGrid.map(horaFloat => {
                               const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
-                              const esVAd = partido && partido.estado !== 'bloqueo_admin';
+                              const esDisputa = partido?.estado === 'en_disputa';
+                              const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
                               const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-                              const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? `Bloqueo: ${partido.marcador || 'Administración'}` : '';
+                              const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? `Bloqueo: ${partido.marcador || 'Administración'}` : esDisputa ? `DISPUTA: ${partido.j1_nombre} vs ${partido.j2_nombre}` : '';
                               
                               return (
                                 <div 
                                   key={`${dayStr}-${c}-${horaFloat}`} 
                                   className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
-                                    !esVAd && !esBloqueo ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` : ''
+                                    !esVAd && !esBloqueo && !esDisputa ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` : ''
                                   }`}
                                   onClick={() => handleCellClick(c, horaFloat, dayStr)}
                                 >
@@ -1295,6 +1390,15 @@ export default function App() {
                                       <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
                                       <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
                                         {partido.marcador || 'Bloqueado'}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {esDisputa && (
+                                    <div title={tooltipText} className="absolute inset-0 bg-[#991B1B] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10 border-2 border-red-500 animate-pulse">
+                                      <span className="text-[12px] text-white font-black mb-0.5 leading-none">⚠️</span>
+                                      <span className="text-[8px] md:text-[9px] text-white font-black text-center leading-tight truncate w-full">
+                                        DISPUTA<br/>{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
                                       </span>
                                     </div>
                                   )}
@@ -1340,127 +1444,135 @@ export default function App() {
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
-            
-            {/* Selector de Pestañas */}
-            <div className="flex bg-black/5 p-1 rounded-2xl mb-6">
-              <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'bloqueo' ? 'bg-[#991B1B] text-white shadow-md' : 'text-black/40'}`}>Bloquear</button>
-              <button onClick={() => setModalAccion('partido')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'partido' ? 'bg-[#064E3B] text-white shadow-md' : 'text-black/40'}`}>Partido</button>
-            </div>
-
-            {/* Rango de Tiempo (UX mejorado) */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="text-left">
-                <label className="text-[10px] font-black uppercase opacity-40 ml-2">Inicio</label>
-                <input type="time" step="1800" value={modalHoraInicio} onChange={(e)=>setModalHoraInicio(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
-              </div>
-              <div className="text-left">
-                <label className="text-[10px] font-black uppercase opacity-40 ml-2">Fin</label>
-                <input type="time" step="1800" value={modalHoraFin} onChange={(e)=>setModalHoraFin(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
-              </div>
-            </div>
-
-            {modalAccion === 'bloqueo' ? (
-              <div className="space-y-4 mb-8 text-left">
-                <label className="text-[10px] font-black uppercase opacity-40 ml-2">Motivo del Bloqueo</label>
-                <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className="w-full bg-white border border-black/10 rounded-xl p-4 text-lg font-bold text-black appearance-none shadow-sm">
-                  <option value="Administrativo">Administrativo</option>
-                  <option value="Mantenimiento">Mantenimiento</option>
-                  <option value="Clase">Clase</option>
-                  <option value="Torneo">Torneo</option>
-                </select>
+            {modalAccion === 'reportar_admin' && partidoAdmin ? (
+              <div className="space-y-4 mb-6 p-4 bg-white border border-black/10 rounded-2xl text-left">
+                <h3 className="text-sm font-black text-[#991B1B]">⚠️ Override Administrativo</h3>
+                <p className="text-[10px] text-black/60">Fuerza el resultado o decreta W.O. La decisión es final.</p>
+                
+                <div className="flex justify-between px-1 text-[9px] font-black uppercase tracking-widest text-black/40 mt-4">
+                  <span className="w-14 text-center text-[#064E3B]">{partidoAdmin.j1_nombre.split(' ')[0]}</span>
+                  <span className="text-center">Set</span>
+                  <span className="w-14 text-center text-[#007AFF]">{partidoAdmin.j2_nombre.split(' ')[0]}</span>
+                </div>
+                
+                <div className="flex gap-2 items-center justify-between">
+                  <input type="tel" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <span className="font-bold text-[10px] text-black/40">1</span>
+                  <input type="tel" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                </div>
+                <div className="flex gap-2 items-center justify-between">
+                  <input type="tel" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <span className="font-bold text-[10px] text-black/40">2</span>
+                  <input type="tel" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                </div>
+                <div className="flex gap-2 items-center justify-between">
+                  <input type="tel" value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <span className="font-bold text-[10px] text-black/40">3</span>
+                  <input type="tel" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                </div>
+                
+                <button onClick={() => handleAdminOverride(partidoAdmin, false)} className="w-full bg-[#064E3B] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md mt-4 active:scale-95 transition-all">Sobrescribir Resultado</button>
+                <button onClick={() => handleAdminOverride(partidoAdmin, true)} className="w-full border border-[#991B1B] text-[#991B1B] py-3 rounded-xl font-black uppercase text-xs mt-2 hover:bg-[#991B1B]/10 active:scale-95 transition-all">Decretar W.O. (Gana J1)</button>
+                <button onClick={() => { setPartidoAdmin(null); setBloqueoActivo(null); }} className="w-full text-black/40 font-bold text-[10px] uppercase mt-4 active:scale-95">Cancelar</button>
               </div>
             ) : (
-              <div className="space-y-4 mb-8 text-left">
-                {/* Buscador Jugador 1 */}
-                <div className="relative">
-                  <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 1</label>
-                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>{ const val = e.target.value; setBusquedaJ1(val); if (val === '') setPartidoJ1('');}} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
-                  {busquedaJ1 && !partidoJ1 && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
-                      {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
-                        <div key={u.id} onClick={()=>{setPartidoJ1(u.id); setBusquedaJ1(u.nombre);}} className="p-4 text-sm font-bold border-b border-black/5 cursor-pointer hover:bg-[#064E3B]/5">{u.nombre}</div>
-                      ))}
+              <>
+                <div className="flex bg-black/5 p-1 rounded-2xl mb-6">
+                  <button onClick={() => setModalAccion('bloqueo')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'bloqueo' ? 'bg-[#991B1B] text-white shadow-md' : 'text-black/40'}`}>Bloquear</button>
+                  <button onClick={() => setModalAccion('partido')} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${modalAccion === 'partido' ? 'bg-[#064E3B] text-white shadow-md' : 'text-black/40'}`}>Partido</button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="text-left">
+                    <label className="text-[10px] font-black uppercase opacity-40 ml-2">Inicio</label>
+                    <input type="time" step="1800" value={modalHoraInicio} onChange={(e)=>setModalHoraInicio(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
+                  </div>
+                  <div className="text-left">
+                    <label className="text-[10px] font-black uppercase opacity-40 ml-2">Fin</label>
+                    <input type="time" step="1800" value={modalHoraFin} onChange={(e)=>setModalHoraFin(e.target.value)} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
+                  </div>
+                </div>
+
+                {modalAccion === 'bloqueo' ? (
+                  <div className="space-y-4 mb-8 text-left">
+                    <label className="text-[10px] font-black uppercase opacity-40 ml-2">Motivo del Bloqueo</label>
+                    <select value={bloqueoMotivo} onChange={e => setBloqueoMotivo(e.target.value)} className="w-full bg-white border border-black/10 rounded-xl p-4 text-lg font-bold text-black appearance-none shadow-sm">
+                      <option value="Administrativo">Administrativo</option>
+                      <option value="Mantenimiento">Mantenimiento</option>
+                      <option value="Clase">Clase</option>
+                      <option value="Torneo">Torneo</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-4 mb-8 text-left">
+                    <div className="relative">
+                      <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 1</label>
+                      <input type="text" placeholder="Buscar nombre..." value={busquedaJ1} onChange={(e)=>{ const val = e.target.value; setBusquedaJ1(val); if (val === '') setPartidoJ1('');}} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
+                      {busquedaJ1 && !partidoJ1 && (
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
+                          {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ1.toLowerCase())).map(u => (
+                            <div key={u.id} onClick={()=>{setPartidoJ1(u.id); setBusquedaJ1(u.nombre);}} className="p-4 text-sm font-bold border-b border-black/5 cursor-pointer hover:bg-[#064E3B]/5">{u.nombre}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-
-                {/* Buscador Jugador 2 */}
-                <div className="relative">
-                  <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 2</label>
-                  <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>{ const val = e.target.value; setBusquedaJ2(val); if (val === '') setPartidoJ2('');}} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
-                  {busquedaJ2 && !partidoJ2 && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
-                      {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
-                        <div key={u.id} onClick={()=>{setPartidoJ2(u.id); setBusquedaJ2(u.nombre);}} className="p-4 text-sm font-bold border-b border-black/5 cursor-pointer hover:bg-[#064E3B]/5">{u.nombre}</div>
-                      ))}
+                    <div className="relative">
+                      <label className="text-[10px] font-black uppercase opacity-40 ml-2">Jugador 2</label>
+                      <input type="text" placeholder="Buscar nombre..." value={busquedaJ2} onChange={(e)=>{ const val = e.target.value; setBusquedaJ2(val); if (val === '') setPartidoJ2('');}} className="w-full mt-1 bg-white border border-black/10 rounded-xl p-3 text-lg font-bold text-black" />
+                      {busquedaJ2 && !partidoJ2 && (
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl max-h-40 overflow-y-auto">
+                          {listaUsuarios.filter(u => u.nombre?.toLowerCase().includes(busquedaJ2.toLowerCase())).map(u => (
+                            <div key={u.id} onClick={()=>{setPartidoJ2(u.id); setBusquedaJ2(u.nombre);}} className="p-4 text-sm font-bold border-b border-black/5 cursor-pointer hover:bg-[#064E3B]/5">{u.nombre}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {modalAccion === 'bloqueo' && (
-              <div className="space-y-4 mb-6 p-4 bg-white border border-black/10 rounded-2xl text-left">
-                <div>
-                  <label className="text-[10px] font-black uppercase opacity-40">Frecuencia</label>
-                  <select value={frecuencia} onChange={(e) => { setFrecuencia(e.target.value); setIteraciones(1); setDiasRecurrencia([]); }} className="w-full mt-1 bg-transparent text-sm font-bold outline-none">
-                    <option value="unica">Evento Único</option>
-                    <option value="diaria">Repetición Diaria</option>
-                    <option value="semanal">Repetición Semanal</option>
-                  </select>
-                </div>
-
-                {frecuencia === 'diaria' && (
-                  <div className="pt-2 border-t border-black/5 animate-in fade-in">
-                    <label className="text-[10px] font-black uppercase opacity-40">¿Cuántos días seguidos?</label>
-                    <input type="number" min="1" max="30" value={iteraciones} onChange={(e) => setIteraciones(parseInt(e.target.value))} className="w-full mt-1 bg-black/5 rounded-lg p-2 font-bold" />
                   </div>
                 )}
 
-                {frecuencia === 'semanal' && (
-                  <div className="pt-2 border-t border-black/5 space-y-3 animate-in fade-in">
-                    <label className="text-[10px] font-black uppercase opacity-40">Días de la semana</label>
-                    <div className="flex flex-wrap gap-2">
-                      {['D','L','M','M','J','V','S'].map((d, i) => (
-                        <button key={i} onClick={() => setDiasRecurrencia(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])} className={`w-8 h-8 rounded-full text-[10px] font-black transition-all ${diasRecurrencia.includes(i) ? 'bg-[#064E3B] text-white' : 'bg-black/5 text-black/40'}`}>{d}</button>
-                      ))}
-                    </div>
+                {modalAccion === 'bloqueo' && (
+                  <div className="space-y-4 mb-6 p-4 bg-white border border-black/10 rounded-2xl text-left">
                     <div>
-                      <label className="text-[10px] font-black uppercase opacity-40">¿Cuántas semanas? (Máx 52)</label>
-                      <input 
-                        type="number" 
-                        min="1" 
-                        max="52" 
-                        value={iteraciones} 
-                        onChange={(e) => {
-                          let val = parseInt(e.target.value);
-                          if (val > 52) val = 52; // Validación: Tope automático en 52
-                          setIteraciones(isNaN(val) ? '' : val);
-                        }}
-                        onBlur={() => { if (iteraciones === '' || iteraciones < 1) setIteraciones(1); }}
-                        className="w-full mt-1 bg-black/5 rounded-xl p-3 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" 
-                      />
+                      <label className="text-[10px] font-black uppercase opacity-40">Frecuencia</label>
+                      <select value={frecuencia} onChange={(e) => { setFrecuencia(e.target.value); setIteraciones(1); setDiasRecurrencia([]); }} className="w-full mt-1 bg-transparent text-sm font-bold outline-none">
+                        <option value="unica">Evento Único</option>
+                        <option value="diaria">Repetición Diaria</option>
+                        <option value="semanal">Repetición Semanal</option>
+                      </select>
                     </div>
+                    {frecuencia === 'diaria' && (
+                      <div className="pt-2 border-t border-black/5 animate-in fade-in">
+                        <label className="text-[10px] font-black uppercase opacity-40">¿Cuántos días seguidos?</label>
+                        <input type="number" min="1" max="30" value={iteraciones} onChange={(e) => setIteraciones(parseInt(e.target.value))} className="w-full mt-1 bg-black/5 rounded-lg p-2 font-bold" />
+                      </div>
+                    )}
+                    {frecuencia === 'semanal' && (
+                      <div className="pt-2 border-t border-black/5 space-y-3 animate-in fade-in">
+                        <label className="text-[10px] font-black uppercase opacity-40">Días de la semana</label>
+                        <div className="flex flex-wrap gap-2">
+                          {['D','L','M','M','J','V','S'].map((d, i) => (
+                            <button key={i} onClick={() => setDiasRecurrencia(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])} className={`w-8 h-8 rounded-full text-[10px] font-black transition-all ${diasRecurrencia.includes(i) ? 'bg-[#064E3B] text-white' : 'bg-black/5 text-black/40'}`}>{d}</button>
+                          ))}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black uppercase opacity-40">¿Cuántas semanas? (Máx 52)</label>
+                          <input type="number" min="1" max="52" value={iteraciones} onChange={(e) => { let val = parseInt(e.target.value); if (val > 52) val = 52; setIteraciones(isNaN(val) ? '' : val); }} onBlur={() => { if (iteraciones === '' || iteraciones < 1) setIteraciones(1); }} className="w-full mt-1 bg-black/5 rounded-xl p-3 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-[#064E3B]/20" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* Botones Fat-Finger */}
-            <div className="flex flex-col gap-3">
-              <button 
-                onClick={confirmarAccionModal} 
-                className={`w-full h-[56px] rounded-2xl font-bold text-[24px] text-[#F9F8F1] shadow-lg active:scale-[0.97] transition-all duration-100 ${modalAccion === 'bloqueo' ? 'bg-[#991B1B] shadow-[#991B1B]/20' : 'bg-[#064E3B] shadow-[#064E3B]/20'}`}
-              >
-                {modalAccion === 'bloqueo' ? 'Bloquear Cancha' : 'Agendar VAd.'}
-              </button>
-              <button 
-                onClick={() => setBloqueoActivo(null)} 
-                className="w-full h-[56px] font-bold text-[18px] text-black/40 uppercase tracking-widest active:scale-[0.97] transition-all duration-100"
-              >
-                Cancelar
-              </button>
-            </div>
+                <div className="flex flex-col gap-3">
+                  <button onClick={confirmarAccionModal} className={`w-full h-[56px] rounded-2xl font-bold text-[24px] text-[#F9F8F1] shadow-lg active:scale-[0.97] transition-all duration-100 ${modalAccion === 'bloqueo' ? 'bg-[#991B1B] shadow-[#991B1B]/20' : 'bg-[#064E3B] shadow-[#064E3B]/20'}`}>
+                    {modalAccion === 'bloqueo' ? 'Bloquear Cancha' : 'Agendar VAd.'}
+                  </button>
+                  <button onClick={() => { setBloqueoActivo(null); setPartidoAdmin(null); }} className="w-full h-[56px] font-bold text-[18px] text-black/40 uppercase tracking-widest active:scale-[0.97] transition-all duration-100">
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
