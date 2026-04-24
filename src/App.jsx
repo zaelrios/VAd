@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.43'; 
+  const APP_VERSION = '1.44'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -164,6 +164,18 @@ export default function App() {
     if (!nombreNuevaCancha) return;
     const { error } = await supabase.from('canchas').insert([{ nombre: nombreNuevaCancha, superficie: nuevaCanchaSuperficie, estado: 'activa' }]);
     if (!error) { setNombreNuevaCancha(''); fetchCanchas(); mostrarAlerta("Éxito", "Nueva cancha agregada."); }
+  };
+
+  const eliminarCancha = async (id) => {
+    mostrarConfirmacion("Eliminar Cancha", "¿Estás seguro de eliminar esta cancha? No se recomienda si tiene partidos agendados.", async () => {
+      const { error } = await supabase.from('canchas').delete().eq('id', id);
+      if (!error) {
+        fetchCanchas();
+        mostrarAlerta("Eliminada", "La cancha ha sido retirada del sistema.");
+      } else {
+        mostrarError("Error", "No se puede eliminar una cancha con actividad.");
+      }
+    });
   };
 
   // Actualizar el useEffect inicial para cargar canchas
@@ -933,7 +945,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.43</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.44</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1315,8 +1327,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* --- SECCIÓN EXCLUSIVA ADMIN --- */}
-              {isLoggedIn && currentUser?.rol === 'admin' && (
+              {/* --- SECCIÓN PARA ADMINISTRADORES Y CLUBES --- */}
+              {isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club') && (
                 <div className={`w-full mt-8 pt-8 border-t ${theme.border} space-y-4`}>
                   <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola Master</h3>
                   <div className="grid grid-cols-2 gap-3">
@@ -1546,38 +1558,66 @@ export default function App() {
             </div>
           );
         })()}
-        {tab === 'admin_canchas' && (
-          <div className="w-full max-w-xl space-y-6 animate-in fade-in">
-            <button onClick={() => setTab('perfil')} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver</button>
-            <h2 className="text-3xl font-black italic uppercase">Infraestructura</h2>
+        {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (
+          <div className="w-full max-w-xl space-y-6 animate-in fade-in pb-20">
+            <button onClick={() => setTab('perfil')} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver al Perfil</button>
+            <div className="text-center">
+              <h2 className="text-4xl font-black italic uppercase tracking-tighter">Infraestructura</h2>
+              <p className={`text-[10px] font-bold uppercase opacity-50 ${theme.text}`}>Gestión de Inventario de Canchas</p>
+            </div>
             
-            <div className={`${theme.card} p-6 rounded-[2rem] border ${theme.border} space-y-4`}>
-              <h3 className="text-sm font-black uppercase text-[#29C454]">Agregar Cancha</h3>
-              <div className="flex gap-2">
-                <input type="text" placeholder="Ej. Cancha 11" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`flex-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
-                <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`}>
+            {/* Formulario de Agregado */}
+            <div className={`${theme.card} p-6 rounded-[2.5rem] border ${theme.border} shadow-sm space-y-4`}>
+              <h3 className="text-sm font-black uppercase text-[#29C454] ml-2">Añadir Nueva Cancha</h3>
+              <div className="flex flex-col md:flex-row gap-2">
+                <input type="text" placeholder="Nombre (Ej. Cancha 11)" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`flex-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-bold focus:outline-none focus:border-[#29C454] shadow-inner`} />
+                <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`md:w-32 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-black uppercase appearance-none cursor-pointer`}>
                   <option value="Dura">Dura</option>
                   <option value="Césped">Césped</option>
                 </select>
-                <button onClick={agregarCancha} className="bg-[#29C454] text-white px-6 rounded-xl font-black text-xs uppercase">Añadir</button>
+                <button onClick={agregarCancha} className="bg-[#29C454] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all">Añadir</button>
               </div>
             </div>
 
-            <div className="grid gap-3">
-              {listaCanchas.map(c => (
-                <div key={c.id} className={`${theme.card} border ${theme.border} p-4 rounded-2xl flex items-center justify-between`}>
-                  <div>
-                    <p className="font-black italic">{c.nombre}</p>
-                    <p className="text-[10px] font-bold uppercase opacity-50">{c.superficie}</p>
+            {/* Listado de Canchas (CRUD Completo) */}
+            <div className="space-y-3">
+              <h3 className={`text-[10px] font-black uppercase tracking-widest ml-4 ${theme.muted}`}>Canchas Registradas ({listaCanchas.length})</h3>
+              {listaCanchas.length === 0 ? (
+                <div className="text-center py-10 opacity-30 font-bold">Cargando inventario...</div>
+              ) : (
+                listaCanchas.map(c => (
+                  <div key={c.id} className={`${theme.card} border ${theme.border} p-5 rounded-[1.8rem] flex items-center justify-between shadow-sm`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
+                        {c.id}
+                      </div>
+                      <div>
+                        <p className="font-black italic text-lg leading-none">{c.nombre}</p>
+                        <p className="text-[9px] font-bold uppercase opacity-40 mt-1">{c.superficie} • {c.estado}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      {/* Toggle Mantenimiento */}
+                      <button 
+                        onClick={() => toggleEstadoCancha(c)} 
+                        className={`w-12 h-7 rounded-full p-1 transition-colors relative ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-red-500'}`}
+                        title={c.estado === 'activa' ? 'Poner en Mantenimiento' : 'Activar Cancha'}
+                      >
+                        <div className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-200 ${c.estado === 'activa' ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+
+                      {/* Botón Eliminar */}
+                      <button 
+                        onClick={() => eliminarCancha(c.id)}
+                        className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all`}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className={`text-[9px] font-black uppercase ${c.estado === 'activa' ? 'text-green-500' : 'text-red-500'}`}>{c.estado}</span>
-                    <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-colors ${c.estado === 'activa' ? 'bg-green-500' : 'bg-gray-400'}`}>
-                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1606,7 +1646,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.43 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.44 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
