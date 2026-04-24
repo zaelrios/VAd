@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.41'; 
+  const APP_VERSION = '1.42'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -489,9 +489,13 @@ export default function App() {
     
     mostrarConfirmacion("Confirmar Reporte", `Marcador: ${marcadorFinal}\nGanador: ${nombreGanador} 🏆\n\n¿Enviar a revisión?`, async () => {
       try {
-        await supabase.from('partidos').update({ estado: 'en_revision', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id }).eq('id', partido.id);
-        setReportingMatch(null); setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival(''); fetchPartidos(); mostrarAlerta("Enviado", "Reporte enviado al rival.");
-      } catch (error) { mostrarError("Error", error.message); }
+        const { error } = await supabase.from('partidos').update({ estado: 'en_revision', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id }).eq('id', partido.id);
+        if (error) throw error;
+        
+        setReportingMatch(null); setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival(''); 
+        await fetchPartidos(); 
+        mostrarAlerta("Enviado", "Reporte enviado al rival.");
+      } catch (error) { mostrarError("Error", error.message || "Error al conectar con la base de datos."); }
     });
   };
 
@@ -518,8 +522,10 @@ export default function App() {
         rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
       }
 
-      await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
-      await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha }).eq('id', rivalDB.id);
+      const { error: e1 } = await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
+      if (e1) throw e1;
+      const { error: e2 } = await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha }).eq('id', rivalDB.id);
+      if (e2) throw e2;
 
       const dataUpdate = { 
         estado: partido.marcador === 'W.O.' ? 'wo' : 'finalizado', 
@@ -530,12 +536,18 @@ export default function App() {
         racha_previa_j1: partido.jugador1_id === currentUser.id ? currentUser.racha_asistencia : rivalDB.racha_asistencia,
         racha_previa_j2: partido.jugador2_id === currentUser.id ? currentUser.racha_asistencia : rivalDB.racha_asistencia
       };
-      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); fetchPartidos();
+      
+      const { error: e3 } = await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
+      if (e3) throw e3;
+      
+      await fetchPartidos();
       
       let mensajeFinal = `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`;
       if (misNuevosDatos.nuevaConfianza > currentUser.confianza) mensajeFinal += `\n\n🟢 ¡Felicidades! Tu confiabilidad subió a ${misNuevosDatos.nuevaConfianza.toFixed(1)}/5.0`;
       mostrarAlerta("¡Partido finalizado!", mensajeFinal);
-    } catch (error) {}
+    } catch (error) {
+      mostrarError("Error", "No se pudo confirmar el reporte. Intenta de nuevo.");
+    }
   };
 
   const handleRejectReport = async (partido) => {
@@ -599,8 +611,10 @@ export default function App() {
         const res2 = calcularNuevaConfianza(baseConfP2, baseRachaP2); p2NuevaConf = res2.nuevaConfianza; p2NuevaRacha = res2.nuevaRacha;
       }
       
-      await supabase.from('Perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
-      await supabase.from('Perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
+      const { error: err1 } = await supabase.from('Perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
+      if (err1) throw err1;
+      const { error: err2 } = await supabase.from('Perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
+      if (err2) throw err2;
 
       const dataUpdate = { 
         estado: isWO ? 'wo' : 'finalizado', 
@@ -614,11 +628,14 @@ export default function App() {
         racha_previa_j1: baseRachaP1,
         racha_previa_j2: baseRachaP2
       };
-      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
       
-      fetchClubPartidos(); setBloqueoActivo(null); setPartidoAdmin(null);
+      const { error: err3 } = await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
+      if (err3) throw err3;
+      
+      await fetchClubPartidos(); 
+      setBloqueoActivo(null); setPartidoAdmin(null);
       mostrarAlerta("Override Exitoso", "El partido ha sido procesado/revertido correctamente.");
-    } catch (error) { mostrarError("Error", error.message); }
+    } catch (error) { mostrarError("Error", error.message || "Error al actualizar la base de datos."); }
   };
 
   const handleWO = (partido) => {
@@ -887,7 +904,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.41</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.42</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1130,19 +1147,19 @@ export default function App() {
 
                                     {/* Sets */}
                                     <div className="flex gap-2 items-center justify-between">
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <select value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                       <span className="font-bold text-[10px] text-gray-500">1</span>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <select value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                     </div>
                                     <div className="flex gap-2 items-center justify-between">
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <select value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                       <span className="font-bold text-[10px] text-gray-500">2</span>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="-" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <select value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                     </div>
                                     <div className={`flex gap-2 items-center justify-between transition-all ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <select disabled={partidoDefinidoEnDosSets} value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                       <span className="font-bold text-[10px] text-gray-500">3</span>
-                                      <input type="tel" inputMode="numeric" pattern="[0-9]*" disabled={partidoDefinidoEnDosSets} placeholder="-" value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white" />
+                                      <select disabled={partidoDefinidoEnDosSets} value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                     </div>
                                     
                                     <div className="flex gap-2 pt-2">
@@ -1502,7 +1519,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.40 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.42 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
@@ -1518,19 +1535,19 @@ export default function App() {
                 </div>
                 
                 <div className="flex gap-2 items-center justify-between">
-                  <input type="tel" value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <select value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                   <span className="font-bold text-[10px] text-black/40">1</span>
-                  <input type="tel" value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <select value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                 </div>
                 <div className="flex gap-2 items-center justify-between">
-                  <input type="tel" value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <select value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                   <span className="font-bold text-[10px] text-black/40">2</span>
-                  <input type="tel" value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <select value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                 </div>
                 <div className="flex gap-2 items-center justify-between">
-                  <input type="tel" value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <select value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                   <span className="font-bold text-[10px] text-black/40">3</span>
-                  <input type="tel" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
+                  <select value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                 </div>
                 
                 <button onClick={() => handleAdminOverride(partidoAdmin, 'score')} className="w-full bg-[#064E3B] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md mt-4 active:scale-95 transition-all">Sobrescribir Resultado</button>
