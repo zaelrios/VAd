@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.40'; 
+  const APP_VERSION = '1.41'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -338,9 +338,22 @@ export default function App() {
     const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
     const miNuevoElo = calculateElo(miPerfil.elo, rivalDB.elo, "0-6, 0-6", false);
     const rivalNuevoElo = calculateElo(rivalDB.elo, miPerfil.elo, "6-0, 6-0", true);
-    await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: Math.max(0, Number(miPerfil.confianza) - 1.0), racha_asistencia: 0 }).eq('id', miPerfil.id);
+    const nuevaConfMi = Math.max(0, Number(miPerfil.confianza) - 1.0);
+    
+    await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: nuevaConfMi, racha_asistencia: 0 }).eq('id', miPerfil.id);
     await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
-    const dataUpdate = { estado: 'wo', ganador_id: rivalDB.id, marcador: "W.O.", puntos_j1: partido.jugador1_id === miPerfil.id ? (miNuevoElo - miPerfil.elo) : (rivalNuevoElo - rivalDB.elo), puntos_j2: partido.jugador1_id === miPerfil.id ? (rivalNuevoElo - rivalDB.elo) : (miNuevoElo - miPerfil.elo) };
+    
+    const dataUpdate = { 
+      estado: 'wo', 
+      ganador_id: rivalDB.id, 
+      marcador: "W.O.", 
+      puntos_j1: partido.jugador1_id === miPerfil.id ? (miNuevoElo - miPerfil.elo) : (rivalNuevoElo - rivalDB.elo), 
+      puntos_j2: partido.jugador1_id === miPerfil.id ? (rivalNuevoElo - rivalDB.elo) : (miNuevoElo - miPerfil.elo),
+      delta_conf_j1: partido.jugador1_id === miPerfil.id ? (nuevaConfMi - miPerfil.confianza) : 0,
+      delta_conf_j2: partido.jugador2_id === miPerfil.id ? (nuevaConfMi - miPerfil.confianza) : 0,
+      racha_previa_j1: partido.jugador1_id === miPerfil.id ? miPerfil.racha_asistencia : rivalDB.racha_asistencia,
+      racha_previa_j2: partido.jugador2_id === miPerfil.id ? miPerfil.racha_asistencia : rivalDB.racha_asistencia
+    };
     await supabase.from('partidos').update(dataUpdate).eq('id', partido.id);
     mostrarAlerta("W.O. Procesado", `Tu nuevo ELO es ${miNuevoElo} y perdiste Confiabilidad.`);
   };
@@ -508,7 +521,15 @@ export default function App() {
       await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
       await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha }).eq('id', rivalDB.id);
 
-      const dataUpdate = { estado: partido.marcador === 'W.O.' ? 'wo' : 'finalizado', puntos_j1: partido.jugador1_id === currentUser.id ? deltaMi : deltaRival, puntos_j2: partido.jugador1_id === currentUser.id ? deltaRival : deltaMi };
+      const dataUpdate = { 
+        estado: partido.marcador === 'W.O.' ? 'wo' : 'finalizado', 
+        puntos_j1: partido.jugador1_id === currentUser.id ? deltaMi : deltaRival, 
+        puntos_j2: partido.jugador1_id === currentUser.id ? deltaRival : deltaMi,
+        delta_conf_j1: partido.jugador1_id === currentUser.id ? misNuevosDatos.nuevaConfianza - currentUser.confianza : rivalNuevosDatos.nuevaConfianza - rivalDB.confianza,
+        delta_conf_j2: partido.jugador2_id === currentUser.id ? misNuevosDatos.nuevaConfianza - currentUser.confianza : rivalNuevosDatos.nuevaConfianza - rivalDB.confianza,
+        racha_previa_j1: partido.jugador1_id === currentUser.id ? currentUser.racha_asistencia : rivalDB.racha_asistencia,
+        racha_previa_j2: partido.jugador2_id === currentUser.id ? currentUser.racha_asistencia : rivalDB.racha_asistencia
+      };
       await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); fetchPartidos();
       
       let mensajeFinal = `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`;
@@ -524,40 +545,79 @@ export default function App() {
     });
   };
 
-  const handleAdminOverride = async (partido, isWO) => {
+  const handleAdminOverride = async (partido, tipoResultado) => {
     try {
-      let marcadorFinal = "W.O.";
-      let ganadorIdCalculado = partido.jugador1_id; 
-      
-      if (!isWO) {
-          const v1Mi = parseInt(s1Mi, 10); const v1Riv = parseInt(s1Rival, 10); const v2Mi = parseInt(s2Mi, 10); const v2Riv = parseInt(s2Rival, 10);
-          if (!isValidTennisSet(v1Mi, v1Riv) || !isValidTennisSet(v2Mi, v2Riv)) { mostrarError("Inválido", "Marcadores de set inválidos."); return; }
-          let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0); let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0); 
-          marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
-          if (setsMi === 1 && setsRiv === 1) {
-            const v3Mi = parseInt(s3Mi, 10); const v3Riv = parseInt(s3Rival, 10);
-            if (!isValidTennisSet(v3Mi, v3Riv)) { mostrarError("Inválido", "Tercer set inválido."); return; }
-            setsMi += (v3Mi > v3Riv ? 1 : 0); setsRiv += (v3Riv > v3Mi ? 1 : 0); marcadorFinal += `, ${v3Mi}-${v3Riv}`;
-          }
-          if (setsMi === setsRiv) { mostrarError("Error", "No puede haber empate."); return; }
-          ganadorIdCalculado = setsMi > setsRiv ? partido.jugador1_id : partido.jugador2_id;
-      }
-
       const { data: p1 } = await supabase.from('Perfiles').select('*').eq('id', partido.jugador1_id).single();
       const { data: p2 } = await supabase.from('Perfiles').select('*').eq('id', partido.jugador2_id).single();
-      const p1Gano = ganadorIdCalculado === partido.jugador1_id;
-      
-      let p1NuevoElo = calculateElo(p1.elo, p2.elo, isWO ? "6-0, 6-0" : marcadorFinal, p1Gano);
-      let p2NuevoElo = calculateElo(p2.elo, p1.elo, isWO ? "0-6, 0-6" : marcadorFinal, !p1Gano);
-      
-      await supabase.from('Perfiles').update({ elo: p1NuevoElo }).eq('id', p1.id);
-      await supabase.from('Perfiles').update({ elo: p2NuevoElo }).eq('id', p2.id);
 
-      const dataUpdate = { estado: isWO ? 'wo' : 'finalizado', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id, puntos_j1: p1NuevoElo - p1.elo, puntos_j2: p2NuevoElo - p2.elo };
+      let baseEloP1 = p1.elo; let baseEloP2 = p2.elo;
+      let baseConfP1 = p1.confianza; let baseConfP2 = p2.confianza;
+      let baseRachaP1 = p1.racha_asistencia; let baseRachaP2 = p2.racha_asistencia;
+
+      // REVERSIÓN DE ERRORES (Rollback)
+      if (partido.estado === 'finalizado' || partido.estado === 'wo') {
+        baseEloP1 -= (partido.puntos_j1 || 0);
+        baseEloP2 -= (partido.puntos_j2 || 0);
+        baseConfP1 -= (partido.delta_conf_j1 || 0);
+        baseConfP2 -= (partido.delta_conf_j2 || 0);
+        if (partido.racha_previa_j1 !== undefined && partido.racha_previa_j1 !== null) baseRachaP1 = partido.racha_previa_j1;
+        if (partido.racha_previa_j2 !== undefined && partido.racha_previa_j2 !== null) baseRachaP2 = partido.racha_previa_j2;
+      }
+
+      let marcadorFinal = "W.O.";
+      let ganadorIdCalculado = null;
+      let isWO = tipoResultado.startsWith('wo_');
+
+      if (isWO) {
+        ganadorIdCalculado = tipoResultado === 'wo_j1' ? partido.jugador2_id : partido.jugador1_id;
+      } else {
+        const v1Mi = parseInt(s1Mi, 10); const v1Riv = parseInt(s1Rival, 10); const v2Mi = parseInt(s2Mi, 10); const v2Riv = parseInt(s2Rival, 10);
+        if (!isValidTennisSet(v1Mi, v1Riv) || !isValidTennisSet(v2Mi, v2Riv)) { mostrarError("Inválido", "Marcadores de set inválidos."); return; }
+        let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0); let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0); 
+        marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
+        if (setsMi === 1 && setsRiv === 1) {
+          const v3Mi = parseInt(s3Mi, 10); const v3Riv = parseInt(s3Rival, 10);
+          if (!isValidTennisSet(v3Mi, v3Riv)) { mostrarError("Inválido", "Tercer set inválido."); return; }
+          setsMi += (v3Mi > v3Riv ? 1 : 0); setsRiv += (v3Riv > v3Mi ? 1 : 0); marcadorFinal += `, ${v3Mi}-${v3Riv}`;
+        }
+        if (setsMi === setsRiv) { mostrarError("Error", "No puede haber empate."); return; }
+        ganadorIdCalculado = setsMi > setsRiv ? partido.jugador1_id : partido.jugador2_id;
+      }
+
+      const p1Gano = ganadorIdCalculado === partido.jugador1_id;
+      let p1NuevoElo = calculateElo(baseEloP1, baseEloP2, isWO ? (p1Gano ? "6-0, 6-0" : "0-6, 0-6") : marcadorFinal, p1Gano);
+      let p2NuevoElo = calculateElo(baseEloP2, baseEloP1, isWO ? (!p1Gano ? "6-0, 6-0" : "0-6, 0-6") : marcadorFinal, !p1Gano);
+
+      let p1NuevaConf = baseConfP1; let p2NuevaConf = baseConfP2;
+      let p1NuevaRacha = baseRachaP1; let p2NuevaRacha = baseRachaP2;
+
+      if (isWO) {
+        if (tipoResultado === 'wo_j1') { p1NuevaConf = Math.max(0, baseConfP1 - 1.0); p1NuevaRacha = 0; }
+        if (tipoResultado === 'wo_j2') { p2NuevaConf = Math.max(0, baseConfP2 - 1.0); p2NuevaRacha = 0; }
+      } else {
+        const res1 = calcularNuevaConfianza(baseConfP1, baseRachaP1); p1NuevaConf = res1.nuevaConfianza; p1NuevaRacha = res1.nuevaRacha;
+        const res2 = calcularNuevaConfianza(baseConfP2, baseRachaP2); p2NuevaConf = res2.nuevaConfianza; p2NuevaRacha = res2.nuevaRacha;
+      }
+      
+      await supabase.from('Perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
+      await supabase.from('Perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
+
+      const dataUpdate = { 
+        estado: isWO ? 'wo' : 'finalizado', 
+        marcador: marcadorFinal, 
+        ganador_id: ganadorIdCalculado, 
+        reportado_por: currentUser.id, 
+        puntos_j1: p1NuevoElo - baseEloP1, 
+        puntos_j2: p2NuevoElo - baseEloP2,
+        delta_conf_j1: p1NuevaConf - baseConfP1,
+        delta_conf_j2: p2NuevaConf - baseConfP2,
+        racha_previa_j1: baseRachaP1,
+        racha_previa_j2: baseRachaP2
+      };
       await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
       
       fetchClubPartidos(); setBloqueoActivo(null); setPartidoAdmin(null);
-      mostrarAlerta("Override Exitoso", "El partido ha sido cerrado administrativamente.");
+      mostrarAlerta("Override Exitoso", "El partido ha sido procesado/revertido correctamente.");
     } catch (error) { mostrarError("Error", error.message); }
   };
 
@@ -827,7 +887,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.40</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.41</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1377,7 +1437,9 @@ export default function App() {
                                   {esVAd && (
                                     <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
                                       <div className="flex flex-col items-center justify-center w-full">
-                                        <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">VAd</span>
+                                        <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">
+                                          {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : 'VAd'}
+                                        </span>
                                         <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
                                           {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
                                         </span>
@@ -1471,8 +1533,11 @@ export default function App() {
                   <input type="tel" value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5" />
                 </div>
                 
-                <button onClick={() => handleAdminOverride(partidoAdmin, false)} className="w-full bg-[#064E3B] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md mt-4 active:scale-95 transition-all">Sobrescribir Resultado</button>
-                <button onClick={() => handleAdminOverride(partidoAdmin, true)} className="w-full border border-[#991B1B] text-[#991B1B] py-3 rounded-xl font-black uppercase text-xs mt-2 hover:bg-[#991B1B]/10 active:scale-95 transition-all">Decretar W.O. (Gana J1)</button>
+                <button onClick={() => handleAdminOverride(partidoAdmin, 'score')} className="w-full bg-[#064E3B] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md mt-4 active:scale-95 transition-all">Sobrescribir Resultado</button>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_j1')} className="flex-1 border border-[#991B1B] text-[#991B1B] py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#991B1B]/10 active:scale-95 transition-all">W.O. {partidoAdmin.j1_nombre.split(' ')[0]}</button>
+                  <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_j2')} className="flex-1 border border-[#991B1B] text-[#991B1B] py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#991B1B]/10 active:scale-95 transition-all">W.O. {partidoAdmin.j2_nombre.split(' ')[0]}</button>
+                </div>
                 <button onClick={() => { setPartidoAdmin(null); setBloqueoActivo(null); }} className="w-full text-black/40 font-bold text-[10px] uppercase mt-4 active:scale-95">Cancelar</button>
               </div>
             ) : (
