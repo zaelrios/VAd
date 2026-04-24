@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.42'; 
+  const APP_VERSION = '1.43'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -79,6 +79,10 @@ export default function App() {
 
   // --- ESTADOS PARA LA AGENDA DEL CLUB (B2B) ---
   const getFormatDate = (d) => { const off = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - off).toISOString().split('T')[0]; };
+
+  const [listaCanchas, setListaCanchas] = useState([]);
+  const [nuevaCanchaSuperficie, setNuevaCanchaSuperficie] = useState('Dura');
+  const [nombreNuevaCancha, setNombreNuevaCancha] = useState('');
   
   const [baseWeekDate, setBaseWeekDate] = useState(new Date());
   const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]); 
@@ -140,6 +144,35 @@ export default function App() {
     }
     return changed;
   };
+
+  const fetchCanchas = async () => {
+    const { data } = await supabase.from('canchas').select('*').order('id', { ascending: true });
+    if (data) { 
+      setListaCanchas(data);
+      // Actualizar filtro de canchas si está vacío o es la primera vez
+      if (filtroCanchas.length === 0) setFiltroCanchas(data.map(c => c.id));
+    }
+  };
+
+  const toggleEstadoCancha = async (cancha) => {
+    const nuevoEstado = cancha.estado === 'activa' ? 'mantenimiento' : 'activa';
+    const { error } = await supabase.from('canchas').update({ estado: nuevoEstado }).eq('id', cancha.id);
+    if (!error) fetchCanchas();
+  };
+
+  const agregarCancha = async () => {
+    if (!nombreNuevaCancha) return;
+    const { error } = await supabase.from('canchas').insert([{ nombre: nombreNuevaCancha, superficie: nuevaCanchaSuperficie, estado: 'activa' }]);
+    if (!error) { setNombreNuevaCancha(''); fetchCanchas(); mostrarAlerta("Éxito", "Nueva cancha agregada."); }
+  };
+
+  // Actualizar el useEffect inicial para cargar canchas
+  useEffect(() => { 
+    fetchPartidos(); 
+    fetchClubPartidos(); 
+    fetchCanchas();
+    if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); 
+  }, [currentUser?.id, tab, selectedDays.join(',')]);
 
   const fetchClubPartidos = async () => {
     if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
@@ -712,11 +745,11 @@ export default function App() {
 
     try {
       // 2. CHECK DE SATURACIÓN DE CANCHAS
-      const inventario = { 'Césped': [9, 10], 'Dura': [1, 2, 3, 4, 5, 6, 7, 8] };
+      const canchasActivas = listaCanchas.filter(c => c.estado === 'activa' && c.superficie === superficie);
       const { data: ocupadas } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', endTime).gt('hora_fin', startTime);
       
       const canchasOcupadasIds = ocupadas ? [...new Set(ocupadas.map(o => o.cancha_numero))] : [];
-      const hayCanchasLibres = inventario[superficie].some(id => !canchasOcupadasIds.includes(id));
+      const hayCanchasLibres = canchasActivas.some(c => !canchasOcupadasIds.includes(c.id));
 
       const publicarBusqueda = async (standby = false) => {
         const { data: nb, error: eI } = await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'activa' }]).select().single();
@@ -726,11 +759,7 @@ export default function App() {
       };
 
       if (!hayCanchasLibres) {
-        mostrarConfirmacion(
-          "Canchas Llenas", 
-          `Lo sentimos, todas las canchas de ${superficie} están ocupadas en este horario.\n\n¿Quieres publicarla de todos modos como "Lista de Espera" por si alguien cancela?`,
-          () => publicarBusqueda(true)
-        );
+        mostrarConfirmacion("Canchas Llenas", `Todas las canchas de ${superficie} están ocupadas o en mantenimiento...`, () => publicarBusqueda(true));
         return;
       }
 
@@ -751,8 +780,8 @@ export default function App() {
               const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}`;
               
               const { data: pCruce } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', propFinStr).gt('hora_fin', propInicioStr);
-              const canchaLibre = inventario[superficie].find(n => !(pCruce ? pCruce.map(p => p.cancha_numero) : []).includes(n));
-              if (canchaLibre) { matchEncontrado = rival; matchInicio = propInicioStr; matchFin = propFinStr; canchaAsignada = canchaLibre; break; }
+              const canchaLibre = canchasActivas.find(c => !(pCruce ? pCruce.map(p => p.cancha_numero) : []).includes(c.id));
+              if (canchaLibre) { matchEncontrado = rival; matchInicio = propInicioStr; matchFin = propFinStr; canchaAsignada = canchaLibre.id; break; }
             }
           }
         }
@@ -904,7 +933,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.42</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.43</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1298,6 +1327,9 @@ export default function App() {
                     <button onClick={() => { fetchClubPartidos(); setTab('club_agenda'); }} className="col-span-2 w-full bg-[#E5B824] text-[#1A1C1E] py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
                       📅 Master Schedule (Vista Club)
                     </button>
+                    <button onClick={() => setTab('admin_canchas')} className="col-span-2 w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                      ⚙️ Configurar Canchas
+                    </button>
                   </div>
                 </div>
               )}
@@ -1321,6 +1353,9 @@ export default function App() {
           // Generamos las filas en intervalos de 30 minutos (0.5)
           const horasGrid = [];
           for (let h = rangoHoras.start; h <= rangoHoras.end; h += 0.5) { horasGrid.push(h); }
+
+          const canchaDB = listaCanchas.find(ldb => ldb.id === c);
+          const enMantenimiento = canchaDB?.estado === 'mantenimiento';
 
           return (
             <div className="w-full px-2 md:px-8 space-y-6 animate-in fade-in pb-20 max-w-[1600px] mx-auto">
@@ -1436,54 +1471,71 @@ export default function App() {
                             </div>
 
                             {/* Bloques de Tiempo Interactivos */}
-                            {horasGrid.map(horaFloat => {
-                              const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
-                              const esDisputa = partido?.estado === 'en_disputa';
-                              const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
-                              const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-                              const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}\n(${formatTime(partido.hora_inicio)} - ${formatTime(partido.hora_fin)})` : esBloqueo ? `Bloqueo: ${partido.marcador || 'Administración'}` : esDisputa ? `DISPUTA: ${partido.j1_nombre} vs ${partido.j2_nombre}` : '';
-                              
-                              return (
-                                <div 
-                                  key={`${dayStr}-${c}-${horaFloat}`} 
-                                  className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
-                                    !esVAd && !esBloqueo && !esDisputa ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` : ''
-                                  }`}
-                                  onClick={() => handleCellClick(c, horaFloat, dayStr)}
-                                >
-                                  {esVAd && (
-                                    <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
-                                      <div className="flex flex-col items-center justify-center w-full">
-                                        <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">
-                                          {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : 'VAd'}
-                                        </span>
-                                        <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
-                                          {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  )}
-                                  
-                                  {esBloqueo && (
-                                    <div title={tooltipText} className="absolute inset-0 bg-[#FECACA] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10">
-                                      <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
-                                      <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
-                                        {partido.marcador || 'Bloqueado'}
-                                      </span>
-                                    </div>
-                                  )}
+{horasGrid.map(horaFloat => {
+  const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
+  
+  // --- NUEVA LÓGICA DE MANTENIMIENTO ---
+  const canchaDB = listaCanchas.find(ldb => ldb.id === c);
+  const enMantenimiento = canchaDB?.estado === 'mantenimiento';
+  
+  const esDisputa = partido?.estado === 'en_disputa';
+  const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
+  const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+  const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}` : esBloqueo ? `Bloqueo: ${partido.marcador}` : enMantenimiento ? 'Cancha en Mantenimiento' : '';
+  
+  return (
+    <div 
+      key={`${dayStr}-${c}-${horaFloat}`} 
+      className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
+        enMantenimiento 
+          ? 'bg-gray-200 dark:bg-white/5 opacity-50 cursor-not-allowed grayscale border border-dashed border-gray-400' 
+          : !esVAd && !esBloqueo && !esDisputa 
+            ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` 
+            : ''
+      }`}
+      onClick={() => !enMantenimiento && handleCellClick(c, horaFloat, dayStr)}
+    >
+      {enMantenimiento ? (
+        <div className="absolute inset-0 flex items-center justify-center text-[7px] font-black text-gray-500 uppercase text-center leading-tight p-1">
+          Fuera de<br/>Servicio
+        </div>
+      ) : (
+        <>
+          {esVAd && (
+            <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
+              <div className="flex flex-col items-center justify-center w-full">
+                <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">
+                  {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : 'VAd'}
+                </span>
+                <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
+                  {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {esBloqueo && (
+            <div title={tooltipText} className="absolute inset-0 bg-[#FECACA] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10">
+              <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
+              <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
+                {partido.marcador || 'Bloqueado'}
+              </span>
+            </div>
+          )}
 
-                                  {esDisputa && (
-                                    <div title={tooltipText} className="absolute inset-0 bg-[#991B1B] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10 border-2 border-red-500 animate-pulse">
-                                      <span className="text-[12px] text-white font-black mb-0.5 leading-none">⚠️</span>
-                                      <span className="text-[8px] md:text-[9px] text-white font-black text-center leading-tight truncate w-full">
-                                        DISPUTA<br/>{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+          {esDisputa && (
+            <div title={tooltipText} className="absolute inset-0 bg-[#991B1B] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10 border-2 border-red-500 animate-pulse">
+              <span className="text-[12px] text-white font-black mb-0.5 leading-none">⚠️</span>
+              <span className="text-[8px] md:text-[9px] text-white font-black text-center leading-tight truncate w-full">
+                DISPUTA<br/>{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
+              </span>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+})}
                           </div>
                         );
                       })}
@@ -1494,6 +1546,41 @@ export default function App() {
             </div>
           );
         })()}
+        {tab === 'admin_canchas' && (
+          <div className="w-full max-w-xl space-y-6 animate-in fade-in">
+            <button onClick={() => setTab('perfil')} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver</button>
+            <h2 className="text-3xl font-black italic uppercase">Infraestructura</h2>
+            
+            <div className={`${theme.card} p-6 rounded-[2rem] border ${theme.border} space-y-4`}>
+              <h3 className="text-sm font-black uppercase text-[#29C454]">Agregar Cancha</h3>
+              <div className="flex gap-2">
+                <input type="text" placeholder="Ej. Cancha 11" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`flex-1 ${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`} />
+                <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`${theme.bg} border ${theme.border} rounded-xl p-3 text-sm font-bold`}>
+                  <option value="Dura">Dura</option>
+                  <option value="Césped">Césped</option>
+                </select>
+                <button onClick={agregarCancha} className="bg-[#29C454] text-white px-6 rounded-xl font-black text-xs uppercase">Añadir</button>
+              </div>
+            </div>
+
+            <div className="grid gap-3">
+              {listaCanchas.map(c => (
+                <div key={c.id} className={`${theme.card} border ${theme.border} p-4 rounded-2xl flex items-center justify-between`}>
+                  <div>
+                    <p className="font-black italic">{c.nombre}</p>
+                    <p className="text-[10px] font-bold uppercase opacity-50">{c.superficie}</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className={`text-[9px] font-black uppercase ${c.estado === 'activa' ? 'text-green-500' : 'text-red-500'}`}>{c.estado}</span>
+                    <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-colors ${c.estado === 'activa' ? 'bg-green-500' : 'bg-gray-400'}`}>
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
       </main>
 
@@ -1519,7 +1606,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.42 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.43 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
