@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.44'; 
+  const APP_VERSION = '1.45'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -945,7 +945,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.44</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.45</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1327,20 +1327,27 @@ export default function App() {
                 </button>
               </div>
 
-              {/* --- SECCIÓN PARA ADMINISTRADORES Y CLUBES --- */}
+              {/* --- CONSOLA DE GESTIÓN (RBAC) --- */}
               {isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club') && (
                 <div className={`w-full mt-8 pt-8 border-t ${theme.border} space-y-4`}>
-                  <h3 className="text-sm font-black italic uppercase text-[#29C454]">Consola Master</h3>
+                  <h3 className="text-sm font-black italic uppercase text-[#29C454]">Gestión de Club</h3>
                   <div className="grid grid-cols-2 gap-3">
-                    <button onClick={() => { cargarSugerenciasAdmin(); setTab('admin_buzon'); }} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95`}>
-                      📩 Buzón {sugerenciasNuevas > 0 && <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">{sugerenciasNuevas}</span>}
-                    </button>
-                    <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">👥 Jugadores</button>
-                    <button onClick={() => { fetchClubPartidos(); setTab('club_agenda'); }} className="col-span-2 w-full bg-[#E5B824] text-[#1A1C1E] py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
-                      📅 Master Schedule (Vista Club)
+                    {/* ACCIONES EXCLUSIVAS DE ADMIN GLOBAL */}
+                    {currentUser.rol === 'admin' && (
+                      <>
+                        <button onClick={() => { cargarSugerenciasAdmin(); setTab('admin_buzon'); }} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95`}>
+                          📩 Buzón {sugerenciasNuevas > 0 && <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">{sugerenciasNuevas}</span>}
+                        </button>
+                        <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">👥 Jugadores</button>
+                      </>
+                    )}
+                    
+                    {/* ACCIONES COMPARTIDAS (ADMIN Y CLUB) */}
+                    <button onClick={() => { fetchClubPartidos(); setTab('club_agenda'); }} className={`col-span-2 w-full bg-[#E5B824] text-[#1A1C1E] py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95`}>
+                      📅 Master Schedule
                     </button>
                     <button onClick={() => setTab('admin_canchas')} className="col-span-2 w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
-                      ⚙️ Configurar Canchas
+                      ⚙️ Configuración de Canchas
                     </button>
                   </div>
                 </div>
@@ -1558,8 +1565,10 @@ export default function App() {
             </div>
           );
         })()}
-        {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (
+        {tab === 'admin_canchas' && (
           <div className="w-full max-w-xl space-y-6 animate-in fade-in pb-20">
+            {/* Gatillo de seguridad para cargar lista si está vacía */}
+            {useEffect(() => { fetchCanchas(); }, [])}
             <button onClick={() => setTab('perfil')} className={`mb-4 text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>← Volver al Perfil</button>
             <div className="text-center">
               <h2 className="text-4xl font-black italic uppercase tracking-tighter">Infraestructura</h2>
@@ -1571,9 +1580,10 @@ export default function App() {
               <h3 className="text-sm font-black uppercase text-[#29C454] ml-2">Añadir Nueva Cancha</h3>
               <div className="flex flex-col md:flex-row gap-2">
                 <input type="text" placeholder="Nombre (Ej. Cancha 11)" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`flex-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-bold focus:outline-none focus:border-[#29C454] shadow-inner`} />
-                <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`md:w-32 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-black uppercase appearance-none cursor-pointer`}>
+                <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className="...">
                   <option value="Dura">Dura</option>
                   <option value="Césped">Césped</option>
+                  <option value="Arcilla">Arcilla</option> {/* NUEVA OPCIÓN */}
                 </select>
                 <button onClick={agregarCancha} className="bg-[#29C454] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all">Añadir</button>
               </div>
@@ -1646,7 +1656,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.44 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.45 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
