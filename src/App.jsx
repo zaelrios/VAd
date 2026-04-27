@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.49'; 
+  const APP_VERSION = '1.50'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -105,6 +105,9 @@ export default function App() {
   const [iteraciones, setIteraciones] = useState(1);
   const [diasRecurrencia, setDiasRecurrencia] = useState([]); 
   const [partidoAdmin, setPartidoAdmin] = useState(null); // Para el Override del Admin
+  
+  // 🛡️ CANDADO ANTI-BUCLE INFINITO: Memoria de partidos ya procesados
+  const procesadosRef = React.useRef(new Set());
 
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
 
@@ -132,8 +135,14 @@ export default function App() {
       if (m.estado === 'confirmado' && obtenerEstadoTiempo(m) === 'terminado') {
         const [y, month, d] = m.fecha.split('-'); const [h, min] = m.hora_fin.split(':');
         const endObj = new Date(y, month - 1, d, h, min);
+        
         if ((now - endObj) / (1000 * 60 * 60) >= 24) {
-          // Eliminamos el bucle infinito. La actualización dispara el Web Socket automáticamente sin recursión.
+          
+          // 🛡️ CANDADO DE MEMORIA: Si ya lo mandamos a actualizar en esta sesión, saltamos. 
+          // Esto mata la condición de carrera y el Bucle del Web Socket al instante.
+          if (procesadosRef.current.has(m.id)) continue;
+          procesadosRef.current.add(m.id);
+
           const { error } = await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
           if (!error) {
             const { data: p1 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador1_id).single();
@@ -952,7 +961,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.49</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.50</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1724,7 +1733,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.49 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.50 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
