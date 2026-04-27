@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.50'; 
+  const APP_VERSION = '1.51'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -157,16 +157,12 @@ export default function App() {
 
   const fetchCanchas = async () => {
     try {
-      // 1.1 Sin filtros de club_id (Global Fase 1)
       const { data, error } = await supabase.from('canchas').select('*').order('id', { ascending: true });
       
-      // 1.3 Verificación en consola
       console.log("Canchas desde DB:", data); 
-      
       if (error) throw error;
 
       if (data) { 
-        // 1.2 Actualización de estado garantizada
         setListaCanchas(data);
         if (filtroCanchas.length === 0) setFiltroCanchas(data.map(c => c.id));
       }
@@ -961,7 +957,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.50</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.51</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1397,7 +1393,16 @@ export default function App() {
               
               {/* CABECERA CENTRADA Y BOTONERA */}
               <div className="flex flex-col items-center text-center space-y-4 relative w-full">
-                {/* Botón de Acceso Directo (Relocación UX) */}
+                
+                {/* NUEVO: Botón Partidos Pendientes (Alineado a la Izquierda) */}
+                <button 
+                  onClick={() => { /* Lógica futura para disputas */ }}
+                  className={`absolute top-0 left-0 hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#E5B824] transition-all active:scale-95 shadow-sm`}
+                >
+                  ⏳ Partidos Pendientes
+                </button>
+
+                {/* Botón de Acceso Directo (Alineado a la Derecha) */}
                 <button 
                   onClick={() => { fetchCanchas(); setTab('admin_canchas'); }}
                   className={`absolute top-0 right-0 hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#29C454] transition-all active:scale-95 shadow-sm`}
@@ -1410,13 +1415,21 @@ export default function App() {
                   <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#007AFF] mt-1">Centro Tenistico de Alto Rendimiento Punta Azul</p>
                 </div>
                 
-                {/* Botón para versión móvil (debajo del título) */}
-                <button 
-                  onClick={() => { fetchCanchas(); setTab('admin_canchas'); }}
-                  className="md:hidden w-full py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest bg-[#1A1C1E] text-white shadow-lg active:scale-95"
-                >
-                  ⚙️ Configurar Canchas
-                </button>
+                {/* Botones para versión móvil (debajo del título) */}
+                <div className="md:hidden flex w-full gap-2">
+                  <button 
+                    onClick={() => { /* Lógica futura para disputas */ }}
+                    className="flex-1 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest bg-[#E5B824] text-[#1A1C1E] shadow-lg active:scale-95"
+                  >
+                    ⏳ Pendientes
+                  </button>
+                  <button 
+                    onClick={() => { fetchCanchas(); setTab('admin_canchas'); }}
+                    className="flex-1 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest bg-[#1A1C1E] text-white shadow-lg active:scale-95"
+                  >
+                    ⚙️ Canchas
+                  </button>
+                </div>
                 
                 {/* Panel de Filtros */}
                 <div className={`w-full max-w-4xl ${theme.card} border ${theme.border} p-4 rounded-3xl shadow-sm space-y-4`}>
@@ -1603,7 +1616,7 @@ export default function App() {
             {/* Cabecera */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-6 border-black/5">
               <div className="text-left">
-                <button onClick={() => setTab('perfil')} className={`mb-2 text-[10px] font-black uppercase tracking-widest ${theme.muted} hover:text-[#29C454] transition-colors`}>← Volver al Panel</button>
+                <button onClick={() => setTab('club_agenda')} className={`mb-2 text-[10px] font-black uppercase tracking-widest ${theme.muted} hover:text-[#29C454] transition-colors`}>← Volver al Calendario</button>
                 <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none">Infraestructura</h2>
                 <p className={`text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Configuración global de canchas y mantenimiento</p>
               </div>
@@ -1733,7 +1746,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.50 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.51 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
