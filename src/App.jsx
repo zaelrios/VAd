@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.48'; 
+  const APP_VERSION = '1.49'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -127,22 +127,23 @@ export default function App() {
   const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
 
   const checkExpiredPartidos = async (matches) => {
-    const now = new Date(); let changed = false;
+    const now = new Date(); 
     for (let m of matches) {
       if (m.estado === 'confirmado' && obtenerEstadoTiempo(m) === 'terminado') {
         const [y, month, d] = m.fecha.split('-'); const [h, min] = m.hora_fin.split(':');
         const endObj = new Date(y, month - 1, d, h, min);
         if ((now - endObj) / (1000 * 60 * 60) >= 24) {
-          await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
-          const { data: p1 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador1_id).single();
-          const { data: p2 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador2_id).single();
-          if(p1) await supabase.from('Perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
-          if(p2) await supabase.from('Perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
-          changed = true;
+          // Eliminamos el bucle infinito. La actualización dispara el Web Socket automáticamente sin recursión.
+          const { error } = await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
+          if (!error) {
+            const { data: p1 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador1_id).single();
+            const { data: p2 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador2_id).single();
+            if(p1) await supabase.from('Perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
+            if(p2) await supabase.from('Perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
+          }
         }
       }
     }
-    return changed;
   };
 
   const fetchCanchas = async () => {
@@ -203,8 +204,7 @@ export default function App() {
       const { data: matches, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
       if (error) throw error;
       if (matches && matches.length > 0) {
-        const changed = await checkExpiredPartidos(matches);
-        if(changed) { fetchClubPartidos(); return; }
+        await checkExpiredPartidos(matches); // <-- Bucle Infinito Destruido
         const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
         const { data: perfiles } = await supabase.from('Perfiles').select('id, nombre').in('id', userIds);
         const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
@@ -281,8 +281,7 @@ export default function App() {
       const { data: matches, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
       if (error) throw error;
       if (matches && matches.length > 0) {
-        const changed = await checkExpiredPartidos(matches);
-        if(changed) { fetchPartidos(); return; }
+        await checkExpiredPartidos(matches); // <-- Bucle Infinito Destruido
         const partidosConRivales = await Promise.all(matches.map(async (partido) => {
           const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
           const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
@@ -297,10 +296,7 @@ export default function App() {
       } else { setMisPartidos([]); }
     } catch (error) { console.error(error); }
   };
-
-  // FIX 1: Evitar Bucle Infinito vigilando currentUser?.id
-  useEffect(() => { fetchPartidos(); fetchClubPartidos(); if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); }, [currentUser?.id, tab, selectedDays.join(',')]);
-
+ 
   // FIX 1: Evitar Bucle Infinito vigilando currentUser?.id
   useEffect(() => {
     if (!currentUser) return;
@@ -956,7 +952,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v1.48</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.49</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1728,7 +1724,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.48 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.49 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
