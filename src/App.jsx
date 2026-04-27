@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.53'; 
+  const APP_VERSION = '1.54'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -145,10 +145,10 @@ export default function App() {
 
           const { error } = await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
           if (!error) {
-            const { data: p1 } = await supabase.from('perfiles').select('confianza').eq('id', m.jugador1_id).single();
-            const { data: p2 } = await supabase.from('perfiles').select('confianza').eq('id', m.jugador2_id).single();
-            if(p1) await supabase.from('perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
-            if(p2) await supabase.from('perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
+            const { data: p1 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador1_id).single();
+            const { data: p2 } = await supabase.from('Perfiles').select('confianza').eq('id', m.jugador2_id).single();
+            if(p1) await supabase.from('Perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
+            if(p2) await supabase.from('Perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
           }
         }
       }
@@ -211,7 +211,7 @@ export default function App() {
       if (matches && matches.length > 0) {
         await checkExpiredPartidos(matches); // <-- Bucle Infinito Destruido
         const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
-        const { data: perfiles } = await supabase.from('perfiles').select('id, nombre').in('id', userIds);
+        const { data: perfiles } = await supabase.from('Perfiles').select('id, nombre').in('id', userIds);
         const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
         setClubPartidos(matches.map(m => ({ ...m, j1_nombre: pMap[m.jugador1_id] || 'Club', j2_nombre: pMap[m.jugador2_id] || 'Reservado' })));
       } else { setClubPartidos([]); }
@@ -220,11 +220,11 @@ export default function App() {
 
   const cargarUsuariosAdmin = async () => {
     if (currentUser?.rol !== 'admin' && currentUser?.rol !== 'club') return;
-    const { data, error } = await supabase.from('perfiles').select('id, nombre, elo, rol').order('nombre', { ascending: true });
+    const { data, error } = await supabase.from('Perfiles').select('id, nombre, elo, rol').order('nombre', { ascending: true });
     if (!error && data) setListaUsuarios(data);
   };
   const actualizarRolUsuario = async (id, nuevoRol) => {
-    const { error } = await supabase.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
+    const { error } = await supabase.from('Perfiles').update({ rol: nuevoRol }).eq('id', id);
     if (!error) { setListaUsuarios(prev => prev.map(u => u.id === id ? { ...u, rol: nuevoRol } : u)); mostrarAlerta("Éxito", `Rol actualizado a ${nuevoRol.toUpperCase()}`); }
   };
   const cargarSugerenciasAdmin = async () => {
@@ -243,7 +243,7 @@ export default function App() {
   const handleColorChange = async (newColor) => {
     const updatedUser = { ...currentUser, color: newColor };
     setCurrentUser(updatedUser); localStorage.setItem('vad_session', JSON.stringify(updatedUser)); setShowColorPicker(false);
-    try { await supabase.from('perfiles').update({ color: newColor }).eq('id', currentUser.id); } catch (error) { }
+    try { await supabase.from('Perfiles').update({ color: newColor }).eq('id', currentUser.id); } catch (error) { }
   };
 
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -280,7 +280,7 @@ export default function App() {
   const fetchPartidos = async () => {
     if (!currentUser || currentUser.rol === 'club') return;
     try {
-      const { data: freshUser } = await supabase.from('perfiles').select('*').eq('id', currentUser.id).single();
+      const { data: freshUser } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
       if (freshUser) { setCurrentUser(freshUser); localStorage.setItem('vad_session', JSON.stringify(freshUser)); }
 
       const { data: matches, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
@@ -289,7 +289,7 @@ export default function App() {
         await checkExpiredPartidos(matches); // <-- Bucle Infinito Destruido
         const partidosConRivales = await Promise.all(matches.map(async (partido) => {
           const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
-          const { data: rivalData } = await supabase.from('perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
+          const { data: rivalData } = await supabase.from('Perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
           return { ...partido, rival: rivalData || { id: '?', nombre: 'Desconocido', elo: '?' } };
         }));
         partidosConRivales.sort((a, b) => {
@@ -392,13 +392,13 @@ export default function App() {
   };
 
   const processSelfWO = async (partido, miPerfil) => {
-    const { data: rivalDB } = await supabase.from('perfiles').select('*').eq('id', partido.rival.id).single();
+    const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
     const miNuevoElo = calculateElo(miPerfil.elo, rivalDB.elo, "0-6, 0-6", false);
     const rivalNuevoElo = calculateElo(rivalDB.elo, miPerfil.elo, "6-0, 6-0", true);
     const nuevaConfMi = Math.max(0, Number(miPerfil.confianza) - 1.0);
     
-    await supabase.from('perfiles').update({ elo: miNuevoElo, confianza: nuevaConfMi, racha_asistencia: 0 }).eq('id', miPerfil.id);
-    await supabase.from('perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
+    await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: nuevaConfMi, racha_asistencia: 0 }).eq('id', miPerfil.id);
+    await supabase.from('Perfiles').update({ elo: rivalNuevoElo }).eq('id', rivalDB.id);
     
     const dataUpdate = { 
       estado: 'wo', 
@@ -417,7 +417,7 @@ export default function App() {
 
   const handleSelfWO = (partido) => {
     mostrarConfirmacion("W.O.", "🚨 Faltan menos de 30 minutos. NO PUEDES CANCELAR.\n\n¿Deseas declarar W.O. asumiendo la derrota (-ELO, -1 Confiabilidad)?", async () => {
-        try { const { data: perfil } = await supabase.from('perfiles').select('*').eq('id', currentUser.id).single(); await processSelfWO(partido, perfil); fetchPartidos(); } catch (error) { mostrarError("Error", "No se pudo procesar el W.O."); }
+        try { const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single(); await processSelfWO(partido, perfil); fetchPartidos(); } catch (error) { mostrarError("Error", "No se pudo procesar el W.O."); }
     });
   };
 
@@ -448,8 +448,8 @@ export default function App() {
           const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
 
           if (minEnd - maxStart >= 120) { 
-            const { data: p1 } = await supabase.from('perfiles').select('elo').eq('id', j1.jugador_id).single();
-            const { data: p2 } = await supabase.from('perfiles').select('elo').eq('id', j2.jugador_id).single();
+            const { data: p1 } = await supabase.from('Perfiles').select('elo').eq('id', j1.jugador_id).single();
+            const { data: p2 } = await supabase.from('Perfiles').select('elo').eq('id', j2.jugador_id).single();
             
             if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
               const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
@@ -485,7 +485,7 @@ export default function App() {
     const diffHoras = (new Date(year, month - 1, day, startH, startM) - new Date()) / (1000 * 60 * 60);
     if (diffHoras <= 0.5) { mostrarError("Atención", "Faltan menos de 30 minutos. Usa el botón de 'Declarar W.O.'"); return; }
     try {
-        const { data: perfil } = await supabase.from('perfiles').select('*').eq('id', currentUser.id).single();
+        const { data: perfil } = await supabase.from('Perfiles').select('*').eq('id', currentUser.id).single();
         let comodines = perfil.comodines || 2; let nuevaConfianza = Number(perfil.confianza); let msj = ""; let castigo = false; let pierdeRacha = true; 
         if (diffHoras >= 24) { msj = "✅ ZONA VERDE: Faltan más de 24 horas. Esta cancelación es LIBRE."; pierdeRacha = false; } 
         else if (diffHoras < 24 && diffHoras >= 3) { if (comodines > 0) { msj = `🟡 ZONA AMARILLA: Usarás 1 COMODÍN (Te quedan ${comodines}).`; comodines -= 1; pierdeRacha = false; } else { msj = "⚠️ ADVERTENCIA: Te quedaste sin comodines. Costará -0.5 de Confiabilidad."; nuevaConfianza = Math.max(0, nuevaConfianza - 0.5); } } 
@@ -499,7 +499,7 @@ export default function App() {
               if (castigo) { await processSelfWO(partido, perfil); } 
               else {
                   const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
-                  await supabase.from('perfiles').update({ confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal }).eq('id', perfil.id);
+                  await supabase.from('Perfiles').update({ confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal }).eq('id', perfil.id);
                   
                   const { data: bRival } = await supabase.from('buscar').select('id').eq('jugador_id', partido.rival.id).eq('fecha', partido.fecha).eq('estado', 'match').maybeSingle();
                   if (bRival) {
@@ -558,7 +558,7 @@ export default function App() {
 
  const handleConfirmReport = async (partido) => {
     try {
-      const { data: rivalDB } = await supabase.from('perfiles').select('*').eq('id', partido.rival.id).single();
+      const { data: rivalDB } = await supabase.from('Perfiles').select('*').eq('id', partido.rival.id).single();
       const yoGane = partido.ganador_id === currentUser.id;
       let miNuevoElo = currentUser.elo; let rivalNuevoElo = rivalDB.elo;
       let misNuevosDatos = { nuevaConfianza: currentUser.confianza, nuevaRacha: currentUser.racha_asistencia };
@@ -579,9 +579,9 @@ export default function App() {
         rivalNuevosDatos = calcularNuevaConfianza(rivalDB.confianza, rivalDB.racha_asistencia);
       }
 
-      const { error: e1 } = await supabase.from('perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
+      const { error: e1 } = await supabase.from('Perfiles').update({ elo: miNuevoElo, confianza: misNuevosDatos.nuevaConfianza, racha_asistencia: misNuevosDatos.nuevaRacha }).eq('id', currentUser.id);
       if (e1) throw e1;
-      const { error: e2 } = await supabase.from('perfiles').update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha }).eq('id', rivalDB.id);
+      const { error: e2 } = await supabase.from('Perfiles').update({ elo: rivalNuevoElo, confianza: rivalNuevosDatos.nuevaConfianza, racha_asistencia: rivalNuevosDatos.nuevaRacha }).eq('id', rivalDB.id);
       if (e2) throw e2;
 
       const dataUpdate = { 
@@ -616,8 +616,8 @@ export default function App() {
 
   const handleAdminOverride = async (partido, tipoResultado) => {
     try {
-      const { data: p1 } = await supabase.from('perfiles').select('*').eq('id', partido.jugador1_id).single();
-      const { data: p2 } = await supabase.from('perfiles').select('*').eq('id', partido.jugador2_id).single();
+      const { data: p1 } = await supabase.from('Perfiles').select('*').eq('id', partido.jugador1_id).single();
+      const { data: p2 } = await supabase.from('Perfiles').select('*').eq('id', partido.jugador2_id).single();
 
       let baseEloP1 = p1.elo; let baseEloP2 = p2.elo;
       let baseConfP1 = p1.confianza; let baseConfP2 = p2.confianza;
@@ -668,9 +668,9 @@ export default function App() {
         const res2 = calcularNuevaConfianza(baseConfP2, baseRachaP2); p2NuevaConf = res2.nuevaConfianza; p2NuevaRacha = res2.nuevaRacha;
       }
       
-      const { error: err1 } = await supabase.from('perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
+      const { error: err1 } = await supabase.from('Perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
       if (err1) throw err1;
-      const { error: err2 } = await supabase.from('perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
+      const { error: err2 } = await supabase.from('Perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
       if (err2) throw err2;
 
       const dataUpdate = { 
@@ -711,7 +711,7 @@ export default function App() {
     
     const fullPhone = `${phonePrefix}${phoneNumber}`;
     try {
-      const { data: existingUser } = await supabase.from('perfiles').select('*').eq('telefono', fullPhone).maybeSingle();
+      const { data: existingUser } = await supabase.from('Perfiles').select('*').eq('telefono', fullPhone).maybeSingle();
       if (existingUser) {
         if (existingUser.pin === pin) { setCurrentUser(existingUser); setIsLoggedIn(true); setTab(existingUser.rol === 'club' ? 'club_agenda' : 'home'); localStorage.setItem('vad_session', JSON.stringify(existingUser)); } 
         else { setAuthError('PIN incorrecto.'); }
@@ -726,7 +726,7 @@ export default function App() {
 
     const fullPhone = `${phonePrefix}${phoneNumber}`;
     try {
-      const { data: existingUser } = await supabase.from('perfiles').select('id').eq('telefono', fullPhone).maybeSingle();
+      const { data: existingUser } = await supabase.from('Perfiles').select('id').eq('telefono', fullPhone).maybeSingle();
       if (existingUser) setAuthError('Este número ya está registrado.');
       else setRegStep(2);
     } catch (error) { setAuthError('Error al verificar el número.'); } finally { setAuthLoading(false); }
@@ -736,7 +736,7 @@ export default function App() {
     e.preventDefault(); if (pin.length < 4) { setAuthError('El PIN debe tener 4 dígitos.'); return; }
     setAuthError(''); setAuthLoading(true); const fullPhone = `${phonePrefix}${phoneNumber}`; const fullName = `${regNombre.trim()} ${regApellido.trim()}`;
     try {
-      const { data: newUser, error } = await supabase.from('perfiles').insert([{ telefono: fullPhone, pin: pin, nombre: fullName, elo: 1200, confianza: 5.0, racha_asistencia: 0, comodines: 2, rol: 'gratis' }]).select().single();
+      const { data: newUser, error } = await supabase.from('Perfiles').insert([{ telefono: fullPhone, pin: pin, nombre: fullName, elo: 1200, confianza: 5.0, racha_asistencia: 0, comodines: 2, rol: 'gratis' }]).select().single();
       if (error) throw error;
       setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegNombre(''); setRegApellido(''); setRegStep(1); setPin(''); setTab('home'); localStorage.setItem('vad_session', JSON.stringify(newUser));
     } catch (error) { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
@@ -795,7 +795,7 @@ export default function App() {
           const rStartMins = getMins(rival.hora_inicio); const rEndMins = getMins(rival.hora_fin);
           if (startMins < rEndMins && endMins > rStartMins) {
             const startCruce = Math.max(startMins, rStartMins); const endCruce = Math.min(endMins, rEndMins);
-            const { data: perfilRival } = await supabase.from('perfiles').select('elo').eq('id', rival.jugador_id).single();
+            const { data: perfilRival } = await supabase.from('Perfiles').select('elo').eq('id', rival.jugador_id).single();
             
             // --- FIX: MOTOR CALIBRADO A 120 MINUTOS (2 HORAS) ---
             if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 120) {
@@ -957,7 +957,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.53</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.54</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1746,7 +1746,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.53 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.54 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
