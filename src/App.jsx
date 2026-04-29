@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.60'; 
+  const APP_VERSION = '1.61'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -83,6 +83,8 @@ export default function App() {
   const [listaCanchas, setListaCanchas] = useState([]);
   const [nuevaCanchaSuperficie, setNuevaCanchaSuperficie] = useState('Dura');
   const [nombreNuevaCancha, setNombreNuevaCancha] = useState('');
+  const [filtroTablaSuperficie, setFiltroTablaSuperficie] = useState('Todas');
+  const [filtroTablaEstatus, setFiltroTablaEstatus] = useState('Todas');
   
   const [baseWeekDate, setBaseWeekDate] = useState(new Date());
   const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]); 
@@ -183,10 +185,22 @@ export default function App() {
 
   const agregarCancha = async () => {
     if (!nombreNuevaCancha) return;
-    const { error } = await supabase.from('canchas').insert([{ nombre: nombreNuevaCancha, superficie: nuevaCanchaSuperficie, estado: 'activa' }]);
-    if (!error) { setNombreNuevaCancha(''); fetchCanchas(); mostrarAlerta("Éxito", "Nueva cancha agregada."); }
-  };
+    
+    const { error } = await supabase.from('canchas').insert([{ 
+      nombre: nombreNuevaCancha, 
+      superficie: nuevaCanchaSuperficie, 
+      estado: 'activa' 
+    }]);
 
+    if (error) {
+      console.error("Error al guardar la cancha:", error);
+      mostrarError("Error", "No se pudo registrar la cancha.");
+    } else { 
+      setNombreNuevaCancha(''); 
+      fetchCanchas(); 
+      mostrarAlerta("Éxito", "Nueva cancha agregada."); 
+    }
+  };
   const eliminarCancha = async (id) => {
     mostrarConfirmacion("Eliminar Cancha", "¿Estás seguro de eliminar esta cancha? No se recomienda si tiene partidos agendados.", async () => {
       const { error } = await supabase.from('canchas').delete().eq('id', id);
@@ -199,11 +213,18 @@ export default function App() {
     });
   };
 
-  // Actualizar el useEffect inicial para cargar canchas
+  // Actualizar el useEffect inicial para cargar canchas y resetear filtros
   useEffect(() => { 
     fetchPartidos(); 
     fetchClubPartidos(); 
     fetchCanchas();
+    
+    // Resetear filtros automáticamente al entrar a la vista de canchas
+    if (tab === 'admin_canchas') {
+      setFiltroTablaSuperficie('Todas');
+      setFiltroTablaEstatus('Todas');
+    }
+    
     if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); 
   }, [currentUser?.id, tab, selectedDays.join(',')]);
 
@@ -968,7 +989,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.60</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.61</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1393,11 +1414,9 @@ export default function App() {
           // Generamos las columnas basadas en los Días y las Canchas seleccionadas
           const columnasGrid = selectedDays.flatMap(day => filtroCanchas.map(c => ({ day, c })));
           // Generamos las filas en intervalos de 30 minutos (0.5)
+          // Generamos las filas en intervalos de 30 minutos (0.5)
           const horasGrid = [];
           for (let h = rangoHoras.start; h <= rangoHoras.end; h += 0.5) { horasGrid.push(h); }
-
-          const canchaDB = listaCanchas.find(ldb => ldb.id === c);
-          const enMantenimiento = canchaDB?.estado === 'mantenimiento';
 
           return (
             <div className="w-full px-2 md:px-8 space-y-6 animate-in fade-in pb-20 max-w-[1600px] mx-auto">
@@ -1621,17 +1640,31 @@ export default function App() {
             </div>
           );
         })()}
-        {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (
+        {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (() => {
+          const canchasFiltradas = listaCanchas?.filter(c => {
+            if (filtroTablaSuperficie !== 'Todas' && c.superficie !== filtroTablaSuperficie) return false;
+            if (filtroTablaEstatus !== 'Todas' && c.estado !== filtroTablaEstatus) return false;
+            return true;
+          });
+
+          return (
           <div className="max-w-7xl w-full mx-auto p-6 space-y-8 animate-in fade-in pb-20">
             
-            {/* Cabecera */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-6 border-black/5">
-              <div className="text-left">
-                <button onClick={() => setTab('club_agenda')} className={`mb-2 text-[10px] font-black uppercase tracking-widest ${theme.muted} hover:text-[#29C454] transition-colors`}>← Volver al Calendario</button>
-                <h2 className= "text-5xl font-black italic uppercase tracking-tighter leading-none">Infraestructura</h2>
-                <p className={`text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Configuración global de canchas y mantenimiento</p>
+            {/* Cabecera Rediseñada Grid 3-Cols */}
+            <div className="grid grid-cols-1 md:grid-cols-3 items-center gap-4 border-b pb-6 border-black/5">
+              <div className="justify-self-start">
+                <button 
+                  onClick={() => setTab('club_agenda')} 
+                  className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#29C454] transition-all active:scale-95 shadow-sm`}
+                >
+                  <span className="text-sm">📅</span> Volver al Calendario
+                </button>
               </div>
-              <div className="flex gap-4">
+              <div className="justify-self-center text-center">
+                <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter leading-none">Infraestructura</h2>
+                <p className={`text-[10px] md:text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Configuración global de canchas</p>
+              </div>
+              <div className="justify-self-end">
                  <div className={`${theme.card} px-6 py-3 rounded-2xl border ${theme.border} text-center shadow-sm`}>
                     <p className="text-[9px] font-black uppercase opacity-40">Total Canchas</p>
                     <p className="text-2xl font-black italic">{listaCanchas?.length || 0}</p>
@@ -1663,7 +1696,11 @@ export default function App() {
                       </select>
                     </div>
 
-                    <button onClick={agregarCancha} className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all mt-4 hover:brightness-110">
+                    <button 
+                      type="button"
+                      onClick={agregarCancha} 
+                      className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all mt-4 hover:brightness-110"
+                    >
                       Registrar Cancha ➜
                     </button>
                   </div>
@@ -1675,63 +1712,81 @@ export default function App() {
                 </div>
               </div>
 
-              {/* COLUMNA 2: Listado de Canchas (Data Binding Fix) */}
+              {/* COLUMNA 2: Data Table Filtrable */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between px-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
                   <h3 className={`text-[11px] font-black uppercase tracking-[0.3em] ${theme.muted}`}>Inventario de Canchas</h3>
-                  <button onClick={fetchCanchas} className="text-[10px] font-black uppercase text-[#29C454] hover:underline">🔄 Refrescar Lista</button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={filtroTablaSuperficie} onChange={e => setFiltroTablaSuperficie(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
+                      <option value="Todas">Superficie: Todas</option>
+                      <option value="Dura">Dura</option>
+                      <option value="Césped">Césped</option>
+                      <option value="Arcilla">Arcilla</option>
+                    </select>
+                    <select value={filtroTablaEstatus} onChange={e => setFiltroTablaEstatus(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
+                      <option value="Todas">Estatus: Todos</option>
+                      <option value="activa">Activas</option>
+                      <option value="mantenimiento">Mantenimiento</option>
+                    </select>
+                    <button onClick={() => { setFiltroTablaSuperficie('Todas'); setFiltroTablaEstatus('Todas'); }} className="text-[10px] font-black uppercase text-[#29C454] hover:underline px-2">🧹 Limpiar Filtros</button>
+                  </div>
                 </div>
 
-                {!listaCanchas || listaCanchas.length === 0 ? (
+                {!canchasFiltradas || canchasFiltradas.length === 0 ? (
                   <div className={`${theme.card} border-2 border-dashed ${theme.border} rounded-[2.5rem] py-20 text-center opacity-40`}>
                     <p className="text-5xl mb-4">🏗️</p>
-                    <p className="font-black italic uppercase tracking-widest text-xs">No hay canchas registradas aún</p>
+                    <p className="font-black italic uppercase tracking-widest text-xs">No hay canchas para este filtro</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {listaCanchas?.map(c => (
-                      <div key={c.id} className={`${theme.card} border ${theme.border} p-5 rounded-[2rem] flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group`}>
-                        <div className="flex items-center gap-5">
-                          <div className={`w-14 h-14 rounded-[1.2rem] flex items-center justify-center font-black text-lg shadow-inner ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-600' : c.superficie === 'Arcilla' ? 'bg-orange-500/10 text-orange-600' : 'bg-green-500/10 text-green-600'}`}>
-                            {c.id}
-                          </div>
-                          <div className="text-left">
-                            <p className="font-black italic text-xl leading-none group-hover:text-[#29C454] transition-colors">{c.nombre}</p>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <span className="text-[9px] font-black uppercase tracking-widest opacity-40">{c.superficie}</span>
-                              <span className="opacity-20">•</span>
-                              <span className={`text-[9px] font-black uppercase tracking-widest ${c.estado === 'activa' ? 'text-green-500' : 'text-red-500'}`}>{c.estado}</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-3">
-                          {/* Toggle Mantenimiento */}
-                          <button 
-                            onClick={() => toggleEstadoCancha(c)} 
-                            className={`w-14 h-8 rounded-full p-1 transition-all relative ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-red-500'}`}
-                          >
-                            <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
-                          </button>
-
-                          {/* Botón Eliminar */}
-                          <button 
-                            onClick={() => eliminarCancha(c.id)}
-                            className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all active:scale-90`}
-                            title="Eliminar Cancha"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className={`${theme.card} rounded-3xl overflow-hidden border ${theme.border} shadow-sm overflow-x-auto`}>
+                    <table className="w-full text-left border-collapse min-w-[500px]">
+                      <thead>
+                        <tr className={`border-b ${theme.border} bg-black/5 text-[10px] uppercase tracking-widest ${theme.muted}`}>
+                          <th className="p-5 font-black">Cancha</th>
+                          <th className="p-5 font-black">Superficie</th>
+                          <th className="p-5 font-black text-center">Estatus</th>
+                          <th className="p-5 font-black text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm">
+                        {canchasFiltradas.map(c => (
+                          <tr key={c.id} className={`border-b border-dashed ${theme.border} hover:bg-black/5 transition-colors`}>
+                            <td className="p-5">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs shadow-inner ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-600' : c.superficie === 'Arcilla' ? 'bg-orange-500/10 text-orange-600' : 'bg-green-500/10 text-green-600'}`}>
+                                  {c.id}
+                                </div>
+                                <span className="font-black italic text-lg">{c.nombre}</span>
+                              </div>
+                            </td>
+                            <td className="p-5 font-bold opacity-70 uppercase text-[10px] tracking-wider">{c.superficie}</td>
+                            <td className="p-5 text-center">
+                              <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${c.estado === 'activa' ? 'bg-[#29C454]/10 text-[#29C454] border-[#29C454]/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                                {c.estado}
+                              </span>
+                            </td>
+                            <td className="p-5">
+                              <div className="flex items-center justify-end gap-4">
+                                <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-all relative shadow-inner ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-red-500'}`} title={c.estado === 'activa' ? 'Poner en mantenimiento' : 'Activar cancha'}>
+                                  <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
+                                </button>
+                                <button onClick={() => eliminarCancha(c.id)} className={`w-8 h-8 rounded-xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all active:scale-95`} title="Eliminar Cancha">
+                                  🗑️
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
 
             </div>
           </div>
-        )}
+          );
+        })()}
 
       </main>
 
@@ -1757,7 +1812,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.60 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.61 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
