@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.61'; 
+  const APP_VERSION = '1.62'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -89,8 +89,8 @@ export default function App() {
   const [baseWeekDate, setBaseWeekDate] = useState(new Date());
   const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]); 
   const [clubPartidos, setClubPartidos] = useState([]);
-  const [filtroCanchas, setFiltroCanchas] = useState([1,2,3,4,5,6,7,8,9,10]); 
-  const [rangoHoras, setRangoHoras] = useState({ start: 6, end: 23 }); 
+  const [filtroCanchas, setFiltroCanchas] = useState([]); 
+  const [rangoHoras, setRangoHoras] = useState({ start: 6, end: 23 });
 
   const [modalHoraInicio, setModalHoraInicio] = useState('');
   const [modalHoraFin, setModalHoraFin] = useState('');
@@ -114,7 +114,7 @@ export default function App() {
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
 
   const limpiarFiltrosAgenda = () => {
-    setFiltroCanchas([1,2,3,4,5,6,7,8,9,10]);
+    setFiltroCanchas(listaCanchas.filter(c => c.estado !== 'inactiva').map(c => c.id));
     setSelectedDays([getFormatDate(new Date())]);
     setRangoHoras({ start: 6, end: 23 });
   };
@@ -159,18 +159,14 @@ export default function App() {
 
   const fetchCanchas = async () => {
     try {
-      // 1.1 Sin filtros de club_id (Global Fase 1)
       const { data, error } = await supabase.from('canchas').select('*').order('id', { ascending: true });
       
-      // 1.3 Verificación en consola
       console.log("Canchas desde DB:", data, "Error:", error); 
-      
       if (error) throw error;
 
       if (data) { 
-        // 1.2 Actualización de estado garantizada
         setListaCanchas(data);
-        if (filtroCanchas.length === 0) setFiltroCanchas(data.map(c => c.id));
+        if (filtroCanchas.length === 0) setFiltroCanchas(data.filter(c => c.estado !== 'inactiva').map(c => c.id));
       }
     } catch (err) {
       console.error("Error crítico al cargar canchas:", err.message);
@@ -202,13 +198,13 @@ export default function App() {
     }
   };
   const eliminarCancha = async (id) => {
-    mostrarConfirmacion("Eliminar Cancha", "¿Estás seguro de eliminar esta cancha? No se recomienda si tiene partidos agendados.", async () => {
-      const { error } = await supabase.from('canchas').delete().eq('id', id);
+    mostrarConfirmacion("Archivar Cancha", "¿Estás seguro de archivar esta cancha? Ya no aparecerá en el calendario.", async () => {
+      const { error } = await supabase.from('canchas').update({ estado: 'inactiva' }).eq('id', id);
       if (!error) {
         fetchCanchas();
-        mostrarAlerta("Eliminada", "La cancha ha sido retirada del sistema.");
+        mostrarAlerta("Archivada", "La cancha ha sido archivada y ocultada del calendario.");
       } else {
-        mostrarError("Error", "No se puede eliminar una cancha con actividad.");
+        mostrarError("Error", "No se pudo archivar la cancha.");
       }
     });
   };
@@ -989,7 +985,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.61</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.62</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1487,9 +1483,9 @@ export default function App() {
                     {/* Selector de Canchas */}
                     <div className="flex flex-wrap justify-center items-center gap-1.5">
                       <span className={`text-[10px] font-black uppercase opacity-40 mr-1 ${theme.text}`}>Canchas:</span>
-                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <button key={n} onClick={() => toggleFiltroCancha(n)} className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all border ${filtroCanchas.includes(n) ? 'bg-[#29C454] text-white border-[#29C454] shadow-sm' : `${theme.bg} ${theme.muted} ${theme.border}`}`}>
-                          C{n}
+                      {listaCanchas.filter(c => c.estado !== 'inactiva').map(c => (
+                        <button key={c.id} onClick={() => toggleFiltroCancha(c.id)} className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all border ${filtroCanchas.includes(c.id) ? 'bg-[#29C454] text-white border-[#29C454] shadow-sm' : `${theme.bg} ${theme.muted} ${theme.border}`}`}>
+                          {c.nombre.replace('Cancha ', 'C')}
                         </button>
                       ))}
                     </div>
@@ -1717,11 +1713,11 @@ export default function App() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
                   <h3 className={`text-[11px] font-black uppercase tracking-[0.3em] ${theme.muted}`}>Inventario de Canchas</h3>
                   <div className="flex flex-wrap items-center gap-2">
-                    <select value={filtroTablaSuperficie} onChange={e => setFiltroTablaSuperficie(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
-                      <option value="Todas">Superficie: Todas</option>
-                      <option value="Dura">Dura</option>
-                      <option value="Césped">Césped</option>
-                      <option value="Arcilla">Arcilla</option>
+                    <select value={filtroTablaEstatus} onChange={e => setFiltroTablaEstatus(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
+                      <option value="Todas">Estatus: Todos</option>
+                      <option value="activa">Activas</option>
+                      <option value="mantenimiento">Mantenimiento</option>
+                      <option value="inactiva">Inactivas</option>
                     </select>
                     <select value={filtroTablaEstatus} onChange={e => setFiltroTablaEstatus(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
                       <option value="Todas">Estatus: Todos</option>
@@ -1754,24 +1750,24 @@ export default function App() {
                             <td className="p-5">
                               <div className="flex items-center gap-3">
                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs shadow-inner ${c.superficie === 'Dura' ? 'bg-blue-500/10 text-blue-600' : c.superficie === 'Arcilla' ? 'bg-orange-500/10 text-orange-600' : 'bg-green-500/10 text-green-600'}`}>
-                                  {c.id}
+                                  🎾
                                 </div>
                                 <span className="font-black italic text-lg">{c.nombre}</span>
                               </div>
                             </td>
                             <td className="p-5 font-bold opacity-70 uppercase text-[10px] tracking-wider">{c.superficie}</td>
                             <td className="p-5 text-center">
-                              <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${c.estado === 'activa' ? 'bg-[#29C454]/10 text-[#29C454] border-[#29C454]/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                              <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${c.estado === 'activa' ? 'bg-[#29C454]/10 text-[#29C454] border-[#29C454]/20' : c.estado === 'mantenimiento' ? 'bg-[#E5B824]/10 text-[#E5B824] border-[#E5B824]/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/20'}`}>
                                 {c.estado}
                               </span>
                             </td>
                             <td className="p-5">
                               <div className="flex items-center justify-end gap-4">
-                                <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-all relative shadow-inner ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-red-500'}`} title={c.estado === 'activa' ? 'Poner en mantenimiento' : 'Activar cancha'}>
+                                <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-all relative shadow-inner ${c.estado === 'activa' ? 'bg-[#29C454]' : c.estado === 'mantenimiento' ? 'bg-[#E5B824]' : 'bg-gray-400'}`} title={c.estado === 'activa' ? 'Desactivar cancha' : 'Activar cancha'}>
                                   <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
                                 </button>
-                                <button onClick={() => eliminarCancha(c.id)} className={`w-8 h-8 rounded-xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all active:scale-95`} title="Eliminar Cancha">
-                                  🗑️
+                                <button onClick={() => eliminarCancha(c.id)} className={`w-8 h-8 rounded-xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all active:scale-95`} title="Archivar Cancha">
+                                  🗃️
                                 </button>
                               </div>
                             </td>
@@ -1812,7 +1808,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.61 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.62 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
