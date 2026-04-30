@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.70';
+  const APP_VERSION = '1.71';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1081,7 +1081,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.70</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.71</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1589,7 +1589,7 @@ export default function App() {
                 </button>
 
                 <div>
-                  <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Control Maestro de Canchas</h2>
+                  <h2 className={`text-5xl font-black italic uppercase tracking-tighter ${theme.text}`}>Master schedule</h2>
                   <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#007AFF] mt-1">Centro Tenistico de Alto Rendimiento Punta Azul</p>
                 </div>
                 
@@ -1659,19 +1659,20 @@ export default function App() {
                 </div>
               </div>
 
-              <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto overflow-y-auto max-h-[75vh] custom-scrollbar`}>
-                <div className="flex flex-col gap-1.5 min-w-max pb-4 pr-4">
+              <div className={`${theme.card} border ${theme.border} rounded-3xl shadow-2xl overflow-x-auto overflow-y-auto max-h-[75vh] custom-scrollbar bg-black/5`}>
+                <div className="flex flex-col min-w-max">
                   
-                  <div className={`flex gap-1.5 sticky top-0 z-20 ${theme.card} pb-2 border-b ${theme.border}`}>
-                    <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-30 ${theme.card} flex items-end justify-end pr-4`}>
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${theme.muted} mb-1`}>Línea de Tiempo ➜</span>
+                 {/* HEADER DE HORAS (Línea de Tiempo Continua) */}
+                  <div className={`flex sticky top-0 z-30 ${theme.card} border-b-2 ${theme.border} shadow-sm`}>
+                    <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-40 ${theme.card} flex items-end justify-end pr-4 pt-4 pb-3 border-r-2 ${theme.border}`}>
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${theme.muted} mb-1`}>Hora ➜</span>
                     </div>
                     {horasGrid.map(horaFloat => {
                       const hInt = Math.floor(horaFloat);
                       const mInt = horaFloat % 1 === 0 ? 0 : 30;
                       const isHalfHour = mInt === 30;
                       return (
-                        <div key={horaFloat} className="w-20 md:w-24 shrink-0 flex flex-col items-center justify-end">
+                        <div key={horaFloat} className={`w-20 md:w-24 shrink-0 flex flex-col items-center justify-end pt-4 pb-3 border-r ${theme.border} ${isHalfHour ? 'bg-black/5' : ''}`}>
                           <span className={`text-[10px] md:text-xs font-black ${isHalfHour ? theme.muted : theme.text} ${isHalfHour ? 'opacity-40' : 'opacity-100'}`}>
                             {hInt > 12 ? hInt - 12 : hInt}:{mInt === 0 ? '00' : '30'}
                           </span>
@@ -1681,11 +1682,12 @@ export default function App() {
                     })}
                   </div>
 
+                  {/* CUERPO DEL CALENDARIO */}
                   {selectedDays.map((dayStr) => (
                     <React.Fragment key={dayStr}>
                       {selectedDays.length > 1 && (
-                        <div className={`flex w-full sticky left-0 z-10 bg-[#007AFF]/10 border-y border-[#007AFF]/20 p-2 mt-4 mb-2 rounded-r-xl`}>
-                          <span className="text-[#007AFF] font-black text-xs uppercase tracking-widest">
+                        <div className={`flex w-full sticky left-0 z-20 bg-[#007AFF] text-white p-2 mt-4 shadow-sm`}>
+                          <span className="font-black text-xs uppercase tracking-widest pl-4">
                             📅 {new Date(dayStr + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
                           </span>
                         </div>
@@ -1694,74 +1696,62 @@ export default function App() {
                       {filtroCanchas.map(c => {
                         const [y, m, d] = dayStr.split('-');
                         return (
-                          <div key={`${dayStr}-${c}`} className="flex gap-1.5 group">
+                          <div key={`${dayStr}-${c}`} className={`flex group border-b ${theme.border} hover:bg-white/50 transition-colors`}>
                             
-                            <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-10 ${theme.card} p-2 flex flex-col justify-center items-end pr-4 rounded-r-2xl shadow-[4px_0_10px_-4px_rgba(0,0,0,0.08)] border-r border-[#007AFF]/10`}>
+                            {/* CELDA DE CANCHA (STICKY) */}
+                            <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-20 ${theme.card} p-2 flex flex-col justify-center items-end pr-4 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)] border-r-2 ${theme.border}`}>
                               <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>
                                 {listaCanchas.find(lc => lc.id === c)?.nombre || `Cancha ${c}`}
                               </span>
                               {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
                             </div>
 
+                            {/* CELDAS DE TIEMPO (Bloques de 30 min fusionados) */}
                             {horasGrid.map(horaFloat => {
                               const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
+                              const cellStartMins = horaFloat * 60;
+                              const cellEndMins = cellStartMins + 30;
+                              
+                              const matchStartMins = partido ? (parseInt(partido.hora_inicio.split(':')[0]) * 60 + parseInt(partido.hora_inicio.split(':')[1])) : 0;
+                              const matchEndMins = partido ? (parseInt(partido.hora_fin.split(':')[0]) * 60 + parseInt(partido.hora_fin.split(':')[1])) : 0;
+                              
+                              // Lógica de Efecto Píldora: Saber si es la primera o última celda del bloque
+                              const isFirstCell = partido && (cellStartMins === matchStartMins || cellStartMins === rangoHoras.start * 60);
+                              const isLastCell = partido && (cellEndMins === matchEndMins || cellEndMins === (rangoHoras.end + 0.5) * 60);
+                              
                               const canchaDB = listaCanchas.find(ldb => ldb.id === c);
                               const enMantenimiento = canchaDB?.estado === 'inhabilitada';
                               
                               const esDisputa = partido?.estado === 'en_disputa';
                               const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
                               const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-                              const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}` : esBloqueo ? `Bloqueo: ${partido.marcador}` : enMantenimiento ? 'Cancha en Mantenimiento' : '';
                               
                               return (
                                 <div 
                                   key={`${dayStr}-${c}-${horaFloat}`} 
-                                  className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
-                                    enMantenimiento 
-                                      ? 'bg-gray-200 dark:bg-white/5 opacity-50 cursor-not-allowed grayscale border border-dashed border-gray-400' 
-                                      : !esVAd && !esBloqueo && !esDisputa 
-                                        ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` 
-                                        : ''
-                                  }`}
+                                  className={`w-20 md:w-24 shrink-0 h-16 relative border-r ${theme.border} cursor-pointer ${enMantenimiento ? 'bg-black/10 cursor-not-allowed' : 'hover:bg-black/5'} ${(horaFloat % 1 !== 0) ? 'bg-black/[0.02]' : ''}`}
                                   onClick={() => !enMantenimiento && handleCellClick(c, horaFloat, dayStr)}
                                 >
-                                  {enMantenimiento ? (
-                                    <div className="absolute inset-0 flex items-center justify-center text-[7px] font-black text-gray-500 uppercase text-center leading-tight p-1">
-                                      Fuera de<br/>Servicio
+                                  {enMantenimiento && isFirstCell && (
+                                     <div className="absolute inset-0 flex items-center justify-center text-[7px] font-black text-black/30 uppercase text-center">Inhabilitada</div>
+                                  )}
+                                  
+                                  {partido && (
+                                    <div className={`absolute top-1 bottom-1 ${isFirstCell ? 'left-1 rounded-l-xl' : 'left-0'} ${isLastCell ? 'right-1 rounded-r-xl' : 'right-0'} z-10 flex flex-col justify-center overflow-visible
+                                      ${esVAd ? 'bg-[#064E3B] shadow-sm' : esBloqueo ? 'bg-[#FECACA]' : esDisputa ? 'bg-[#991B1B] border-2 border-red-500 animate-pulse' : ''}
+                                    `}>
+                                      {/* El texto solo se imprime en el primer bloque y flota hacia la derecha */}
+                                      {isFirstCell && (
+                                        <div className="absolute inset-0 pl-3 flex flex-col justify-center whitespace-nowrap z-20 pointer-events-none">
+                                          <span className={`text-[8px] font-black uppercase tracking-widest mb-0.5 leading-none ${esVAd ? 'text-[#F9F8F1]/70' : esBloqueo ? 'text-[#991B1B]/70' : 'text-white/70'}`}>
+                                            {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : (esBloqueo ? '🔒 Bloqueo' : esDisputa ? '⚠️ DISPUTA' : '🏆 Oficial')}
+                                          </span>
+                                          <span className={`text-[11px] font-black leading-tight truncate max-w-[150px] md:max-w-[200px] ${esVAd ? 'text-[#F9F8F1]' : esBloqueo ? 'text-[#991B1B]' : 'text-white'}`}>
+                                            {esVAd || esDisputa ? `${partido.j1_nombre.split(' ')[0]} v ${partido.j2_nombre.split(' ')[0]}` : partido.marcador || 'Mantenimiento'}
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
-                                  ) : (
-                                    <>
-                                      {esVAd && (
-                                        <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
-                                          <div className="flex flex-col items-center justify-center w-full">
-                                            <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">
-                                              {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : 'VAd'}
-                                            </span>
-                                            <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
-                                              {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      )}
-                                      
-                                      {esBloqueo && (
-                                        <div title={tooltipText} className="absolute inset-0 bg-[#FECACA] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10">
-                                          <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
-                                          <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
-                                            {partido.marcador || 'Bloqueado'}
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      {esDisputa && (
-                                        <div title={tooltipText} className="absolute inset-0 bg-[#991B1B] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10 border-2 border-red-500 animate-pulse">
-                                          <span className="text-[12px] text-white font-black mb-0.5 leading-none">⚠️</span>
-                                          <span className="text-[8px] md:text-[9px] text-white font-black text-center leading-tight truncate w-full">
-                                            DISPUTA<br/>{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </>
                                   )}
                                 </div>
                               );
