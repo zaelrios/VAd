@@ -33,7 +33,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.66';
+  const APP_VERSION = '1.67';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -295,13 +295,57 @@ export default function App() {
   };
 
   const eliminarCancha = async (id) => {
-    mostrarConfirmacion("Inhabilitar Cancha", "¿Estás seguro de inhabilitar esta cancha? Ya no aparecerá en el calendario.", async () => {
-      const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
-      if (!error) {
+    // 1. Escanear si hay partidos o bloqueos programados a futuro en esta cancha
+    const now = new Date();
+    const todayStr = getFormatDate(now);
+    
+    const { data: partidos } = await supabase
+      .from('partidos')
+      .select('*')
+      .eq('cancha_numero', id)
+      .gte('fecha', todayStr)
+      .in('estado', ['confirmado', 'bloqueo_admin']);
+
+    // Filtrar estrictamente los que no han pasado la hora actual
+    const matchesToCancel = partidos?.filter(p => {
+      if (p.fecha > todayStr) return true;
+      const [h, m] = p.hora_inicio.split(':');
+      const matchStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+      return matchStart > now;
+    }) || [];
+
+    let titulo = "Inhabilitar Cancha";
+    let msj = "¿Estás seguro de inhabilitar esta cancha? Ya no aparecerá en el calendario.";
+
+    if (matchesToCancel.length > 0) {
+      titulo = "⚠️ Cancha con Actividad";
+      msj = `Hay ${matchesToCancel.length} partido(s)/bloqueo(s) programado(s) en esta cancha.\n\nSi continúas, se cancelarán automáticamente. Los jugadores de matchmaking regresarán a la lista de espera.\n\n¿Deseas inhabilitar la cancha de todos modos?`;
+    }
+
+    mostrarConfirmacion(titulo, msj, async () => {
+      try {
+        if (matchesToCancel.length > 0) {
+          // A. Regresar a los jugadores de matchmaking a la lista de espera
+          const matchmakingPartidos = matchesToCancel.filter(p => p.tipo_creacion === 'matchmaking');
+          for (let p of matchmakingPartidos) {
+             await supabase.from('buscar').update({ estado: 'activa' })
+               .in('jugador_id', [p.jugador1_id, p.jugador2_id])
+               .eq('fecha', p.fecha)
+               .eq('estado', 'match');
+          }
+          // B. Destruir los partidos de la agenda
+          await supabase.from('partidos').delete().in('id', matchesToCancel.map(m => m.id));
+        }
+
+        // C. Inhabilitar la cancha
+        const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
+        if (error) throw error;
+
         fetchCanchas();
-        mostrarAlerta("Inhabilitada", "La cancha ha sido inhabilitada y ocultada del calendario.");
-      } else {
-        mostrarError("Error", "No se pudo inhabilitar la cancha.");
+        fetchClubPartidos(); // Refrescar el Master Schedule B2B
+        mostrarAlerta("Inhabilitada", "La cancha fue cerrada y la agenda se ha limpiado correctamente.");
+      } catch (err) {
+        mostrarError("Error", "Hubo un problema al inhabilitar la cancha.");
       }
     });
   };
@@ -1000,7 +1044,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.66</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.67</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1721,7 +1765,7 @@ export default function App() {
               </div>
               <div className="justify-self-center text-center">
                 <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter leading-none">Infraestructura</h2>
-                <p className={`text-[10px] md:text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Configuración global de canchas</p>
+                <p className={`text-[10px] md:text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Gestión de canchas</p>
               </div>
               <div className="justify-self-end">
                  <div className={`${theme.card} px-6 py-3 rounded-2xl border ${theme.border} text-center shadow-sm`}>
@@ -1734,9 +1778,8 @@ export default function App() {
             {/* Layout Full Width (Sin Formulario de Alta) */}
             <div className="w-full">
               
-              <div className="p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-left mb-6 max-w-3xl">
-                <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Gestión Externa</p>
-                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Master Schedule. (Para agregar nuevas canchas, genéralas directamente en la Base de Datos de Supabase).</p>
+              <div className="w-full mx-auto p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-center mb-6">
+                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">El mantenimiento temporal se debe bloquear directamente desde el Calendario.Utiliza 'Inhabilitada' solo para cierres a largo plazo. (Para agregar nuevas canchas, solicitarlo directamente con administrador).</p>
               </div>
 
               <div className="space-y-4">
