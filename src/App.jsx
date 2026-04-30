@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.63'; 
+  const APP_VERSION = '1.64'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -181,7 +181,14 @@ export default function App() {
 
   const agregarCancha = async () => {
     if (!nombreNuevaCancha) return;
+
+    // Validación estricta: El usuario debe tener sesión iniciada (RLS)
+    if (!isLoggedIn || !currentUser?.id) {
+      mostrarError("Acceso Denegado", "Debes iniciar sesión para solicitar una cancha.");
+      return;
+    }
     
+    // El Admin tiene permisos directos sobre la tabla canchas
     if (currentUser?.rol === 'admin') {
       const { error } = await supabase.from('canchas').insert([{ 
         nombre: nombreNuevaCancha, 
@@ -197,20 +204,25 @@ export default function App() {
         fetchCanchas(); 
         mostrarAlerta("Éxito", "Nueva cancha agregada."); 
       }
-    } else {
-      const mensaje = `El Club ${currentUser.nombre} solicita dar de alta una nueva cancha de ${nuevaCanchaSuperficie} (${nombreNuevaCancha})`;
+    } 
+    // Los clubes hacen la solicitud a la tabla de sugerencias
+    else {
+      const mensajeSolicitud = `El club solicita dar de alta una nueva cancha.\nNombre propuesto: ${nombreNuevaCancha}\nSuperficie: ${nuevaCanchaSuperficie}`;
+      
+      // Payload alineado exactamente a las columnas de la BD
       const { error } = await supabase.from('sugerencias').insert([{ 
-        jugador_id: currentUser.id, 
-        nombre: currentUser.nombre, 
-        comentario: mensaje, 
+        remitente_id: currentUser.id, 
+        tipo: 'solicitud_cancha',
+        mensaje: mensajeSolicitud, 
         estado: 'nueva' 
       }]);
       
       if (error) {
-        mostrarError("Error", "No se pudo enviar la solicitud.");
+        console.error("Error al enviar solicitud:", error);
+        mostrarError("Error", "No se pudo enviar la solicitud. Revisa la consola.");
       } else {
         setNombreNuevaCancha('');
-        mostrarAlerta("Solicitud Enviada", "Se ha enviado la solicitud de alta de cancha al administrador para su revisión.");
+        mostrarAlerta("Solicitud Enviada", "Solicitud enviada con éxito. El equipo de VAd revisará tu cancha pronto.");
       }
     }
   };
@@ -873,7 +885,7 @@ export default function App() {
           hora_fin: matchFin, 
           superficie: listaCanchas.find(c => c.id === canchaAsignada)?.superficie, 
           cancha_numero: canchaAsignada, 
-          cancha_id: canchaAsignada, // <--- NUEVA VINCULACIÓN FK
+          cancha_id: canchaAsignada,
           estado: 'confirmado', 
           tipo_creacion: 'matchmaking' 
         }]).select();
@@ -1004,7 +1016,7 @@ export default function App() {
           fecha: f, hora_inicio: startStr, hora_fin: endStr,
           superficie: cInfo?.superficie || (cancha <= 8 ? 'Dura' : 'Césped'),
           cancha_numero: cancha,
-          cancha_id: cancha, // <--- NUEVA VINCULACIÓN FK
+          cancha_id: cancha,
           estado: modalAccion === 'bloqueo' ? 'bloqueo_admin' : 'confirmado',
           marcador: modalAccion === 'bloqueo' ? bloqueoMotivo : null,
           tipo_creacion: modalAccion === 'bloqueo' ? 'bloqueo' : 'manual'
@@ -1023,7 +1035,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.63</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.64</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1118,7 +1130,7 @@ export default function App() {
                   <textarea placeholder="Escribe tu comentario aquí..." value={comentario} onChange={(e) => setComentario(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold text-sm focus:outline-none focus:border-[#29C454] resize-none h-28 shadow-inner`} />
                   <button onClick={async (e) => {
                       e.preventDefault(); if(!comentario.trim()) return; const btn = e.currentTarget; const textoOriginal = btn.innerText; btn.innerText = 'Enviando...';
-                      try { const { error } = await supabase.from('sugerencias').insert([{ jugador_id: isLoggedIn && currentUser ? currentUser.id : null, nombre: isLoggedIn && currentUser ? currentUser.nombre : 'Anónimo', comentario: comentario.trim(), estado: 'nueva' }]); if (error) throw error; mostrarAlerta("Buzón", "¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto."); setComentario(''); } catch (error) { mostrarError("Error", "Hubo un error al enviar el mensaje. Intenta de nuevo."); } finally { btn.innerText = textoOriginal; }
+                      try { const { error } = await supabase.from('sugerencias').insert([{ remitente_id: isLoggedIn && currentUser ? currentUser.id : null, tipo: 'sugerencia', mensaje: comentario.trim(), estado: 'nueva' }]); if (error) throw error; mostrarAlerta("Buzón", "¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto."); setComentario(''); } catch (error) { mostrarError("Error", "Hubo un error al enviar el mensaje. Intenta de nuevo."); } finally { btn.innerText = textoOriginal; }
                     }} className="w-full bg-[#29C454] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-105">
                     Enviar Sugerencia
                   </button>
@@ -1174,7 +1186,15 @@ export default function App() {
             <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
                 <div className="text-center mb-2"><h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2><p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p></div>
-                <div className="space-y-3 text-left w-full"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label><input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} /></div>
+                <div className="space-y-3 text-left w-full">
+                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
+                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
+                    <option value="Cualquier superficie">Cualquier superficie</option>
+                    {[...new Set(listaCanchas?.filter(c => c.estado !== 'inhabilitada').map(c => c.superficie))].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="space-y-3 text-left w-full">
                   <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
                   <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
@@ -1426,7 +1446,7 @@ export default function App() {
                         </button>
                         <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">👥 Jugadores</button>
                       <button onClick={() => setTab('admin_canchas')} className="col-span-2 w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
-                      ⚙️ Configuración de Canchas
+                      ⚙️ Canchas
                     </button>
                       </>
                     )}
@@ -1479,7 +1499,7 @@ export default function App() {
                   onClick={() => { fetchCanchas(); setTab('admin_canchas'); }}
                   className={`absolute top-0 right-0 hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#29C454] transition-all active:scale-95 shadow-sm`}
                 >
-                  ⚙️ Configurar Canchas
+                  ⚙️ Canchas
                 </button>
 
                 <div>
@@ -1602,9 +1622,11 @@ export default function App() {
                             
                             {/* Cabecera de Fila Fija Izquierda */}
                             <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-10 ${theme.card} p-2 flex flex-col justify-center items-end pr-4 rounded-r-2xl shadow-[4px_0_10px_-4px_rgba(0,0,0,0.08)] border-r border-[#007AFF]/10`}>
-                              <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>Cancha {c}</span>
-                              {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
-                            </div>
+          <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>
+            {listaCanchas.find(lc => lc.id === c)?.nombre || `Cancha ${c}`}
+          </span>
+          {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
+        </div>
 
                             {/* Bloques de Tiempo Interactivos */}
 {horasGrid.map(horaFloat => {
@@ -1714,48 +1736,15 @@ export default function App() {
               </div>
             </div>
 
-            {/* Layout en Grid: Formulario a la Izquierda, Lista a la Derecha */}
-            <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-8 items-start">
+            {/* Layout de una sola columna (Tabla Full Width) */}
+            <div className="w-full">
               
-              {/* COLUMNA 1: Formulario de Agregado (Sticky en desktop) */}
-              <div className="lg:sticky lg:top-24 space-y-6">
-                <div className={`${theme.card} p-6 rounded-[2.5rem] border ${theme.border} shadow-xl relative overflow-hidden`}>
-                  <div className="absolute -right-4 -top-4 opacity-5 text-7xl rotate-12">🎾</div>
-                  <h3 className="text-lg font-black uppercase text-[#29C454] mb-6 relative z-10">
-                    {currentUser?.rol === 'admin' ? 'Nueva Cancha' : 'Solicitar Cancha'}
-                  </h3>                  
-                  <div className="space-y-4 relative z-10">
-                    <div className="text-left">
-                      <label className="text-[10px] font-black uppercase opacity-40 ml-2">Nombre o Número</label>
-                      <input type="text" placeholder="Ej. Cancha 11" value={nombreNuevaCancha} onChange={e => setNombreNuevaCancha(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-bold focus:outline-none focus:border-[#29C454] shadow-inner`} />
-                    </div>
-                    
-                    <div className="text-left">
-                      <label className="text-[10px] font-black uppercase opacity-40 ml-2">Tipo de Superficie</label>
-                      <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-black uppercase appearance-none cursor-pointer focus:outline-none focus:border-[#29C454]`}>
-                        <option value="Dura">Cancha Dura</option>
-                        <option value="Césped">Césped</option>
-                        <option value="Arcilla">Arcilla / Polvo</option>
-                      </select>
-                    </div>
-
-                    <button 
-                      type="button"
-                      onClick={agregarCancha} 
-                      className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all mt-4 hover:brightness-110"
-                    >
-                      {currentUser?.rol === 'admin' ? 'Registrar Cancha ➜' : 'Solicitar Alta de Cancha ➜'}
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="p-6 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-[2rem] text-left">
-                  <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Estatus Inhabilitada</p>
-                  <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo (ej. remodelación). El mantenimiento temporal (limpieza, regado) se debe bloquear directamente desde el Master Schedule.</p>
-                </div>
+              <div className="p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-left mb-6">
+                <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Estatus Inhabilitada</p>
+                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Master Schedule. (Para agregar nuevas canchas, contacta al administrador de la Base de Datos).</p>
               </div>
 
-              {/* COLUMNA 2: Data Table Filtrable */}
+              {/* Data Table Filtrable */}
               <div className="space-y-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
                   <h3 className="text-[12px] font-black uppercase tracking-[0.3em] text-[#1268B0]">Inventario de Canchas</h3>
@@ -1860,7 +1849,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.63 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.64--- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
