@@ -20,11 +20,7 @@ export default function App() {
       return new Date(dateObj - offset).toISOString().split('T')[0];
     };
     
-    return { 
-      date: formatDate(startObj), 
-      start: formatTime(startObj), 
-      end: formatTime(endObj) 
-    };
+    return { date: formatDate(startObj), start: formatTime(startObj), end: formatTime(endObj) };
   };
 
   const getFormatDate = (d) => {
@@ -33,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.68';
+  const APP_VERSION = '1.69';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -148,9 +144,12 @@ export default function App() {
   const [partidoAdmin, setPartidoAdmin] = useState(null);
 
   const procesadosRef = useRef(new Set()); // Candado Anti-Bucle Infinito
+  
+  // Cálculo de notificaciones de buzón
+  const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
 
   // ==========================================
-  // 7. EFECTOS (CICLO DE VIDA)
+  // 7. EFECTOS (CICLO DE VIDA Y REALTIME)
   // ==========================================
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -169,6 +168,7 @@ export default function App() {
     }
   }, []);
 
+  // Carga inicial y recarga al cambiar de pestaña
   useEffect(() => {
     fetchPartidos();
     fetchClubPartidos();
@@ -179,9 +179,13 @@ export default function App() {
       setFiltroTablaEstatus('Todas');
     }
     
-    if (currentUser?.rol === 'admin') cargarSugerenciasAdmin();
+    // Si el admin inicia sesión, forzamos la carga del buzón para el puntito verde
+    if (currentUser?.rol === 'admin') {
+      cargarSugerenciasAdmin();
+    }
   }, [currentUser?.id, tab, selectedDays.join(',')]);
 
+  // Manejo de búsquedas expiradas
   useEffect(() => {
     if (currentUser && currentUser.rol !== 'club') {
       const cargarBúsquedas = async () => {
@@ -208,6 +212,7 @@ export default function App() {
     }
   }, [currentUser?.id, tab]);
 
+  // SUPABASE REALTIME: Conexión sólida a base de datos
   useEffect(() => {
     if (!currentUser) return;
     const ch = supabase.channel('alertas-vad')
@@ -231,12 +236,46 @@ export default function App() {
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
+      
+      // ESCUCHADOR DE BUZÓN EN TIEMPO REAL
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sugerencias' }, () => {
+        if (currentUser?.rol === 'admin') {
+          cargarSugerenciasAdmin(); // Actualiza la lista e ilumina el puntito verde si hay nuevas
+        }
+      })
       .subscribe();
+      
     return () => { supabase.removeChannel(ch); };
   }, [currentUser?.id, selectedDays.join(',')]);
 
   // ==========================================
-  // 8. LÓGICA DEL MASTER SCHEDULE
+  // 8. LÓGICA DEL BUZÓN (ADMIN)
+  // ==========================================
+  const cargarSugerenciasAdmin = async () => {
+    if (currentUser?.rol !== 'admin') return;
+    try {
+      const { data, error } = await supabase.from('sugerencias').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) setListaSugerencias(data);
+    } catch (e) { console.error("Error cargando buzón:", e); }
+  };
+  
+  const actualizarEstadoSugerencia = async (id, nuevoEstado) => {
+    const { error } = await supabase.from('sugerencias').update({ estado: nuevoEstado }).eq('id', id);
+    
+    if (error) {
+      console.error("Error al actualizar sugerencia:", error);
+      mostrarError("Error de Permisos", "No se pudo actualizar el mensaje. Revisa los permisos UPDATE en Supabase.");
+    } else {
+      setListaSugerencias(prev => prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug));
+      if (nuevoEstado === 'archivado') {
+        mostrarAlerta("Archivado", "El mensaje ha sido ocultado del buzón principal.");
+      }
+    }
+  };
+
+  // ==========================================
+  // 9. LÓGICA DEL MASTER SCHEDULE Y CANCHAS
   // ==========================================
   const startOfWeek = new Date(baseWeekDate);
   const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1;
@@ -295,18 +334,11 @@ export default function App() {
   };
 
   const eliminarCancha = async (id) => {
-    // 1. Escanear si hay partidos o bloqueos programados a futuro en esta cancha
     const now = new Date();
     const todayStr = getFormatDate(now);
     
-    const { data: partidos } = await supabase
-      .from('partidos')
-      .select('*')
-      .eq('cancha_numero', id)
-      .gte('fecha', todayStr)
-      .in('estado', ['confirmado', 'bloqueo_admin']);
+    const { data: partidos } = await supabase.from('partidos').select('*').eq('cancha_numero', id).gte('fecha', todayStr).in('estado', ['confirmado', 'bloqueo_admin']);
 
-    // Filtrar estrictamente los que no han pasado la hora actual
     const matchesToCancel = partidos?.filter(p => {
       if (p.fecha > todayStr) return true;
       const [h, m] = p.hora_inicio.split(':');
@@ -325,24 +357,17 @@ export default function App() {
     mostrarConfirmacion(titulo, msj, async () => {
       try {
         if (matchesToCancel.length > 0) {
-          // A. Regresar a los jugadores de matchmaking a la lista de espera
           const matchmakingPartidos = matchesToCancel.filter(p => p.tipo_creacion === 'matchmaking');
           for (let p of matchmakingPartidos) {
-             await supabase.from('buscar').update({ estado: 'activa' })
-               .in('jugador_id', [p.jugador1_id, p.jugador2_id])
-               .eq('fecha', p.fecha)
-               .eq('estado', 'match');
+             await supabase.from('buscar').update({ estado: 'activa' }).in('jugador_id', [p.jugador1_id, p.jugador2_id]).eq('fecha', p.fecha).eq('estado', 'match');
           }
-          // B. Destruir los partidos de la agenda
           await supabase.from('partidos').delete().in('id', matchesToCancel.map(m => m.id));
         }
 
-        // C. Inhabilitar la cancha
         const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
         if (error) throw error;
 
-        fetchCanchas();
-        fetchClubPartidos(); // Refrescar el Master Schedule B2B
+        fetchCanchas(); fetchClubPartidos();
         mostrarAlerta("Inhabilitada", "La cancha fue cerrada y la agenda se ha limpiado correctamente.");
       } catch (err) {
         mostrarError("Error", "Hubo un problema al inhabilitar la cancha.");
@@ -453,7 +478,7 @@ export default function App() {
   };
 
   // ==========================================
-  // 9. LÓGICA DE PARTIDOS, MATCHMAKING Y UTILIDADES
+  // 10. LÓGICA DE PARTIDOS, MATCHMAKING Y UTILIDADES
   // ==========================================
   const formatTime = (time24) => {
     if (!time24) return ''; const [hourString, minute] = time24.split(':');
@@ -1017,17 +1042,6 @@ export default function App() {
     const { error } = await supabase.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
     if (!error) { setListaUsuarios(prev => prev.map(u => u.id === id ? { ...u, rol: nuevoRol } : u)); mostrarAlerta("Éxito", `Rol actualizado a ${nuevoRol.toUpperCase()}`); }
   };
-  
-  const cargarSugerenciasAdmin = async () => {
-    if (currentUser?.rol !== 'admin') return;
-    const { data, error } = await supabase.from('sugerencias').select('*').order('created_at', { ascending: false });
-    if (!error && data) setListaSugerencias(data);
-  };
-  
-  const actualizarEstadoSugerencia = async (id, nuevoEstado) => {
-    const { error } = await supabase.from('sugerencias').update({ estado: nuevoEstado }).eq('id', id);
-    if (!error) setListaSugerencias(prev => prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug));
-  };
 
   const handleColorChange = async (newColor) => {
     const updatedUser = { ...currentUser, color: newColor };
@@ -1035,8 +1049,9 @@ export default function App() {
     try { await supabase.from('perfiles').update({ color: newColor }).eq('id', currentUser.id); } catch (error) { }
   };
 
-  const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
-
+  // ==========================================
+  // 11. RENDER PRINCIPAL (UI)
+  // ==========================================
   return (
     <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 selection:bg-[#29C454]/30 ${theme.bg} ${theme.text}`}>
       
@@ -1044,7 +1059,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.68</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.69</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1500,7 +1515,7 @@ export default function App() {
                         <button onClick={() => { cargarSugerenciasAdmin(); setTab('admin_buzon'); }} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95`}>
                           📩 Buzón {sugerenciasNuevas > 0 && <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">{sugerenciasNuevas}</span>}
                         </button>
-                        <button onClick={() => setTab('admin_canchas')} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                        <button onClick={() => setTab('admin_canchas')} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
                           ⚙️ Canchas
                         </button>
                       </>
@@ -1764,7 +1779,7 @@ export default function App() {
               </div>
               <div className="justify-self-center text-center">
                 <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter leading-none">Infraestructura</h2>
-                <p className={`text-[10px] md:text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Gestión de canchas</p>
+                <p className={`text-[10px] md:text-[11px] font-bold uppercase opacity-40 mt-2 tracking-[0.2em] ${theme.text}`}>Configuración global de canchas</p>
               </div>
               <div className="justify-self-end">
                  <div className={`${theme.card} px-6 py-3 rounded-2xl border ${theme.border} text-center shadow-sm`}>
@@ -1778,7 +1793,8 @@ export default function App() {
             <div className="w-full">
               
               <div className="w-full mx-auto p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-center mb-6">
-                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">El mantenimiento temporal se debe bloquear directamente desde el Calendario.Utiliza 'Inhabilitada' solo para cierres a largo plazo. (Para agregar nuevas canchas, solicitarlo directamente con administrador).</p>
+                <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Notas:</p>
+                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Calendario. (Para agregar nuevas canchas, solicitarlo directamente con administrador).</p>
               </div>
 
               <div className="space-y-4">
@@ -1861,7 +1877,7 @@ export default function App() {
         })()}
 
         {/* =========================================
-            VISTA BUZÓN ADMIN (NUEVA)
+            VISTA BUZÓN ADMIN
         ========================================= */}
         {tab === 'admin_buzon' && currentUser?.rol === 'admin' && (
           <div className="w-full max-w-3xl mx-auto p-4 space-y-6 animate-in fade-in pb-20">
@@ -1876,14 +1892,13 @@ export default function App() {
             </div>
             
             <div className="space-y-4">
-              {/* Filtramos para que NO se vean los archivados */}
-              {listaSugerencias.filter(s => s.estado !== 'archivado').length === 0 ? (
+              {listaSugerencias.filter(s => s.estado !== 'archivada' && s.estado !== 'archivado').length === 0 ? (
                 <div className={`${theme.card} border-2 border-dashed ${theme.border} rounded-[2rem] p-10 text-center opacity-50`}>
                   <p className="text-4xl mb-2">📭</p>
                   <p className="text-xs font-black uppercase tracking-widest">El buzón está vacío</p>
                 </div>
               ) : (
-                listaSugerencias.filter(s => s.estado !== 'archivado').map(sug => (
+                listaSugerencias.filter(s => s.estado !== 'archivada' && s.estado !== 'archivado').map(sug => (
                   <div key={sug.id} className={`${theme.card} border ${theme.border} rounded-2xl p-5 shadow-sm relative overflow-hidden animate-in fade-in`}>
                     {sug.estado === 'nueva' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#29C454]"></div>}
                     <div className="flex justify-between items-start mb-3">
@@ -1901,14 +1916,13 @@ export default function App() {
                       <p className={`text-sm font-bold italic leading-relaxed whitespace-pre-wrap ${theme.text}`}>"{sug.comentario}"</p>
                     </div>
                     
-                    {/* BOTONERA DE ESTADOS */}
                     <div className="mt-4 flex justify-end gap-2">
                       {sug.estado === 'nueva' && (
                         <button onClick={() => actualizarEstadoSugerencia(sug.id, 'leida')} className="bg-[#29C454] text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-110">
                           ✓ Marcar Leída
                         </button>
                       )}
-                      <button onClick={() => actualizarEstadoSugerencia(sug.id, 'archivado')} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border ${theme.border} ${theme.muted} ${theme.card} active:scale-95 transition-all hover:bg-red-500 hover:text-white`}>
+                      <button onClick={() => actualizarEstadoSugerencia(sug.id, 'archivada')} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border ${theme.border} ${theme.muted} ${theme.card} active:scale-95 transition-all hover:bg-red-500 hover:text-white`}>
                         📁 Archivar
                       </button>
                     </div>
@@ -2098,7 +2112,16 @@ export default function App() {
               <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-150 active:scale-90 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
                 <div className="relative flex flex-col items-center gap-1">
                   <span className="text-xl mb-0.5">{item.icon}</span>
-                  {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && ( <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span> )}
+                  
+                  {/* Puntito Azul: Partidos/Reportes pendientes para el Jugador */}
+                  {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && ( 
+                    <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span> 
+                  )}
+
+                  {/* Puntito Verde: Nuevas sugerencias en el Buzón para el Admin */}
+                  {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
+                    <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#29C454] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
+                  )}
                 </div>
               </button>
             ))}
