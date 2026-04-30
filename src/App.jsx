@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.65'; 
+  const APP_VERSION = '1.66'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -81,8 +81,6 @@ export default function App() {
   const getFormatDate = (d) => { const off = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - off).toISOString().split('T')[0]; };
 
   const [listaCanchas, setListaCanchas] = useState([]);
-  const [nuevaCanchaSuperficie, setNuevaCanchaSuperficie] = useState('Dura');
-  const [nombreNuevaCancha, setNombreNuevaCancha] = useState('');
   const [filtroTablaSuperficie, setFiltroTablaSuperficie] = useState('Todas');
   const [filtroTablaEstatus, setFiltroTablaEstatus] = useState('Todas');
   
@@ -179,55 +177,7 @@ export default function App() {
     if (!error) fetchCanchas();
   };
 
-  const agregarCancha = async () => {
-    if (!nombreNuevaCancha) return;
-
-    // Validación estricta: El usuario debe tener sesión iniciada (RLS)
-    if (!isLoggedIn || !currentUser?.id) {
-      mostrarError("Acceso Denegado", "Debes iniciar sesión para solicitar una cancha.");
-      return;
-    }
-    
-    // El Admin tiene permisos directos sobre la tabla canchas
-    if (currentUser?.rol === 'admin') {
-      const { error } = await supabase.from('canchas').insert([{ 
-        nombre: nombreNuevaCancha, 
-        superficie: nuevaCanchaSuperficie, 
-        estado: 'activa' 
-      }]);
-
-      if (error) {
-        console.error("Error al guardar la cancha:", error);
-        mostrarError("Error", "No se pudo registrar la cancha.");
-      } else { 
-        setNombreNuevaCancha(''); 
-        fetchCanchas(); 
-        mostrarAlerta("Éxito", "Nueva cancha agregada."); 
-      }
-    } 
-    // Los clubes hacen la solicitud a la tabla de sugerencias
-    else {
-      const mensajeSolicitud = `El club solicita dar de alta una nueva cancha.\nNombre propuesto: ${nombreNuevaCancha}\nSuperficie: ${nuevaCanchaSuperficie}`;
-      
-      // Payload alineado exactamente a las columnas de la BD
-      const { error } = await supabase.from('sugerencias').insert([{ 
-        remitente_id: currentUser.id, 
-        tipo: 'solicitud_cancha',
-        mensaje: mensajeSolicitud, 
-        estado: 'nueva' 
-      }]);
-      
-      if (error) {
-        console.error("Error al enviar solicitud:", error);
-        mostrarError("Error", "No se pudo enviar la solicitud. Revisa la consola.");
-      } else {
-        setNombreNuevaCancha('');
-        mostrarAlerta("Solicitud Enviada", "Solicitud enviada con éxito. El equipo de VAd revisará tu cancha pronto.");
-      }
-    }
-  };
-
-  const eliminarCancha = async (id) => {
+    const eliminarCancha = async (id) => {
     mostrarConfirmacion("Inhabilitar Cancha", "¿Estás seguro de inhabilitar esta cancha? Ya no aparecerá en el calendario.", async () => {
       const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
       if (!error) {
@@ -1035,7 +985,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.65</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.66</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1761,12 +1711,12 @@ export default function App() {
               </div>
             </div>
 
-            {/* Layout de una sola columna (Tabla Full Width) */}
+            {/* Layout de una sola columna (Tabla a Full Width) */}
             <div className="w-full">
               
-              <div className="p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-left mb-6">
+              <div className="p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-left mb-6 max-w-3xl">
                 <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Estatus Inhabilitada</p>
-                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Master Schedule. (Para agregar nuevas canchas, contacta al administrador de la Base de Datos).</p>
+                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Master Schedule. (Las canchas nuevas se agregan directamente desde la Base de Datos Administrativa).</p>
               </div>
 
               {/* Data Table Filtrable */}
@@ -1874,7 +1824,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.65--- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.66--- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
