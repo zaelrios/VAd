@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.69';
+  const APP_VERSION = '1.70';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -330,7 +330,29 @@ export default function App() {
   const toggleEstadoCancha = async (cancha) => {
     const nuevoEstado = cancha.estado === 'activa' ? 'inhabilitada' : 'activa';
     const { error } = await supabase.from('canchas').update({ estado: nuevoEstado }).eq('id', cancha.id);
-    if (!error) fetchCanchas();
+    
+    if (!error) {
+      fetchCanchas();
+      
+      // 🧠 GATILLO DE MATCHMAKING: Si abrimos una cancha, intentamos acomodar a los que están en lista de espera
+      if (nuevoEstado === 'activa') {
+        // Buscamos si hay días con gente esperando
+        const { data: busquedas } = await supabase.from('buscar').select('fecha').eq('estado', 'activa');
+        
+        if (busquedas && busquedas.length > 0) {
+          const fechasUnicas = [...new Set(busquedas.map(b => b.fecha))];
+          
+          for (let fecha of fechasUnicas) {
+            // Evaluamos a los que pidieron esta superficie específica para todo el día (06:00 a 23:00)
+            await resolverListaDeEspera(fecha, cancha.superficie, cancha.id, '06:00', '23:00');
+            // Evaluamos a los que pidieron "Cualquier superficie"
+            await resolverListaDeEspera(fecha, 'Cualquier superficie', cancha.id, '06:00', '23:00');
+          }
+          // Refrescamos los partidos del club por si el sistema generó retas nuevas
+          fetchClubPartidos();
+        }
+      }
+    }
   };
 
   const eliminarCancha = async (id) => {
@@ -1059,7 +1081,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.69</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.70</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
