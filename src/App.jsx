@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.62'; 
+  const APP_VERSION = '1.63'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -114,7 +114,7 @@ export default function App() {
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
 
   const limpiarFiltrosAgenda = () => {
-    setFiltroCanchas(listaCanchas.filter(c => c.estado !== 'inactiva').map(c => c.id));
+    setFiltroCanchas(listaCanchas.filter(c => c.estado !== 'inhabilitada').map(c => c.id));
     setSelectedDays([getFormatDate(new Date())]);
     setRangoHoras({ start: 6, end: 23 });
   };
@@ -166,7 +166,7 @@ export default function App() {
 
       if (data) { 
         setListaCanchas(data);
-        if (filtroCanchas.length === 0) setFiltroCanchas(data.filter(c => c.estado !== 'inactiva').map(c => c.id));
+        if (filtroCanchas.length === 0) setFiltroCanchas(data.filter(c => c.estado !== 'inhabilitada').map(c => c.id));
       }
     } catch (err) {
       console.error("Error crítico al cargar canchas:", err.message);
@@ -174,7 +174,7 @@ export default function App() {
   };
 
   const toggleEstadoCancha = async (cancha) => {
-    const nuevoEstado = cancha.estado === 'activa' ? 'mantenimiento' : 'activa';
+    const nuevoEstado = cancha.estado === 'activa' ? 'inhabilitada' : 'activa';
     const { error } = await supabase.from('canchas').update({ estado: nuevoEstado }).eq('id', cancha.id);
     if (!error) fetchCanchas();
   };
@@ -182,29 +182,47 @@ export default function App() {
   const agregarCancha = async () => {
     if (!nombreNuevaCancha) return;
     
-    const { error } = await supabase.from('canchas').insert([{ 
-      nombre: nombreNuevaCancha, 
-      superficie: nuevaCanchaSuperficie, 
-      estado: 'activa' 
-    }]);
+    if (currentUser?.rol === 'admin') {
+      const { error } = await supabase.from('canchas').insert([{ 
+        nombre: nombreNuevaCancha, 
+        superficie: nuevaCanchaSuperficie, 
+        estado: 'activa' 
+      }]);
 
-    if (error) {
-      console.error("Error al guardar la cancha:", error);
-      mostrarError("Error", "No se pudo registrar la cancha.");
-    } else { 
-      setNombreNuevaCancha(''); 
-      fetchCanchas(); 
-      mostrarAlerta("Éxito", "Nueva cancha agregada."); 
+      if (error) {
+        console.error("Error al guardar la cancha:", error);
+        mostrarError("Error", "No se pudo registrar la cancha.");
+      } else { 
+        setNombreNuevaCancha(''); 
+        fetchCanchas(); 
+        mostrarAlerta("Éxito", "Nueva cancha agregada."); 
+      }
+    } else {
+      const mensaje = `El Club ${currentUser.nombre} solicita dar de alta una nueva cancha de ${nuevaCanchaSuperficie} (${nombreNuevaCancha})`;
+      const { error } = await supabase.from('sugerencias').insert([{ 
+        jugador_id: currentUser.id, 
+        nombre: currentUser.nombre, 
+        comentario: mensaje, 
+        estado: 'nueva' 
+      }]);
+      
+      if (error) {
+        mostrarError("Error", "No se pudo enviar la solicitud.");
+      } else {
+        setNombreNuevaCancha('');
+        mostrarAlerta("Solicitud Enviada", "Se ha enviado la solicitud de alta de cancha al administrador para su revisión.");
+      }
     }
   };
+
   const eliminarCancha = async (id) => {
-    mostrarConfirmacion("Archivar Cancha", "¿Estás seguro de archivar esta cancha? Ya no aparecerá en el calendario.", async () => {
-      const { error } = await supabase.from('canchas').update({ estado: 'inactiva' }).eq('id', id);
+    mostrarConfirmacion("Inhabilitar Cancha", "¿Estás seguro de inhabilitar esta cancha? Ya no aparecerá en el calendario.", async () => {
+      const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
       if (!error) {
         fetchCanchas();
-        mostrarAlerta("Archivada", "La cancha ha sido archivada y ocultada del calendario.");
+        mostrarAlerta("Inhabilitada", "La cancha ha sido inhabilitada y ocultada del calendario.");
       } else {
-        mostrarError("Error", "No se pudo archivar la cancha.");
+        mostrarError("Error", "No se pudo inhabilitar la cancha.");
       }
     });
   };
@@ -796,9 +814,12 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      // 2. CHECK DE SATURACIÓN DE CANCHAS
-      const canchasActivas = listaCanchas.filter(c => c.estado === 'activa' && c.superficie === superficie);
-      const { data: ocupadas } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', endTime).gt('hora_fin', startTime);
+      // 2. CHECK DE SATURACIÓN DE CANCHAS (DINÁMICO)
+      const canchasActivas = listaCanchas.filter(c => c.estado === 'activa' && (superficie === 'Cualquier superficie' || c.superficie === superficie));
+      
+      let queryOcupadas = supabase.from('partidos').select('cancha_numero, superficie').eq('fecha', searchDate).lt('hora_inicio', endTime).gt('hora_fin', startTime);
+      if (superficie !== 'Cualquier superficie') queryOcupadas = queryOcupadas.eq('superficie', superficie);
+      const { data: ocupadas } = await queryOcupadas;
       
       const canchasOcupadasIds = ocupadas ? [...new Set(ocupadas.map(o => o.cancha_numero))] : [];
       const hayCanchasLibres = canchasActivas.some(c => !canchasOcupadasIds.includes(c.id));
@@ -815,7 +836,9 @@ export default function App() {
         return;
       }
 
-      const { data: posiblesRivales } = await supabase.from('buscar').select('*').eq('fecha', searchDate).eq('superficie', superficie).neq('jugador_id', currentUser.id).eq('estado', 'activa');
+      let queryRivales = supabase.from('buscar').select('*').eq('fecha', searchDate).neq('jugador_id', currentUser.id).eq('estado', 'activa');
+      if (superficie !== 'Cualquier superficie') queryRivales = queryRivales.eq('superficie', superficie);
+      const { data: posiblesRivales } = await queryRivales;
       let matchEncontrado = null, matchInicio = '', matchFin = '', canchaAsignada = null;
 
       if (posiblesRivales && posiblesRivales.length > 0) {
@@ -842,7 +865,18 @@ export default function App() {
       if (matchEncontrado) {
         const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', searchDate).eq('cancha_numero', canchaAsignada).lt('hora_inicio', matchFin).gt('hora_fin', matchInicio);
         if (choque && choque.length > 0) throw new Error("¡Interferencia! Alguien reservó esta cancha. Intenta de nuevo.");
-        const { data: mc, error: eM } = await supabase.from('partidos').insert([{ jugador1_id: matchEncontrado.jugador_id, jugador2_id: currentUser.id, fecha: searchDate, hora_inicio: matchInicio, hora_fin: matchFin, superficie: superficie, cancha_numero: canchaAsignada, estado: 'confirmado', tipo_creacion: 'matchmaking' }]).select();
+        const { data: mc, error: eM } = await supabase.from('partidos').insert([{ 
+          jugador1_id: matchEncontrado.jugador_id, 
+          jugador2_id: currentUser.id, 
+          fecha: searchDate, 
+          hora_inicio: matchInicio, 
+          hora_fin: matchFin, 
+          superficie: listaCanchas.find(c => c.id === canchaAsignada)?.superficie, 
+          cancha_numero: canchaAsignada, 
+          cancha_id: canchaAsignada, // <--- NUEVA VINCULACIÓN FK
+          estado: 'confirmado', 
+          tipo_creacion: 'matchmaking' 
+        }]).select();
         if (eM || !mc || mc.length === 0) throw new Error("Error en el servidor.");
         await supabase.from('buscar').update({ estado: 'match' }).eq('id', matchEncontrado.id);
         await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'match' }]);
@@ -962,16 +996,20 @@ export default function App() {
         }
       }
 
-      const inserts = [...new Set(fechasAProcesar)].map(f => ({
-        jugador1_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ1,
-        jugador2_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ2,
-        fecha: f, hora_inicio: startStr, hora_fin: endStr,
-        superficie: cancha <= 8 ? 'Dura' : 'Césped',
-        cancha_numero: cancha,
-        estado: modalAccion === 'bloqueo' ? 'bloqueo_admin' : 'confirmado',
-        marcador: modalAccion === 'bloqueo' ? bloqueoMotivo : null,
-        tipo_creacion: modalAccion === 'bloqueo' ? 'bloqueo' : 'manual'
-      }));
+      const inserts = [...new Set(fechasAProcesar)].map(f => {
+        const cInfo = listaCanchas.find(lc => lc.id === cancha);
+        return {
+          jugador1_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ1,
+          jugador2_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ2,
+          fecha: f, hora_inicio: startStr, hora_fin: endStr,
+          superficie: cInfo?.superficie || (cancha <= 8 ? 'Dura' : 'Césped'),
+          cancha_numero: cancha,
+          cancha_id: cancha, // <--- NUEVA VINCULACIÓN FK
+          estado: modalAccion === 'bloqueo' ? 'bloqueo_admin' : 'confirmado',
+          marcador: modalAccion === 'bloqueo' ? bloqueoMotivo : null,
+          tipo_creacion: modalAccion === 'bloqueo' ? 'bloqueo' : 'manual'
+        };
+      });
 
       const { error } = await supabase.from('partidos').insert(inserts);
       if (error) throw error;
@@ -985,7 +1023,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.62</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.63</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1137,7 +1175,15 @@ export default function App() {
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
                 <div className="text-center mb-2"><h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2><p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p></div>
                 <div className="space-y-3 text-left w-full"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label><input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} /></div>
-                <div className="space-y-3 text-left w-full"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label><select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}><option value="Dura">Cancha Dura (1 al 8)</option><option value="Césped">Césped (9 y 10)</option></select></div>
+                <div className="space-y-3 text-left w-full">
+                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
+                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
+                    <option value="Cualquier superficie">Cualquier superficie</option>
+                    {[...new Set(listaCanchas?.filter(c => c.estado !== 'inhabilitada').map(c => c.superficie))].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="space-y-3 text-left w-full">
                   <div className="ml-2"><label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>{modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}</div>
                   <div className="grid grid-cols-2 gap-3 w-full">
@@ -1483,7 +1529,7 @@ export default function App() {
                     {/* Selector de Canchas */}
                     <div className="flex flex-wrap justify-center items-center gap-1.5">
                       <span className={`text-[10px] font-black uppercase opacity-40 mr-1 ${theme.text}`}>Canchas:</span>
-                      {listaCanchas.filter(c => c.estado !== 'inactiva').map(c => (
+                      {listaCanchas.filter(c => c.estado !== 'inhabilitada').map(c => (
                         <button key={c.id} onClick={() => toggleFiltroCancha(c.id)} className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all border ${filtroCanchas.includes(c.id) ? 'bg-[#29C454] text-white border-[#29C454] shadow-sm' : `${theme.bg} ${theme.muted} ${theme.border}`}`}>
                           {c.nombre.replace('Cancha ', 'C')}
                         </button>
@@ -1566,7 +1612,7 @@ export default function App() {
   
   // --- NUEVA LÓGICA DE MANTENIMIENTO ---
   const canchaDB = listaCanchas.find(ldb => ldb.id === c);
-  const enMantenimiento = canchaDB?.estado === 'mantenimiento';
+  const enMantenimiento = canchaDB?.estado === 'inhabilitada';
   
   const esDisputa = partido?.estado === 'en_disputa';
   const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
@@ -1675,8 +1721,9 @@ export default function App() {
               <div className="lg:sticky lg:top-24 space-y-6">
                 <div className={`${theme.card} p-6 rounded-[2.5rem] border ${theme.border} shadow-xl relative overflow-hidden`}>
                   <div className="absolute -right-4 -top-4 opacity-5 text-7xl rotate-12">🎾</div>
-                  <h3 className="text-lg font-black uppercase text-[#29C454] mb-6 relative z-10">Nueva Cancha</h3>
-                  
+                  <h3 className="text-lg font-black uppercase text-[#29C454] mb-6 relative z-10">
+                    {currentUser?.rol === 'admin' ? 'Nueva Cancha' : 'Solicitar Cancha'}
+                  </h3>                  
                   <div className="space-y-4 relative z-10">
                     <div className="text-left">
                       <label className="text-[10px] font-black uppercase opacity-40 ml-2">Nombre o Número</label>
@@ -1687,7 +1734,7 @@ export default function App() {
                       <label className="text-[10px] font-black uppercase opacity-40 ml-2">Tipo de Superficie</label>
                       <select value={nuevaCanchaSuperficie} onChange={e => setNuevaCanchaSuperficie(e.target.value)} className={`w-full mt-1 ${theme.bg} border ${theme.border} rounded-2xl p-4 text-sm font-black uppercase appearance-none cursor-pointer focus:outline-none focus:border-[#29C454]`}>
                         <option value="Dura">Cancha Dura</option>
-                        <option value="Césped">Césped Natural</option>
+                        <option value="Césped">Césped</option>
                         <option value="Arcilla">Arcilla / Polvo</option>
                       </select>
                     </div>
@@ -1697,33 +1744,39 @@ export default function App() {
                       onClick={agregarCancha} 
                       className="w-full bg-[#29C454] text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all mt-4 hover:brightness-110"
                     >
-                      Registrar Cancha ➜
+                      {currentUser?.rol === 'admin' ? 'Registrar Cancha ➜' : 'Solicitar Alta de Cancha ➜'}
                     </button>
                   </div>
                 </div>
                 
                 <div className="p-6 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-[2rem] text-left">
-                  <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Nota de Mantenimiento</p>
-                  <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Al marcar una cancha en mantenimiento, el sistema la bloqueará automáticamente en el Master Schedule y los jugadores no podrán seleccionarla en el buscador.</p>
+                  <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Estatus Inhabilitada</p>
+                  <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo (ej. remodelación). El mantenimiento temporal (limpieza, regado) se debe bloquear directamente desde el Master Schedule.</p>
                 </div>
               </div>
 
               {/* COLUMNA 2: Data Table Filtrable */}
               <div className="space-y-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
-                  <h3 className={`text-[11px] font-black uppercase tracking-[0.3em] ${theme.muted}`}>Inventario de Canchas</h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select value={filtroTablaEstatus} onChange={e => setFiltroTablaEstatus(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
-                      <option value="Todas">Estatus: Todos</option>
-                      <option value="activa">Activas</option>
-                      <option value="mantenimiento">Mantenimiento</option>
-                      <option value="inactiva">Inactivas</option>
-                    </select>
-                    <select value={filtroTablaEstatus} onChange={e => setFiltroTablaEstatus(e.target.value)} className={`text-[10px] font-bold uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer`}>
-                      <option value="Todas">Estatus: Todos</option>
-                      <option value="activa">Activas</option>
-                      <option value="mantenimiento">Mantenimiento</option>
-                    </select>
+                  <h3 className="text-[12px] font-black uppercase tracking-[0.3em] text-[#1268B0]">Inventario de Canchas</h3>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>Superficie:</span>
+                      <select value={filtroTablaSuperficie} onChange={e => setFiltroTablaSuperficie(e.target.value)} className={`text-xs font-black uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer text-[#1268B0]`}>
+                        <option value="Todas">Todas</option>
+                        {[...new Set(listaCanchas?.map(c => c.superficie))].filter(Boolean).map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>Estatus:</span>
+                      <select value={filtroTablaEstatus} onChange={e => setFiltroTablaEstatus(e.target.value)} className={`text-xs font-black uppercase tracking-widest p-2.5 rounded-xl border ${theme.border} ${theme.bg} outline-none cursor-pointer text-[#1268B0]`}>
+                        <option value="Todas">Todos</option>
+                        <option value="activa">Activas</option>
+                        <option value="inhabilitada">Inhabilitadas</option>
+                      </select>
+                    </div>
                     <button onClick={() => { setFiltroTablaSuperficie('Todas'); setFiltroTablaEstatus('Todas'); }} className="text-[10px] font-black uppercase text-[#29C454] hover:underline px-2">🧹 Limpiar Filtros</button>
                   </div>
                 </div>
@@ -1755,19 +1808,18 @@ export default function App() {
                                 <span className="font-black italic text-lg">{c.nombre}</span>
                               </div>
                             </td>
-                            <td className="p-5 font-bold opacity-70 uppercase text-[10px] tracking-wider">{c.superficie}</td>
+                            <td className={`p-5 font-black uppercase text-[14px] tracking-widest ${c.superficie === 'Dura' ? 'text-[#1268B0]' : c.superficie === 'Césped' ? 'text-[#29C454]' : 'text-orange-600'}`}>
+                              {c.superficie}
+                            </td> 
                             <td className="p-5 text-center">
-                              <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${c.estado === 'activa' ? 'bg-[#29C454]/10 text-[#29C454] border-[#29C454]/20' : c.estado === 'mantenimiento' ? 'bg-[#E5B824]/10 text-[#E5B824] border-[#E5B824]/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/20'}`}>
+                              <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${c.estado === 'activa' ? 'bg-[#29C454]/10 text-[#29C454] border-[#29C454]/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
                                 {c.estado}
                               </span>
                             </td>
                             <td className="p-5">
                               <div className="flex items-center justify-end gap-4">
-                                <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-all relative shadow-inner ${c.estado === 'activa' ? 'bg-[#29C454]' : c.estado === 'mantenimiento' ? 'bg-[#E5B824]' : 'bg-gray-400'}`} title={c.estado === 'activa' ? 'Desactivar cancha' : 'Activar cancha'}>
+                                <button onClick={() => toggleEstadoCancha(c)} className={`w-12 h-6 rounded-full p-1 transition-all relative shadow-inner ${c.estado === 'activa' ? 'bg-[#29C454]' : 'bg-gray-400'}`} title={c.estado === 'activa' ? 'Inhabilitar cancha' : 'Activar cancha'}>
                                   <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${c.estado === 'activa' ? 'translate-x-6' : 'translate-x-0'}`} />
-                                </button>
-                                <button onClick={() => eliminarCancha(c.id)} className={`w-8 h-8 rounded-xl flex items-center justify-center border ${theme.border} ${theme.muted} hover:bg-red-500 hover:text-white transition-all active:scale-95`} title="Archivar Cancha">
-                                  🗃️
                                 </button>
                               </div>
                             </td>
@@ -1808,7 +1860,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.62 --- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.63 --- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
