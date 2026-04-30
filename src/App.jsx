@@ -1,21 +1,39 @@
-import React, { useState, useEffect } from 'react'
-import { supabase } from './supabase' 
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabase';
 
 export default function App() {
+  // ==========================================
+  // 1. CONFIGURACIÓN INICIAL Y DE TIEMPO
+  // ==========================================
   const getInitialTimes = () => {
-    const now = new Date(); now.setMinutes(0, 0, 0); now.setHours(now.getHours() + 1);
-    const startObj = new Date(now); startObj.setHours(startObj.getHours() + 3);
-    const endObj = new Date(startObj); endObj.setHours(endObj.getHours() + 4);
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    now.setHours(now.getHours() + 1);
+    const startObj = new Date(now);
+    startObj.setHours(startObj.getHours() + 3);
+    const endObj = new Date(startObj);
+    endObj.setHours(endObj.getHours() + 4);
+    
     const formatTime = (dateObj) => dateObj.toTimeString().substring(0, 5);
-    const formatDate = (dateObj) => { const offset = dateObj.getTimezoneOffset() * 60000; return new Date(dateObj - offset).toISOString().split('T')[0]; };
-    return { date: formatDate(startObj), start: formatTime(startObj), end: formatTime(endObj) };
+    const formatDate = (dateObj) => {
+      const offset = dateObj.getTimezoneOffset() * 60000;
+      return new Date(dateObj - offset).toISOString().split('T')[0];
+    };
+    
+    return { 
+      date: formatDate(startObj), 
+      start: formatTime(startObj), 
+      end: formatTime(endObj) 
+    };
   };
 
-  const [initData] = useState(getInitialTimes);
-  const [tab, setTab] = useState('home');
+  const getFormatDate = (d) => {
+    const off = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - off).toISOString().split('T')[0];
+  };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.66'; 
+  const APP_VERSION = '1.66';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -27,87 +45,203 @@ export default function App() {
     }
   }, []);
 
-  const [modoOscuro, setModoOscuro] = useState(() => { return localStorage.getItem('vad_theme') === 'dark'; });
-  const toggleTheme = () => { const newTheme = !modoOscuro; setModoOscuro(newTheme); localStorage.setItem('vad_theme', newTheme ? 'dark' : 'light'); };
-  const theme = { bg: modoOscuro ? 'bg-[#0F172A]' : 'bg-[#F9F8F1]', text: modoOscuro ? 'text-[#F8F9FA]' : 'text-[#1A1C1E]', card: modoOscuro ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]', border: modoOscuro ? 'border-[#F8F9FA]/10' : 'border-[#1A1C1E]/10', muted: modoOscuro ? 'text-[#F8F9FA]/50' : 'text-[#1A1C1E]/50', nav: modoOscuro ? 'bg-[#0F172A]/90' : 'bg-[#F9F8F1]/90' };
+  // ==========================================
+  // 2. ESTADOS GLOBALES (UI Y ALERTAS)
+  // ==========================================
+  const [initData] = useState(getInitialTimes);
+  const [tab, setTab] = useState('home');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  
+  const [modoOscuro, setModoOscuro] = useState(() => localStorage.getItem('vad_theme') === 'dark');
+  const toggleTheme = () => {
+    const newTheme = !modoOscuro;
+    setModoOscuro(newTheme);
+    localStorage.setItem('vad_theme', newTheme ? 'dark' : 'light');
+  };
+  
+  const theme = {
+    bg: modoOscuro ? 'bg-[#0F172A]' : 'bg-[#F9F8F1]',
+    text: modoOscuro ? 'text-[#F8F9FA]' : 'text-[#1A1C1E]',
+    card: modoOscuro ? 'bg-[#1E293B]' : 'bg-[#FFFFFF]',
+    border: modoOscuro ? 'border-[#F8F9FA]/10' : 'border-[#1A1C1E]/10',
+    muted: modoOscuro ? 'text-[#F8F9FA]/50' : 'text-[#1A1C1E]/50',
+    nav: modoOscuro ? 'bg-[#0F172A]/90' : 'bg-[#F9F8F1]/90'
+  };
 
   const [vadAlert, setVadAlert] = useState(null);
   const mostrarAlerta = (titulo, mensaje) => setVadAlert({ tipo: 'info', titulo, mensaje });
   const mostrarError = (titulo, mensaje) => setVadAlert({ tipo: 'error', titulo, mensaje });
   const mostrarConfirmacion = (titulo, mensaje, accionConfirmar) => setVadAlert({ tipo: 'confirm', titulo, mensaje, accionConfirmar });
   const cerrarAlerta = () => setVadAlert(null);
-  
-  const [isLoggedIn, setIsLoggedIn] = useState(false); 
-  const [currentUser, setCurrentUser] = useState(null); 
-  const [comentario, setComentario] = useState('');
-  
+
+  // ==========================================
+  // 3. ESTADOS DE USUARIO (AUTENTICACIÓN)
+  // ==========================================
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [phonePrefix, setPhonePrefix] = useState('+52');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pin, setPin] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
-  
   const [isRegistering, setIsRegistering] = useState(false);
   const [regNombre, setRegNombre] = useState('');
   const [regApellido, setRegApellido] = useState('');
   const [regStep, setRegStep] = useState(1);
 
+  // ==========================================
+  // 4. ESTADOS DE MATCHMAKING Y RESERVAS
+  // ==========================================
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
   const [endTime, setEndTime] = useState(initData.end);
   const [superficie, setSuperficie] = useState('Dura');
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
-  const [modoCancha, setModoCancha] = useState('match'); 
-
+  const [modoCancha, setModoCancha] = useState('match');
   const [misPartidos, setMisPartidos] = useState([]);
-  const [reportingMatch, setReportingMatch] = useState(null);
-
-  const [s1Mi, setS1Mi] = useState(''); const [s1Rival, setS1Rival] = useState('');
-  const [s2Mi, setS2Mi] = useState(''); const [s2Rival, setS2Rival] = useState('');
-  const [s3Mi, setS3Mi] = useState(''); const [s3Rival, setS3Rival] = useState('');
-  const v1M_UI = parseInt(s1Mi, 10); const v1R_UI = parseInt(s1Rival, 10);
-  const v2M_UI = parseInt(s2Mi, 10); const v2R_UI = parseInt(s2Rival, 10);
-  const partidoDefinidoEnDosSets = (!isNaN(v1M_UI) && !isNaN(v1R_UI) && !isNaN(v2M_UI) && !isNaN(v2R_UI)) && ((v1M_UI > v1R_UI && v2M_UI > v2R_UI) || (v1R_UI > v1M_UI && v2R_UI > v2M_UI));
-
   const [bookDate, setBookDate] = useState(initData.date);
   const [bookStart, setBookStart] = useState(initData.start);
   const [bookEnd, setBookEnd] = useState(initData.end);
 
+  // ==========================================
+  // 5. ESTADOS DE REPORTES (RESULTADOS)
+  // ==========================================
+  const [reportingMatch, setReportingMatch] = useState(null);
+  const [s1Mi, setS1Mi] = useState(''); const [s1Rival, setS1Rival] = useState('');
+  const [s2Mi, setS2Mi] = useState(''); const [s2Rival, setS2Rival] = useState('');
+  const [s3Mi, setS3Mi] = useState(''); const [s3Rival, setS3Rival] = useState('');
+  
+  const v1M_UI = parseInt(s1Mi, 10); const v1R_UI = parseInt(s1Rival, 10);
+  const v2M_UI = parseInt(s2Mi, 10); const v2R_UI = parseInt(s2Rival, 10);
+  const partidoDefinidoEnDosSets = (!isNaN(v1M_UI) && !isNaN(v1R_UI) && !isNaN(v2M_UI) && !isNaN(v2R_UI)) && 
+                                   ((v1M_UI > v1R_UI && v2M_UI > v2R_UI) || (v1R_UI > v1M_UI && v2R_UI > v2M_UI));
+
+  // ==========================================
+  // 6. ESTADOS B2B (MASTER SCHEDULE E INFRAESTRUCTURA)
+  // ==========================================
   const [listaUsuarios, setListaUsuarios] = useState([]);
   const [listaSugerencias, setListaSugerencias] = useState([]);
-
-  // --- ESTADOS PARA LA AGENDA DEL CLUB (B2B) ---
-  const getFormatDate = (d) => { const off = d.getTimezoneOffset() * 60000; return new Date(d.getTime() - off).toISOString().split('T')[0]; };
-
+  const [comentario, setComentario] = useState('');
   const [listaCanchas, setListaCanchas] = useState([]);
   const [filtroTablaSuperficie, setFiltroTablaSuperficie] = useState('Todas');
   const [filtroTablaEstatus, setFiltroTablaEstatus] = useState('Todas');
-  
   const [baseWeekDate, setBaseWeekDate] = useState(new Date());
-  const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]); 
+  const [selectedDays, setSelectedDays] = useState([getFormatDate(new Date())]);
   const [clubPartidos, setClubPartidos] = useState([]);
-  const [filtroCanchas, setFiltroCanchas] = useState([]); 
+  const [filtroCanchas, setFiltroCanchas] = useState([]);
   const [rangoHoras, setRangoHoras] = useState({ start: 6, end: 23 });
-
+  
   const [modalHoraInicio, setModalHoraInicio] = useState('');
   const [modalHoraFin, setModalHoraFin] = useState('');
   const [busquedaJ1, setBusquedaJ1] = useState('');
   const [busquedaJ2, setBusquedaJ2] = useState('');
-
   const [bloqueoActivo, setBloqueoActivo] = useState(null);
   const [bloqueoMotivo, setBloqueoMotivo] = useState('Mantenimiento');
-  const [modalAccion, setModalAccion] = useState('bloqueo'); 
+  const [modalAccion, setModalAccion] = useState('bloqueo');
   const [partidoJ1, setPartidoJ1] = useState('');
   const [partidoJ2, setPartidoJ2] = useState('');
-
-  const [frecuencia, setFrecuencia] = useState('unica'); 
+  const [frecuencia, setFrecuencia] = useState('unica');
   const [iteraciones, setIteraciones] = useState(1);
-  const [diasRecurrencia, setDiasRecurrencia] = useState([]); 
-  const [partidoAdmin, setPartidoAdmin] = useState(null); // Para el Override del Admin
-  
-  // 🛡️ CANDADO ANTI-BUCLE INFINITO: Memoria de partidos ya procesados
-  const procesadosRef = React.useRef(new Set());
+  const [diasRecurrencia, setDiasRecurrencia] = useState([]);
+  const [partidoAdmin, setPartidoAdmin] = useState(null);
+
+  const procesadosRef = useRef(new Set()); // Candado Anti-Bucle Infinito
+
+  // ==========================================
+  // 7. EFECTOS (CICLO DE VIDA)
+  // ==========================================
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('vad_session');
+    if (savedUser && savedUser !== 'null') {
+      const parsedUser = JSON.parse(savedUser);
+      setCurrentUser(parsedUser);
+      setIsLoggedIn(true);
+      if (parsedUser.rol === 'club') setTab('club_agenda');
+    } else {
+      localStorage.removeItem('vad_session');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPartidos();
+    fetchClubPartidos();
+    fetchCanchas();
+    
+    if (tab === 'admin_canchas') {
+      setFiltroTablaSuperficie('Todas');
+      setFiltroTablaEstatus('Todas');
+    }
+    
+    if (currentUser?.rol === 'admin') cargarSugerenciasAdmin();
+  }, [currentUser?.id, tab, selectedDays.join(',')]);
+
+  useEffect(() => {
+    if (currentUser && currentUser.rol !== 'club') {
+      const cargarBúsquedas = async () => {
+        const { data } = await supabase.from('buscar').select('*').eq('jugador_id', currentUser.id).eq('estado', 'activa').order('fecha', { ascending: true });
+        if (data) {
+          const now = new Date();
+          const busquedasValidas = [];
+          for (let search of data) {
+            const [y, m, d] = search.fecha.split('-').map(Number);
+            const [h, min] = search.hora_inicio.split(':').map(Number);
+            const searchStartObj = new Date(y, m - 1, d, h, min);
+            if ((searchStartObj - now) / (1000 * 60 * 60) < 2) {
+              await supabase.from('buscar').delete().eq('id', search.id);
+            } else {
+              busquedasValidas.push(search);
+            }
+          }
+          setActiveSearches(busquedasValidas);
+        }
+      };
+      cargarBúsquedas();
+    } else {
+      setActiveSearches([]);
+    }
+  }, [currentUser?.id, tab]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const ch = supabase.channel('alertas-vad')
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, async (payload) => {
+        setMisPartidos(prev => {
+          const pBorrado = prev.find(p => p.id === payload.old.id);
+          if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
+            const checkAdminCancel = async () => {
+              if (payload.old.estado === 'cancelado_admin') {
+                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
+                return;
+              }
+              const { data } = await supabase.from('buscar').select('id').eq('jugador_id', currentUser.id).eq('fecha', pBorrado.fecha).eq('hora_inicio', pBorrado.hora_inicio).maybeSingle();
+              if (data) mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
+            };
+            checkAdminCancel();
+          }
+          return prev;
+        });
+        fetchPartidos(); fetchClubPartidos();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [currentUser?.id, selectedDays.join(',')]);
+
+  // ==========================================
+  // 8. LÓGICA DEL MASTER SCHEDULE
+  // ==========================================
+  const startOfWeek = new Date(baseWeekDate);
+  const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1;
+  startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
+  const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
 
   const toggleFiltroCancha = (num) => setFiltroCanchas(prev => prev.includes(num) ? prev.filter(c => c !== num) : [...prev, num].sort((a,b) => a-b));
 
@@ -116,59 +250,42 @@ export default function App() {
     setSelectedDays([getFormatDate(new Date())]);
     setRangoHoras({ start: 6, end: 23 });
   };
-  
+
   const toggleSelectedDay = (dateObj) => {
     const dateStr = getFormatDate(dateObj);
     setSelectedDays(prev => prev.includes(dateStr) ? (prev.length > 1 ? prev.filter(d => d !== dateStr) : prev) : [...prev, dateStr].sort());
   };
 
-  const changeWeek = (dir) => { const n = new Date(baseWeekDate); n.setDate(n.getDate() + (dir * 7)); setBaseWeekDate(n); };
+  const changeWeek = (dir) => { 
+    const n = new Date(baseWeekDate); 
+    n.setDate(n.getDate() + (dir * 7)); 
+    setBaseWeekDate(n); 
+  };
 
-  const startOfWeek = new Date(baseWeekDate);
-  const dayOfWeek = startOfWeek.getDay() === 0 ? 6 : startOfWeek.getDay() - 1; 
-  startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
-  const weekDays = Array.from({length: 7}).map((_, i) => { const d = new Date(startOfWeek); d.setDate(d.getDate() + i); return d; });
-
-  const checkExpiredPartidos = async (matches) => {
-    const now = new Date(); 
-    for (let m of matches) {
-      if (m.estado === 'confirmado' && obtenerEstadoTiempo(m) === 'terminado') {
-        const [y, month, d] = m.fecha.split('-'); const [h, min] = m.hora_fin.split(':');
-        const endObj = new Date(y, month - 1, d, h, min);
-        
-        if ((now - endObj) / (1000 * 60 * 60) >= 24) {
-          
-          // 🛡️ CANDADO DE MEMORIA: Si ya lo mandamos a actualizar en esta sesión, saltamos. 
-          // Esto mata la condición de carrera y el Bucle del Web Socket al instante.
-          if (procesadosRef.current.has(m.id)) continue;
-          procesadosRef.current.add(m.id);
-
-          const { error } = await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
-          if (!error) {
-            const { data: p1 } = await supabase.from('perfiles').select('confianza').eq('id', m.jugador1_id).single();
-            const { data: p2 } = await supabase.from('perfiles').select('confianza').eq('id', m.jugador2_id).single();
-            if(p1) await supabase.from('perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
-            if(p2) await supabase.from('perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
-          }
-        }
-      }
-    }
+  const fetchClubPartidos = async () => {
+    if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
+    try {
+      const { data: matches, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
+      if (error) throw error;
+      if (matches && matches.length > 0) {
+        await checkExpiredPartidos(matches);
+        const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
+        const { data: perfiles } = await supabase.from('perfiles').select('id, nombre').in('id', userIds);
+        const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
+        setClubPartidos(matches.map(m => ({ ...m, j1_nombre: pMap[m.jugador1_id] || 'Club', j2_nombre: pMap[m.jugador2_id] || 'Reservado' })));
+      } else { setClubPartidos([]); }
+    } catch (error) { console.error("Error agenda:", error); }
   };
 
   const fetchCanchas = async () => {
     try {
       const { data, error } = await supabase.from('canchas').select('*').order('id', { ascending: true });
-      
-      console.log("Canchas desde DB:", data, "Error:", error); 
       if (error) throw error;
-
-      if (data) { 
+      if (data) {
         setListaCanchas(data);
         if (filtroCanchas.length === 0) setFiltroCanchas(data.filter(c => c.estado !== 'inhabilitada').map(c => c.id));
       }
-    } catch (err) {
-      console.error("Error crítico al cargar canchas:", err.message);
-    }
+    } catch (err) { console.error("Error crítico al cargar canchas:", err.message); }
   };
 
   const toggleEstadoCancha = async (cancha) => {
@@ -177,7 +294,7 @@ export default function App() {
     if (!error) fetchCanchas();
   };
 
-    const eliminarCancha = async (id) => {
+  const eliminarCancha = async (id) => {
     mostrarConfirmacion("Inhabilitar Cancha", "¿Estás seguro de inhabilitar esta cancha? Ya no aparecerá en el calendario.", async () => {
       const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
       if (!error) {
@@ -189,155 +306,115 @@ export default function App() {
     });
   };
 
-  // Actualizar el useEffect inicial para cargar canchas y resetear filtros
-  useEffect(() => { 
-    fetchPartidos(); 
-    fetchClubPartidos(); 
-    fetchCanchas();
-    
-    // Resetear filtros automáticamente al entrar a la vista de canchas
-    if (tab === 'admin_canchas') {
-      setFiltroTablaSuperficie('Todas');
-      setFiltroTablaEstatus('Todas');
-    }
-    
-    if (currentUser?.rol === 'admin') cargarSugerenciasAdmin(); 
-  }, [currentUser?.id, tab, selectedDays.join(',')]);
-
-  const fetchClubPartidos = async () => {
-    if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
-    try {
-      const { data: matches, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
-      if (error) throw error;
-      if (matches && matches.length > 0) {
-        await checkExpiredPartidos(matches); // <-- Bucle Infinito Destruido
-        const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
-        const { data: perfiles } = await supabase.from('perfiles').select('id, nombre').in('id', userIds);
-        const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
-        setClubPartidos(matches.map(m => ({ ...m, j1_nombre: pMap[m.jugador1_id] || 'Club', j2_nombre: pMap[m.jugador2_id] || 'Reservado' })));
-      } else { setClubPartidos([]); }
-    } catch (error) { console.error("Error agenda:", error); }
+  const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
+    const cellStartMins = horaFloat * 60; const cellEndMins = cellStartMins + 30;
+    return clubPartidos.find(p => p.fecha === fechaStr && p.cancha_numero === canchaId && 
+      (parseInt(p.hora_inicio.split(':')[0]) * 60 + parseInt(p.hora_inicio.split(':')[1])) < cellEndMins && 
+      (parseInt(p.hora_fin.split(':')[0]) * 60 + parseInt(p.hora_fin.split(':')[1])) > cellStartMins);
   };
 
-  const cargarUsuariosAdmin = async () => {
-    if (currentUser?.rol !== 'admin' && currentUser?.rol !== 'club') return;
-    const { data, error } = await supabase.from('perfiles').select('id, nombre, elo, rol').order('nombre', { ascending: true });
-    if (!error && data) setListaUsuarios(data);
-  };
-  const actualizarRolUsuario = async (id, nuevoRol) => {
-    const { error } = await supabase.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
-    if (!error) { setListaUsuarios(prev => prev.map(u => u.id === id ? { ...u, rol: nuevoRol } : u)); mostrarAlerta("Éxito", `Rol actualizado a ${nuevoRol.toUpperCase()}`); }
-  };
-  const cargarSugerenciasAdmin = async () => {
-    if (currentUser?.rol !== 'admin') return;
-    const { data, error } = await supabase.from('sugerencias').select('*').order('created_at', { ascending: false });
-    if (!error && data) setListaSugerencias(data);
-  };
-  const actualizarEstadoSugerencia = async (id, nuevoEstado) => {
-    const { error } = await supabase.from('sugerencias').update({ estado: nuevoEstado }).eq('id', id);
-    if (!error) setListaSugerencias(prev => prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug));
-  };
-
-  const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
-  const [showColorPicker, setShowColorPicker] = useState(false);
-
-  const handleColorChange = async (newColor) => {
-    const updatedUser = { ...currentUser, color: newColor };
-    setCurrentUser(updatedUser); localStorage.setItem('vad_session', JSON.stringify(updatedUser)); setShowColorPicker(false);
-    try { await supabase.from('perfiles').update({ color: newColor }).eq('id', currentUser.id); } catch (error) { }
-  };
-
-  const [currentTime, setCurrentTime] = useState(new Date());
-  useEffect(() => { const timer = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timer); }, []);
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('vad_session');
-    if (savedUser && savedUser !== 'null') {
-      const parsedUser = JSON.parse(savedUser);
-      setCurrentUser(parsedUser); setIsLoggedIn(true);
-      if (parsedUser.rol === 'club') setTab('club_agenda'); 
-    } else { localStorage.removeItem('vad_session'); }
-  }, []);
-
-  // FIX 1: Evitar Bucle Infinito vigilando currentUser?.id
-  useEffect(() => {
-    if (currentUser && currentUser.rol !== 'club') {
-      const cargarBúsquedas = async () => {
-        const { data } = await supabase.from('buscar').select('*').eq('jugador_id', currentUser.id).eq('estado', 'activa').order('fecha', { ascending: true });
-        if (data) {
-          const now = new Date(); const busquedasValidas = [];
-          for (let search of data) {
-            const [y, m, d] = search.fecha.split('-').map(Number); const [h, min] = search.hora_inicio.split(':').map(Number);
-            const searchStartObj = new Date(y, m - 1, d, h, min);
-            if ((searchStartObj - now) / (1000 * 60 * 60) < 2) await supabase.from('buscar').delete().eq('id', search.id);
-            else busquedasValidas.push(search);
-          }
-          setActiveSearches(busquedasValidas);
+  const handleCellClick = async (cancha, horaFloat, fechaStr) => {
+    const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
+    if (partido) {
+      const esAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'club';
+      if (esAdmin) {
+        if (partido.estado !== 'bloqueo_admin' && (partido.estado === 'en_disputa' || obtenerEstadoTiempo(partido) === 'terminado')) {
+           setPartidoAdmin(partido);
+           setModalAccion('reportar_admin');
+           setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
+           setBloqueoActivo({ cancha, horaFloat, fechaStr });
+           return;
         }
-      }; cargarBúsquedas();
-    } else { setActiveSearches([]); }
-  }, [currentUser?.id, tab]);
-
-  const fetchPartidos = async () => {
-    if (!currentUser || currentUser.rol === 'club') return;
-    try {
-      const { data: freshUser } = await supabase.from('perfiles').select('*').eq('id', currentUser.id).single();
-      if (freshUser) { setCurrentUser(freshUser); localStorage.setItem('vad_session', JSON.stringify(freshUser)); }
-
-      const { data: matches, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
-      if (error) throw error;
-      if (matches && matches.length > 0) {
-        await checkExpiredPartidos(matches); // <-- Bucle Infinito Destruido
-        const partidosConRivales = await Promise.all(matches.map(async (partido) => {
-          const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
-          const { data: rivalData } = await supabase.from('perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
-          return { ...partido, rival: rivalData || { id: '?', nombre: 'Desconocido', elo: '?' } };
-        }));
-        partidosConRivales.sort((a, b) => {
-          const isA_Active = a.estado === 'confirmado' || a.estado === 'en_revision'; const isB_Active = b.estado === 'confirmado' || b.estado === 'en_revision';
-          if (isA_Active && !isB_Active) return -1; if (!isA_Active && isB_Active) return 1;  
-          return new Date(`${isA_Active ? a.fecha : b.fecha}T${isA_Active ? a.hora_inicio : b.hora_inicio}`) - new Date(`${isA_Active ? b.fecha : a.fecha}T${isA_Active ? b.hora_inicio : a.hora_inicio}`);
+        
+        const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿ELIMINAR PARTIDO?\n\nSe notificará a los jugadores pero NO se les regresará a la lista de espera.`;
+        mostrarConfirmacion("Administrar Celda", msj, async () => {
+            try {
+              if (partido.estado !== 'bloqueo_admin') await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
+              await supabase.from('partidos').delete().eq('id', partido.id); 
+              fetchClubPartidos();
+              resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+            } catch (err) { mostrarError("Error", "No se pudo procesar la cancelación."); }
         });
-        setMisPartidos(partidosConRivales);
-      } else { setMisPartidos([]); }
-    } catch (error) { console.error(error); }
+      }
+    } else {
+      const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? '00' : '30';
+      const startStr = `${String(hI).padStart(2,'0')}:${mI}`;
+      const hF = Math.floor(horaFloat + 2); const mF = (horaFloat + 2) % 1 === 0 ? '00' : '30';
+      const endStr = `${String(hF >= 24 ? 23 : hF).padStart(2,'0')}:${hF >= 24 ? '59' : mF}`;
+
+      setModalAccion('bloqueo');
+      setBloqueoMotivo('Mantenimiento');
+      setPartidoJ1(''); setPartidoJ2(''); setBusquedaJ1(''); setBusquedaJ2('');
+      setFrecuencia('unica'); setIteraciones(1); setDiasRecurrencia([]);
+      
+      setBloqueoActivo({ cancha, horaFloat, fechaStr });
+      setModalHoraInicio(startStr); 
+      setModalHoraFin(endStr);
+      cargarUsuariosAdmin();
+    }
   };
- 
-  // FIX 1: Evitar Bucle Infinito vigilando currentUser?.id
-  useEffect(() => {
-    if (!currentUser) return;
-    const ch = supabase.channel('alertas-vad')
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'partidos' }, async (payload) => { 
-        setMisPartidos(prev => {
-          const pBorrado = prev.find(p => p.id === payload.old.id);
-          
-          if (pBorrado && currentUser.rol !== 'club' && pBorrado.estado !== 'bloqueo_admin') {
-            const checkAdminCancel = async () => {
-              if (payload.old.estado === 'cancelado_admin') {
-                mostrarAlerta('Aviso de Club', 'Tu partido ha sido cancelado por la Administración del club.');
-                return;
-              }
-              
-              const { data } = await supabase.from('buscar').select('id').eq('jugador_id', currentUser.id).eq('fecha', pBorrado.fecha).eq('hora_inicio', pBorrado.hora_inicio).maybeSingle();
-              if (data) {
-                mostrarError('Partido Cancelado', 'Tu rival ha cancelado la reserva. Has regresado a la lista de espera.');
-              }
-            };
-            checkAdminCancel();
-          }
-          return prev;
-        });
-        fetchPartidos(); fetchClubPartidos(); 
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'partidos' }, () => { fetchPartidos(); fetchClubPartidos(); })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [currentUser?.id, selectedDays.join(',')]);
 
+  const confirmarAccionModal = async () => {
+    const { cancha, fechaStr } = bloqueoActivo;
+    const startStr = `${modalHoraInicio}:00`;
+    const endStr = `${modalHoraFin}:00`;
+    if (modalHoraInicio >= modalHoraFin) { mostrarError("Error", "La hora de fin debe ser después del inicio."); return; }
+
+    try {
+      if (modalAccion === 'partido') {
+        if (!partidoJ1 || !partidoJ2 || partidoJ1 === partidoJ2) throw new Error("Selecciona 2 jugadores distintos.");
+        const { data: choqueJ } = await supabase.from('partidos').select('jugador1_id, jugador2_id').eq('fecha', fechaStr).lt('hora_inicio', endStr).gt('hora_fin', startStr)
+          .or(`jugador1_id.in.(${partidoJ1},${partidoJ2}),jugador2_id.in.(${partidoJ1},${partidoJ2})`);
+        if (choqueJ?.length > 0) throw new Error("Uno de los jugadores ya tiene partido en ese horario.");
+      }
+
+      let fechasAProcesar = [fechaStr];
+      if (modalAccion === 'bloqueo') {
+        if (frecuencia === 'diaria') {
+          fechasAProcesar = Array.from({ length: iteraciones }, (_, i) => {
+            const d = new Date(fechaStr + 'T12:00:00'); d.setDate(d.getDate() + i); return d.toISOString().split('T')[0];
+          });
+        } else if (frecuencia === 'semanal') {
+          fechasAProcesar = [];
+          for (let w = 0; w < iteraciones; w++) {
+            diasRecurrencia.forEach(dayIdx => {
+              const d = new Date(fechaStr + 'T12:00:00'); const currentDay = d.getDay();
+              d.setDate(d.getDate() + (dayIdx - currentDay) + (w * 7));
+              if (d >= new Date(fechaStr + 'T12:00:00')) fechasAProcesar.push(d.toISOString().split('T')[0]);
+            });
+          }
+        }
+      }
+
+      const inserts = [...new Set(fechasAProcesar)].map(f => {
+        const cInfo = listaCanchas.find(lc => lc.id === cancha);
+        return {
+          jugador1_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ1,
+          jugador2_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ2,
+          fecha: f, hora_inicio: startStr, hora_fin: endStr,
+          superficie: cInfo?.superficie || (cancha <= 8 ? 'Dura' : 'Césped'),
+          cancha_numero: cancha,
+          cancha_id: cancha,
+          estado: modalAccion === 'bloqueo' ? 'bloqueo_admin' : 'confirmado',
+          marcador: modalAccion === 'bloqueo' ? bloqueoMotivo : null,
+          tipo_creacion: modalAccion === 'bloqueo' ? 'bloqueo' : 'manual'
+        };
+      });
+
+      const { error } = await supabase.from('partidos').insert(inserts);
+      if (error) throw error;
+      fetchClubPartidos(); setBloqueoActivo(null);
+      mostrarAlerta("Éxito", "Agenda actualizada correctamente.");
+    } catch (e) { mostrarError("Error", e.message); }
+  };
+
+  // ==========================================
+  // 9. LÓGICA DE PARTIDOS, MATCHMAKING Y UTILIDADES
+  // ==========================================
   const formatTime = (time24) => {
     if (!time24) return ''; const [hourString, minute] = time24.split(':');
-    let hour = parseInt(hourString, 10); const ampm = hour >= 12 ? 'PM' : 'AM'; hour = hour % 12 || 12; return `${hour}:${minute} ${ampm}`;
+    let hour = parseInt(hourString, 10); const ampm = hour >= 12 ? 'PM' : 'AM'; 
+    hour = hour % 12 || 12; return `${hour}:${minute} ${ampm}`;
   };
 
   const getInitials = (fullName) => {
@@ -347,12 +424,23 @@ export default function App() {
   };
 
   const getFuerza = (elo) => {
-    const pts = Number(elo); if (pts >= 2000) return '1ra Fuerza (Élite)'; if (pts >= 1800) return '2da Fuerza'; if (pts >= 1600) return '3ra Fuerza'; if (pts >= 1400) return '4ta Fuerza'; if (pts >= 1200) return '5ta Fuerza'; return '6ta Fuerza';
+    const pts = Number(elo); 
+    if (pts >= 2000) return '1ra Fuerza (Élite)'; 
+    if (pts >= 1800) return '2da Fuerza'; 
+    if (pts >= 1600) return '3ra Fuerza'; 
+    if (pts >= 1400) return '4ta Fuerza'; 
+    if (pts >= 1200) return '5ta Fuerza'; 
+    return '6ta Fuerza';
   };
 
   const getRelativeMarcador = (partido) => {
     if (partido.estado === 'wo') return 'W.O.'; if (!partido.marcador) return '';
-    if (partido.reportado_por && partido.reportado_por !== currentUser?.id) { return partido.marcador.split(',').map(set => { const scores = set.trim().split('-'); return scores.length === 2 ? `${scores[1]}-${scores[0]}` : set; }).join(', '); }
+    if (partido.reportado_por && partido.reportado_por !== currentUser?.id) { 
+      return partido.marcador.split(',').map(set => { 
+        const scores = set.trim().split('-'); 
+        return scores.length === 2 ? `${scores[1]}-${scores[0]}` : set; 
+      }).join(', '); 
+    }
     return partido.marcador;
   };
 
@@ -373,9 +461,12 @@ export default function App() {
   const renderBalls = (score) => {
     let rawScore = Number(score); if (isNaN(rawScore) || rawScore === 0) rawScore = 5.0; const nScore = Math.min(5.0, rawScore);
     return (
-      <div className="flex flex-col items-center gap-1"><div className="flex gap-1">
-        {[1, 2, 3, 4, 5].map((b) => <span key={b} className={`text-2xl transition-all ${nScore >= b ? "opacity-100" : nScore >= b - 0.5 ? "opacity-50 scale-75" : "opacity-20 grayscale"}`}>🎾</span>)}
-      </div><span className="text-[10px] font-black italic text-[#1A1C1E]/60 tracking-widest">{nScore.toFixed(1)} / 5.0</span></div>
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex gap-1">
+          {[1, 2, 3, 4, 5].map((b) => <span key={b} className={`text-2xl transition-all ${nScore >= b ? "opacity-100" : nScore >= b - 0.5 ? "opacity-50 scale-75" : "opacity-20 grayscale"}`}>🎾</span>)}
+        </div>
+        <span className="text-[10px] font-black italic text-[#1A1C1E]/60 tracking-widest">{nScore.toFixed(1)} / 5.0</span>
+      </div>
     );
   };
 
@@ -390,6 +481,99 @@ export default function App() {
     let nConf = Number(confianzaActual); let nRach = rachaActual + 1;
     if ([5, 8, 10].includes(nRach) || nRach > 10) nConf = Math.min(5.0, nConf + 1.0);
     return { nuevaConfianza: nConf, nuevaRacha: nRach };
+  };
+
+  const checkExpiredPartidos = async (matches) => {
+    const now = new Date(); 
+    for (let m of matches) {
+      if (m.estado === 'confirmado' && obtenerEstadoTiempo(m) === 'terminado') {
+        const [y, month, d] = m.fecha.split('-'); const [h, min] = m.hora_fin.split(':');
+        const endObj = new Date(y, month - 1, d, h, min);
+        if ((now - endObj) / (1000 * 60 * 60) >= 24) {
+          if (procesadosRef.current.has(m.id)) continue;
+          procesadosRef.current.add(m.id);
+          const { error } = await supabase.from('partidos').update({ estado: 'en_disputa' }).eq('id', m.id);
+          if (!error) {
+            const { data: p1 } = await supabase.from('perfiles').select('confianza').eq('id', m.jugador1_id).single();
+            const { data: p2 } = await supabase.from('perfiles').select('confianza').eq('id', m.jugador2_id).single();
+            if(p1) await supabase.from('perfiles').update({ confianza: Math.max(0, p1.confianza - 0.5) }).eq('id', m.jugador1_id);
+            if(p2) await supabase.from('perfiles').update({ confianza: Math.max(0, p2.confianza - 0.5) }).eq('id', m.jugador2_id);
+          }
+        }
+      }
+    }
+  };
+
+  const fetchPartidos = async () => {
+    if (!currentUser || currentUser.rol === 'club') return;
+    try {
+      const { data: freshUser } = await supabase.from('perfiles').select('*').eq('id', currentUser.id).single();
+      if (freshUser) { setCurrentUser(freshUser); localStorage.setItem('vad_session', JSON.stringify(freshUser)); }
+
+      const { data: matches, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
+      if (error) throw error;
+      if (matches && matches.length > 0) {
+        await checkExpiredPartidos(matches);
+        const partidosConRivales = await Promise.all(matches.map(async (partido) => {
+          const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
+          const { data: rivalData } = await supabase.from('perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
+          return { ...partido, rival: rivalData || { id: '?', nombre: 'Desconocido', elo: '?' } };
+        }));
+        partidosConRivales.sort((a, b) => {
+          const isA_Active = a.estado === 'confirmado' || a.estado === 'en_revision'; const isB_Active = b.estado === 'confirmado' || b.estado === 'en_revision';
+          if (isA_Active && !isB_Active) return -1; if (!isA_Active && isB_Active) return 1;  
+          return new Date(`${isA_Active ? a.fecha : b.fecha}T${isA_Active ? a.hora_inicio : b.hora_inicio}`) - new Date(`${isA_Active ? b.fecha : a.fecha}T${isA_Active ? b.hora_inicio : a.hora_inicio}`);
+        });
+        setMisPartidos(partidosConRivales);
+      } else { setMisPartidos([]); }
+    } catch (error) { console.error(error); }
+  };
+
+  const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
+    try {
+      const { data: espera } = await supabase.from('buscar').select('*').eq('fecha', fechaStr).eq('superficie', superficie).eq('estado', 'activa').order('created_at', { ascending: true });
+      if (!espera || espera.length < 2) return; 
+
+      const getMins = (t) => { const p = t.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
+      let currentLibStart = getMins(horaLibreIn); 
+      const libEnd = getMins(horaLibreFin);
+      const matchedUserIds = new Set(); 
+
+      for (let i = 0; i < espera.length; i++) {
+        if (matchedUserIds.has(espera[i].jugador_id)) continue; 
+        for (let j = i + 1; j < espera.length; j++) {
+          if (matchedUserIds.has(espera[j].jugador_id)) continue;
+          const j1 = espera[i]; const j2 = espera[j];
+          const maxStart = Math.max(getMins(j1.hora_inicio), getMins(j2.hora_inicio), currentLibStart);
+          const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
+
+          if (minEnd - maxStart >= 120) { 
+            const { data: p1 } = await supabase.from('perfiles').select('elo').eq('id', j1.jugador_id).single();
+            const { data: p2 } = await supabase.from('perfiles').select('elo').eq('id', j2.jugador_id).single();
+            
+            if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
+              const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
+              const mEnd = `${String(Math.floor((maxStart+60)/60)).padStart(2,'0')}:${String((maxStart+60)%60).padStart(2,'0')}:00`;
+              const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', canchaNum).lt('hora_inicio', mEnd).gt('hora_fin', mStart);
+
+              if (!choque || choque.length === 0) {
+                const { data: nuevo, error } = await supabase.from('partidos').insert([{
+                  jugador1_id: j1.jugador_id, jugador2_id: j2.jugador_id, fecha: fechaStr, 
+                  hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado', tipo_creacion: 'matchmaking'
+                }]).select();
+
+                if (!error && nuevo) {
+                  await supabase.from('buscar').update({ estado: 'match' }).in('id', [j1.id, j2.id]);
+                  matchedUserIds.add(j1.jugador_id); matchedUserIds.add(j2.jugador_id);
+                  currentLibStart = maxStart + 120; 
+                  break; 
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (err) { console.error("Error en Auto-Match:", err); }
   };
 
   const processSelfWO = async (partido, miPerfil) => {
@@ -422,65 +606,6 @@ export default function App() {
     });
   };
 
-  // --- MOTOR DE RESOLUCIÓN AUTOMÁTICA EN CADENA (FIFO MEJORADO) ---
-  const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
-    try {
-      const { data: espera } = await supabase.from('buscar')
-        .select('*').eq('fecha', fechaStr).eq('superficie', superficie).eq('estado', 'activa')
-        .order('created_at', { ascending: true });
-
-      if (!espera || espera.length < 2) return; 
-
-      const getMins = (t) => { const p = t.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
-      let currentLibStart = getMins(horaLibreIn); 
-      const libEnd = getMins(horaLibreFin);
-      
-      const matchedUserIds = new Set(); 
-
-      for (let i = 0; i < espera.length; i++) {
-        if (matchedUserIds.has(espera[i].jugador_id)) continue; 
-        
-        for (let j = i + 1; j < espera.length; j++) {
-          if (matchedUserIds.has(espera[j].jugador_id)) continue;
-
-          const j1 = espera[i]; const j2 = espera[j];
-          
-          const maxStart = Math.max(getMins(j1.hora_inicio), getMins(j2.hora_inicio), currentLibStart);
-          const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
-
-          if (minEnd - maxStart >= 120) { 
-            const { data: p1 } = await supabase.from('perfiles').select('elo').eq('id', j1.jugador_id).single();
-            const { data: p2 } = await supabase.from('perfiles').select('elo').eq('id', j2.jugador_id).single();
-            
-            if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
-              const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
-              const mEnd = `${String(Math.floor((maxStart+60)/60)).padStart(2,'0')}:${String((maxStart+60)%60).padStart(2,'0')}:00`;
-
-              const { data: choque } = await supabase.from('partidos').select('id')
-                .eq('fecha', fechaStr).eq('cancha_numero', canchaNum)
-                .lt('hora_inicio', mEnd).gt('hora_fin', mStart);
-
-              if (!choque || choque.length === 0) {
-                const { data: nuevo, error } = await supabase.from('partidos').insert([{
-                  jugador1_id: j1.jugador_id, jugador2_id: j2.jugador_id, fecha: fechaStr, 
-                  hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado', tipo_creacion: 'matchmaking'
-                }]).select();
-
-                if (!error && nuevo) {
-                  await supabase.from('buscar').update({ estado: 'match' }).in('id', [j1.id, j2.id]);
-                  matchedUserIds.add(j1.jugador_id);
-                  matchedUserIds.add(j2.jugador_id);
-                  currentLibStart = maxStart + 120; 
-                  break; 
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (err) { console.error("Error en Auto-Match:", err); }
-  };
-  
   const handleCancelMatch = async (partido) => {
     const [year, month, day] = partido.fecha.split('-'); const [startH, startM] = partido.hora_inicio.split(':');
     const diffHoras = (new Date(year, month - 1, day, startH, startM) - new Date()) / (1000 * 60 * 60);
@@ -501,26 +626,16 @@ export default function App() {
               else {
                   const rachaFinal = pierdeRacha ? 0 : perfil.racha_asistencia;
                   await supabase.from('perfiles').update({ confianza: nuevaConfianza, comodines: comodines, racha_asistencia: rachaFinal }).eq('id', perfil.id);
-                  
                   const { data: bRival } = await supabase.from('buscar').select('id').eq('jugador_id', partido.rival.id).eq('fecha', partido.fecha).eq('estado', 'match').maybeSingle();
                   if (bRival) {
                     await supabase.from('buscar').update({ estado: 'activa' }).eq('id', bRival.id);
                   } else {
                     await supabase.from('buscar').insert([{ jugador_id: partido.rival.id, nombre: partido.rival.nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }]);
                   }
-                  
                   mostrarAlerta("Cancelado", "Partido cancelado. El rival ha regresado a la sala de búsqueda.");
               }
-              
-              // --- EL GATILLO DE AUTO-MATCH ---
               resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
-
-              // Retraso para evitar el parpadeo de pantalla y permitir la lectura del mensaje
-              setTimeout(() => {
-                fetchPartidos();
-                setTab('home');
-              }, 2500);
-
+              setTimeout(() => { fetchPartidos(); setTab('home'); }, 2500);
             } catch (error) { mostrarError("Error", "Error al cancelar."); }
         });
     } catch (error) { mostrarError("Error", "No se pudo leer tu perfil."); }
@@ -549,7 +664,6 @@ export default function App() {
       try {
         const { error } = await supabase.from('partidos').update({ estado: 'en_revision', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id }).eq('id', partido.id);
         if (error) throw error;
-        
         setReportingMatch(null); setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival(''); 
         await fetchPartidos(); 
         mostrarAlerta("Enviado", "Reporte enviado al rival.");
@@ -624,7 +738,6 @@ export default function App() {
       let baseConfP1 = p1.confianza; let baseConfP2 = p2.confianza;
       let baseRachaP1 = p1.racha_asistencia; let baseRachaP2 = p2.racha_asistencia;
 
-      // REVERSIÓN DE ERRORES (Rollback)
       if (partido.estado === 'finalizado' || partido.estado === 'wo') {
         baseEloP1 -= (partido.puntos_j1 || 0);
         baseEloP2 -= (partido.puntos_j2 || 0);
@@ -710,19 +823,14 @@ export default function App() {
     if (phoneNumber.length < 10) { setAuthError('El celular debe tener 10 dígitos.'); setAuthLoading(false); return; }
     
     const fullPhone = `${phonePrefix}${phoneNumber}`;
-    
     try {
-      // 1. CHISMOSO 1: Ver qué número exacto estamos mandando
-      console.log("🔍 Buscando en Supabase el número exacto:", fullPhone);
-
       const { data: existingUser, error } = await supabase.from('perfiles').select('*').eq('telefono', fullPhone).maybeSingle();
-      
-      // 2. CHISMOSO 2: Ver qué responde la base de datos realmente
-      console.log("📥 Respuesta de Supabase:", existingUser, "Error interno:", error);
-
       if (existingUser) {
-        if (existingUser.pin === pin) { setCurrentUser(existingUser); setIsLoggedIn(true); setTab(existingUser.rol === 'club' ? 'club_agenda' : 'home'); localStorage.setItem('vad_session', JSON.stringify(existingUser)); } 
-        else { setAuthError('PIN incorrecto.'); }
+        if (existingUser.pin === pin) { 
+          setCurrentUser(existingUser); setIsLoggedIn(true); 
+          setTab(existingUser.rol === 'club' ? 'club_agenda' : 'home'); 
+          localStorage.setItem('vad_session', JSON.stringify(existingUser)); 
+        } else { setAuthError('PIN incorrecto.'); }
       } else { setAuthError('Número no registrado. Regístrate primero.'); }
     } catch (error) { setAuthError('Error de conexión.'); } finally { setAuthLoading(false); }
   };
@@ -758,17 +866,10 @@ export default function App() {
     const getMins = (timeStr) => { if (!timeStr) return 0; const p = timeStr.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
     const startMins = getMins(startTime); const endMins = getMins(endTime);
     
-    // --- FIX: RANGO MÍNIMO DE 1 HORA ---
-    if ((endMins - startMins) < 60) { 
-      setSearchError('El rango de búsqueda debe ser de al menos 1 hora.'); 
-      return; 
-    }
+    if ((endMins - startMins) < 60) { setSearchError('El rango de búsqueda debe ser de al menos 1 hora.'); return; }
     
     const now = new Date(); const [year, month, day] = searchDate.split('-').map(Number); const [sH, sM] = startTime.split(':').map(Number);
-    if ((new Date(year, month - 1, day, sH, sM) - now) / (1000 * 60 * 60) < 2) { 
-      setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.'); 
-      return; 
-    }
+    if ((new Date(year, month - 1, day, sH, sM) - now) / (1000 * 60 * 60) < 2) { setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.'); return; }
 
     const hasOverlap = activeSearches.some(s => s.fecha === searchDate && startMins < getMins(s.hora_fin) && endMins > getMins(s.hora_inicio));
     if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
@@ -776,9 +877,7 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      // 2. CHECK DE SATURACIÓN DE CANCHAS (DINÁMICO)
       const canchasActivas = listaCanchas.filter(c => c.estado === 'activa' && (superficie === 'Cualquier superficie' || c.superficie === superficie));
-      
       let queryOcupadas = supabase.from('partidos').select('cancha_numero, superficie').eq('fecha', searchDate).lt('hora_inicio', endTime).gt('hora_fin', startTime);
       if (superficie !== 'Cualquier superficie') queryOcupadas = queryOcupadas.eq('superficie', superficie);
       const { data: ocupadas } = await queryOcupadas;
@@ -810,10 +909,8 @@ export default function App() {
             const startCruce = Math.max(startMins, rStartMins); const endCruce = Math.min(endMins, rEndMins);
             const { data: perfilRival } = await supabase.from('perfiles').select('elo').eq('id', rival.jugador_id).single();
             
-            // --- FIX: MOTOR CALIBRADO A 120 MINUTOS (2 HORAS) ---
             if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 120) {
               const propInicioStr = `${String(Math.floor(startCruce / 60)).padStart(2, '0')}:${String(startCruce % 60).padStart(2, '0')}`;
-              // Separamos el bloque sumando 120 mins exactos
               const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}`;
               
               const { data: pCruce } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', propFinStr).gt('hora_fin', propInicioStr);
@@ -835,7 +932,7 @@ export default function App() {
           hora_fin: matchFin, 
           superficie: listaCanchas.find(c => c.id === canchaAsignada)?.superficie, 
           cancha_numero: canchaAsignada, 
-          cancha_id: canchaAsignada,
+          cancha_id: canchaAsignada, 
           estado: 'confirmado', 
           tipo_creacion: 'matchmaking' 
         }]).select();
@@ -866,126 +963,45 @@ export default function App() {
   };
   const handleEndTimeChange = (rawTime, isMatch) => { if (!rawTime) return; const r = roundToHalfHour(rawTime); if (isMatch) setEndTime(r); else setBookEnd(r); };
 
-  const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
-    const cellStartMins = horaFloat * 60; const cellEndMins = cellStartMins + 30;
-    return clubPartidos.find(p => p.fecha === fechaStr && p.cancha_numero === canchaId && (parseInt(p.hora_inicio.split(':')[0]) * 60 + parseInt(p.hora_inicio.split(':')[1])) < cellEndMins && (parseInt(p.hora_fin.split(':')[0]) * 60 + parseInt(p.hora_fin.split(':')[1])) > cellStartMins);
+  const cargarUsuariosAdmin = async () => {
+    if (currentUser?.rol !== 'admin' && currentUser?.rol !== 'club') return;
+    const { data, error } = await supabase.from('perfiles').select('id, nombre, elo, rol').order('nombre', { ascending: true });
+    if (!error && data) setListaUsuarios(data);
+  };
+  
+  const actualizarRolUsuario = async (id, nuevoRol) => {
+    const { error } = await supabase.from('perfiles').update({ rol: nuevoRol }).eq('id', id);
+    if (!error) { setListaUsuarios(prev => prev.map(u => u.id === id ? { ...u, rol: nuevoRol } : u)); mostrarAlerta("Éxito", `Rol actualizado a ${nuevoRol.toUpperCase()}`); }
+  };
+  
+  const cargarSugerenciasAdmin = async () => {
+    if (currentUser?.rol !== 'admin') return;
+    const { data, error } = await supabase.from('sugerencias').select('*').order('created_at', { ascending: false });
+    if (!error && data) setListaSugerencias(data);
+  };
+  
+  const actualizarEstadoSugerencia = async (id, nuevoEstado) => {
+    const { error } = await supabase.from('sugerencias').update({ estado: nuevoEstado }).eq('id', id);
+    if (!error) setListaSugerencias(prev => prev.map(sug => sug.id === id ? { ...sug, estado: nuevoEstado } : sug));
   };
 
-  const handleCellClick = async (cancha, horaFloat, fechaStr) => {
-    const partido = obtenerEstadoCelda(cancha, horaFloat, fechaStr);
-    if (partido) {
-     const esAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'club';
-      if (esAdmin) {
-        if (partido.estado !== 'bloqueo_admin' && (partido.estado === 'en_disputa' || obtenerEstadoTiempo(partido) === 'terminado')) {
-           setPartidoAdmin(partido);
-           setModalAccion('reportar_admin');
-           setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival('');
-           setBloqueoActivo({ cancha, horaFloat, fechaStr });
-           return;
-        }
-        
-        const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿ELIMINAR PARTIDO?\n\nSe notificará a los jugadores pero NO se les regresará a la lista de espera.`;
-        
-        mostrarConfirmacion("Administrar Celda", msj, async () => {
-            try {
-              if (partido.estado !== 'bloqueo_admin') {
-                await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
-              }
-              await supabase.from('partidos').delete().eq('id', partido.id); 
-              
-              fetchClubPartidos();
-              resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
-            } catch (err) { mostrarError("Error", "No se pudo procesar la cancelación."); }
-        });
-      }
-    } else {
-      const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? '00' : '30';
-      const startStr = `${String(hI).padStart(2,'0')}:${mI}`;
-      const hF = Math.floor(horaFloat + 2); const mF = (horaFloat + 2) % 1 === 0 ? '00' : '30';
-      const endStr = `${String(hF >= 24 ? 23 : hF).padStart(2,'0')}:${hF >= 24 ? '59' : mF}`;
-
-      // --- LIMPIEZA ABSOLUTA DE FORMULARIO ---
-      setModalAccion('bloqueo');
-      setBloqueoMotivo('Mantenimiento');
-      setPartidoJ1('');
-      setPartidoJ2('');
-      setBusquedaJ1('');
-      setBusquedaJ2('');
-      setFrecuencia('unica');
-      setIteraciones(1);
-      setDiasRecurrencia([]);
-      
-      setBloqueoActivo({ cancha, horaFloat, fechaStr });
-      setModalHoraInicio(startStr); 
-      setModalHoraFin(endStr);
-      cargarUsuariosAdmin();
-    }
+  const handleColorChange = async (newColor) => {
+    const updatedUser = { ...currentUser, color: newColor };
+    setCurrentUser(updatedUser); localStorage.setItem('vad_session', JSON.stringify(updatedUser)); setShowColorPicker(false);
+    try { await supabase.from('perfiles').update({ color: newColor }).eq('id', currentUser.id); } catch (error) { }
   };
 
-  const confirmarAccionModal = async () => {
-    const { cancha, fechaStr } = bloqueoActivo;
-    const startStr = `${modalHoraInicio}:00`;
-    const endStr = `${modalHoraFin}:00`;
-    if (modalHoraInicio >= modalHoraFin) { mostrarError("Error", "La hora de fin debe ser después del inicio."); return; }
-
-    try {
-      if (modalAccion === 'partido') {
-        if (!partidoJ1 || !partidoJ2 || partidoJ1 === partidoJ2) throw new Error("Selecciona 2 jugadores distintos.");
-        const { data: choqueJ } = await supabase.from('partidos').select('jugador1_id, jugador2_id').eq('fecha', fechaStr).lt('hora_inicio', endStr).gt('hora_fin', startStr)
-          .or(`jugador1_id.in.(${partidoJ1},${partidoJ2}),jugador2_id.in.(${partidoJ1},${partidoJ2})`);
-        if (choqueJ?.length > 0) throw new Error("Uno de los jugadores ya tiene partido en ese horario.");
-      }
-
-      let fechasAProcesar = [fechaStr];
-      
-      if (modalAccion === 'bloqueo') {
-        if (frecuencia === 'diaria') {
-          fechasAProcesar = Array.from({ length: iteraciones }, (_, i) => {
-            const d = new Date(fechaStr + 'T12:00:00');
-            d.setDate(d.getDate() + i);
-            return d.toISOString().split('T')[0];
-          });
-        } else if (frecuencia === 'semanal') {
-          fechasAProcesar = [];
-          for (let w = 0; w < iteraciones; w++) {
-            diasRecurrencia.forEach(dayIdx => {
-              const d = new Date(fechaStr + 'T12:00:00');
-              const currentDay = d.getDay();
-              d.setDate(d.getDate() + (dayIdx - currentDay) + (w * 7));
-              if (d >= new Date(fechaStr + 'T12:00:00')) fechasAProcesar.push(d.toISOString().split('T')[0]);
-            });
-          }
-        }
-      }
-
-      const inserts = [...new Set(fechasAProcesar)].map(f => {
-        const cInfo = listaCanchas.find(lc => lc.id === cancha);
-        return {
-          jugador1_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ1,
-          jugador2_id: modalAccion === 'bloqueo' ? currentUser.id : partidoJ2,
-          fecha: f, hora_inicio: startStr, hora_fin: endStr,
-          superficie: cInfo?.superficie || (cancha <= 8 ? 'Dura' : 'Césped'),
-          cancha_numero: cancha,
-          cancha_id: cancha,
-          estado: modalAccion === 'bloqueo' ? 'bloqueo_admin' : 'confirmado',
-          marcador: modalAccion === 'bloqueo' ? bloqueoMotivo : null,
-          tipo_creacion: modalAccion === 'bloqueo' ? 'bloqueo' : 'manual'
-        };
-      });
-
-      const { error } = await supabase.from('partidos').insert(inserts);
-      if (error) throw error;
-      fetchClubPartidos(); setBloqueoActivo(null);
-      mostrarAlerta("Éxito", "Agenda actualizada correctamente.");
-    } catch (e) { mostrarError("Error", e.message); }
-  };
+  const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
 
   return (
     <div className={`min-h-screen font-sans pb-32 transition-colors duration-500 selection:bg-[#29C454]/30 ${theme.bg} ${theme.text}`}>
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.66</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
+          <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.66</span>
+        </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -995,7 +1011,9 @@ export default function App() {
 
       <main className={`pt-24 px-4 md:px-8 mx-auto w-full flex flex-col items-center transition-all duration-500 ${tab === 'club_agenda' || tab === 'admin_canchas' ? 'max-w-full' : 'max-w-lg'}`}>
         
-        {/* VISTA HOME */}
+        {/* =========================================
+            VISTA HOME
+        ========================================= */}
         {tab === 'home' && (
           <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700 text-center pb-10 px-2">
             <section className="flex flex-col items-center">
@@ -1087,7 +1105,6 @@ export default function App() {
                       btn.innerText = 'Enviando...';
 
                       try { 
-                        // Usamos TUS columnas reales. Si no hay usuario, manda null y 'Anónimo'
                         const { error } = await supabase.from('sugerencias').insert([{ 
                           jugador_id: currentUser?.id || null, 
                           nombre: currentUser?.nombre || 'Anónimo', 
@@ -1116,7 +1133,9 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA AUTH */}
+        {/* =========================================
+            VISTA AUTH
+        ========================================= */}
         {tab === 'auth' && (
           <div className="w-full max-w-sm mx-auto space-y-8 animate-in slide-in-from-right-8 duration-500">
             {!isRegistering ? (
@@ -1155,13 +1174,22 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA UNIFICADA: JUGAR (MATCH O RESERVA) */}
+        {/* =========================================
+            VISTA JUGAR (MATCH O RESERVA)
+        ========================================= */}
         {tab === 'jugar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center pb-20">
-            <div className={`${theme.card} p-1.5 rounded-2xl border ${theme.border} shadow-sm flex w-full relative z-20`}><button onClick={() => setModoCancha('match')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🏆 Match (Puntos)</button><button onClick={() => setModoCancha('libre')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🎾 Reserva Libre</button></div>
+            <div className={`${theme.card} p-1.5 rounded-2xl border ${theme.border} shadow-sm flex w-full relative z-20`}>
+              <button onClick={() => setModoCancha('match')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🏆 Match (Puntos)</button>
+              <button onClick={() => setModoCancha('libre')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🎾 Reserva Libre</button>
+            </div>
+            
             <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
-                <div className="text-center mb-2"><h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2><p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p></div>
+                <div className="text-center mb-2">
+                  <h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2>
+                  <p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p>
+                </div>
                 
                 <div className="space-y-3 text-left w-full">
                   <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label>
@@ -1179,7 +1207,10 @@ export default function App() {
                 </div>
                 
                 <div className="space-y-3 text-left w-full">
-                  <div className="ml-2"><label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>{modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}</div>
+                  <div className="ml-2">
+                    <label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>
+                    {modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}
+                  </div>
                   <div className="grid grid-cols-2 gap-3 w-full">
                     <input type="time" step="1800" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
                     <input type="time" step="1800" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
@@ -1188,7 +1219,12 @@ export default function App() {
                 
                 {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
-              <div className="pt-6 flex flex-col items-center"><button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>{modoCancha === 'match' ? <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</> : 'Pagar Reserva ➜'}</button></div>
+              
+              <div className="pt-6 flex flex-col items-center">
+                <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>
+                  {modoCancha === 'match' ? <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</> : 'Pagar Reserva ➜'}
+                </button>
+              </div>
             </form>
             
             {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
@@ -1211,7 +1247,9 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: MIS PARTIDOS CON TODOS LOS BOTONES RESTAURADOS */}
+        {/* =========================================
+            VISTA PARTIDOS
+        ========================================= */}
         {tab === 'partidos' && (
           <div className="w-full space-y-8 animate-in fade-in duration-500 max-w-sm mx-auto pb-20">
             <h2 className={`text-3xl font-black italic ${theme.text} uppercase tracking-tight text-center`}>Partidos</h2>
@@ -1254,20 +1292,17 @@ export default function App() {
                               <div><p className={`text-[10px] uppercase tracking-widest font-black ${theme.muted}`}>Rival Confirmado</p><p className={`font-black italic text-xl ${theme.text}`}>{partido.rival.nombre}</p></div>
                             </div>
 
-                            {/* LOGICA RESTAURADA DE BOTONES DE REPORTE Y CANCELACIÓN */}
                             {partido.estado === 'confirmado' && (
                               obtenerEstadoTiempo(partido) === 'terminado' ? (
                                 reportingMatch === partido.id ? (
                                   <div className={`mt-4 ${theme.bg} p-4 rounded-2xl space-y-4 border ${theme.border}`}>
                                     
-                                    {/* Encabezados de Score */}
                                     <div className={`flex justify-between px-1 text-[9px] font-black uppercase tracking-widest ${theme.muted}`}>
                                       <span className="w-14 text-center text-[#29C454]">Mi Score</span>
                                       <span className="text-center">Set</span>
                                       <span className="w-14 text-center text-[#007AFF]">Su Score</span>
                                     </div>
 
-                                    {/* Sets */}
                                     <div className="flex gap-2 items-center justify-between">
                                       <select value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
                                       <span className="font-bold text-[10px] text-gray-500">1</span>
@@ -1342,7 +1377,9 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA: PERFIL */}
+        {/* =========================================
+            VISTA PERFIL
+        ========================================= */}
         {tab === 'perfil' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-right-8 duration-500 flex flex-col items-center">
             <div className={`w-full ${theme.card} border ${theme.border} rounded-[2.5rem] p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden`}>
@@ -1408,7 +1445,7 @@ export default function App() {
                 </button>
               </div>
 
-              {/* --- CONSOLA DE GESTIÓN (RBAC) --- */}
+              {/* CONSOLA DE GESTIÓN (RBAC) */}
               {isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club') && (
                 <div className={`w-full mt-8 pt-8 border-t ${theme.border} space-y-4`}>
                   <h3 className="text-sm font-black italic uppercase text-[#29C454]">Gestión de Club</h3>
@@ -1420,9 +1457,9 @@ export default function App() {
                           📩 Buzón {sugerenciasNuevas > 0 && <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">{sugerenciasNuevas}</span>}
                         </button>
                         <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">👥 Jugadores</button>
-                      <button onClick={() => setTab('admin_canchas')} className="col-span-2 w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
-                      ⚙️ Canchas
-                    </button>
+                        <button onClick={() => setTab('admin_canchas')} className="col-span-2 w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                        ⚙️ Canchas
+                      </button>
                       </>
                     )}
                     
@@ -1448,20 +1485,15 @@ export default function App() {
         ========================================= */}
         {tab === 'club_agenda' && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') && (() => {
           
-          // Generamos las columnas basadas en los Días y las Canchas seleccionadas
           const columnasGrid = selectedDays.flatMap(day => filtroCanchas.map(c => ({ day, c })));
-          // Generamos las filas en intervalos de 30 minutos (0.5)
-          // Generamos las filas en intervalos de 30 minutos (0.5)
           const horasGrid = [];
           for (let h = rangoHoras.start; h <= rangoHoras.end; h += 0.5) { horasGrid.push(h); }
 
           return (
             <div className="w-full px-2 md:px-8 space-y-6 animate-in fade-in pb-20 max-w-[1600px] mx-auto">
               
-              {/* CABECERA CENTRADA Y BOTONERA */}
               <div className="flex flex-col items-center text-center space-y-4 relative w-full">
                 
-                {/* NUEVO: Botón Partidos Pendientes (Alineado a la Izquierda) */}
                 <button 
                   onClick={() => { /* Lógica futura para disputas */ }}
                   className={`absolute top-0 left-0 hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#E5B824] transition-all active:scale-95 shadow-sm`}
@@ -1469,7 +1501,6 @@ export default function App() {
                   ⏳ Partidos Pendientes
                 </button>
 
-                {/* Botón de Acceso Directo (Alineado a la Derecha) */}
                 <button 
                   onClick={() => { fetchCanchas(); setTab('admin_canchas'); }}
                   className={`absolute top-0 right-0 hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#29C454] transition-all active:scale-95 shadow-sm`}
@@ -1482,7 +1513,6 @@ export default function App() {
                   <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#007AFF] mt-1">Centro Tenistico de Alto Rendimiento Punta Azul</p>
                 </div>
                 
-                {/* Botones para versión móvil (debajo del título) */}
                 <div className="md:hidden flex w-full gap-2">
                   <button 
                     onClick={() => { /* Lógica futura para disputas */ }}
@@ -1498,10 +1528,8 @@ export default function App() {
                   </button>
                 </div>
                 
-                {/* Panel de Filtros */}
                 <div className={`w-full max-w-4xl ${theme.card} border ${theme.border} p-4 rounded-3xl shadow-sm space-y-4`}>
                   
-                  {/* Selector de Días (Multi-Select) */}
                   <div className="flex items-center gap-2 justify-center bg-[#007AFF]/5 p-2 rounded-2xl border border-[#007AFF]/10">
                     <button onClick={() => changeWeek(-1)} className={`p-3 rounded-xl font-black ${theme.card} border ${theme.border} text-[#007AFF] active:scale-95 shadow-sm`}>⇇</button>
                     <div className="flex gap-2 overflow-x-auto max-w-[80vw] md:max-w-none pb-1 scrollbar-hide px-2">
@@ -1521,7 +1549,6 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8 pt-2">
-                    {/* Selector de Canchas */}
                     <div className="flex flex-wrap justify-center items-center gap-1.5">
                       <span className={`text-[10px] font-black uppercase opacity-40 mr-1 ${theme.text}`}>Canchas:</span>
                       {listaCanchas.filter(c => c.estado !== 'inhabilitada').map(c => (
@@ -1531,7 +1558,6 @@ export default function App() {
                       ))}
                     </div>
 
-                    {/* Selector de Horas */}
                     <div className={`flex items-center gap-2 md:border-l ${theme.border} md:pl-8`}>
                       <span className={`text-[10px] font-black uppercase opacity-40 ${theme.text}`}>De:</span>
                       <select value={rangoHoras.start} onChange={e => setRangoHoras(p => ({...p, start: Number(e.target.value)}))} className={`bg-transparent border ${theme.border} rounded-lg p-1.5 text-xs font-black ${theme.text} focus:outline-none`}>
@@ -1543,7 +1569,6 @@ export default function App() {
                       </select>
                     </div>
                     
-                    {/* Botón Limpiar Filtros */}
                     <button 
                       onClick={limpiarFiltrosAgenda}
                       className={`md:border-l ${theme.border} md:pl-1 flex items-center gap- px-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${theme.muted} hover:bg-red-500/10 hover:text-red-500 active:scale-95`}
@@ -1554,11 +1579,9 @@ export default function App() {
                 </div>
               </div>
 
-              {/* CUADRÍCULA RESULTANTE (Transpuesta - Línea de Tiempo Horizontal con División de Días) */}
               <div className={`${theme.card} border ${theme.border} rounded-3xl p-4 shadow-2xl overflow-x-auto overflow-y-auto max-h-[75vh] custom-scrollbar`}>
                 <div className="flex flex-col gap-1.5 min-w-max pb-4 pr-4">
                   
-                  {/* ENCABEZADO DE HORAS (Eje X Fijo Superior) */}
                   <div className={`flex gap-1.5 sticky top-0 z-20 ${theme.card} pb-2 border-b ${theme.border}`}>
                     <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-30 ${theme.card} flex items-end justify-end pr-4`}>
                       <span className={`text-[9px] font-black uppercase tracking-widest ${theme.muted} mb-1`}>Línea de Tiempo ➜</span>
@@ -1578,10 +1601,8 @@ export default function App() {
                     })}
                   </div>
 
-                  {/* FILAS DE CANCHAS AGRUPADAS POR DÍA (Eje Y) */}
                   {selectedDays.map((dayStr) => (
                     <React.Fragment key={dayStr}>
-                      {/* DIVISIÓN DE CAMBIO DE DÍA */}
                       {selectedDays.length > 1 && (
                         <div className={`flex w-full sticky left-0 z-10 bg-[#007AFF]/10 border-y border-[#007AFF]/20 p-2 mt-4 mb-2 rounded-r-xl`}>
                           <span className="text-[#007AFF] font-black text-xs uppercase tracking-widest">
@@ -1595,80 +1616,76 @@ export default function App() {
                         return (
                           <div key={`${dayStr}-${c}`} className="flex gap-1.5 group">
                             
-                            {/* Cabecera de Fila Fija Izquierda */}
                             <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-10 ${theme.card} p-2 flex flex-col justify-center items-end pr-4 rounded-r-2xl shadow-[4px_0_10px_-4px_rgba(0,0,0,0.08)] border-r border-[#007AFF]/10`}>
-          <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>
-            {listaCanchas.find(lc => lc.id === c)?.nombre || `Cancha ${c}`}
-          </span>
-          {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
-        </div>
+                              <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>
+                                {listaCanchas.find(lc => lc.id === c)?.nombre || `Cancha ${c}`}
+                              </span>
+                              {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
+                            </div>
 
-                            {/* Bloques de Tiempo Interactivos */}
-{horasGrid.map(horaFloat => {
-  const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
-  
-  // --- NUEVA LÓGICA DE MANTENIMIENTO ---
-  const canchaDB = listaCanchas.find(ldb => ldb.id === c);
-  const enMantenimiento = canchaDB?.estado === 'inhabilitada';
-  
-  const esDisputa = partido?.estado === 'en_disputa';
-  const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
-  const esBloqueo = partido && partido.estado === 'bloqueo_admin';
-  const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}` : esBloqueo ? `Bloqueo: ${partido.marcador}` : enMantenimiento ? 'Cancha en Mantenimiento' : '';
-  
-  return (
-    <div 
-      key={`${dayStr}-${c}-${horaFloat}`} 
-      className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
-        enMantenimiento 
-          ? 'bg-gray-200 dark:bg-white/5 opacity-50 cursor-not-allowed grayscale border border-dashed border-gray-400' 
-          : !esVAd && !esBloqueo && !esDisputa 
-            ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` 
-            : ''
-      }`}
-      onClick={() => !enMantenimiento && handleCellClick(c, horaFloat, dayStr)}
-    >
-      {enMantenimiento ? (
-        <div className="absolute inset-0 flex items-center justify-center text-[7px] font-black text-gray-500 uppercase text-center leading-tight p-1">
-          Fuera de<br/>Servicio
-        </div>
-      ) : (
-        <>
-          {esVAd && (
-            <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
-              <div className="flex flex-col items-center justify-center w-full">
-                <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">
-                  {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : 'VAd'}
-                </span>
-                <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
-                  {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
-                </span>
-              </div>
-            </div>
-          )}
-          
-          {esBloqueo && (
-            <div title={tooltipText} className="absolute inset-0 bg-[#FECACA] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10">
-              <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
-              <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
-                {partido.marcador || 'Bloqueado'}
-              </span>
-            </div>
-          )}
+                            {horasGrid.map(horaFloat => {
+                              const partido = obtenerEstadoCelda(c, horaFloat, dayStr);
+                              const canchaDB = listaCanchas.find(ldb => ldb.id === c);
+                              const enMantenimiento = canchaDB?.estado === 'inhabilitada';
+                              
+                              const esDisputa = partido?.estado === 'en_disputa';
+                              const esVAd = partido && partido.estado !== 'bloqueo_admin' && !esDisputa;
+                              const esBloqueo = partido && partido.estado === 'bloqueo_admin';
+                              const tooltipText = esVAd ? `Partido VAd\n${partido.j1_nombre} vs ${partido.j2_nombre}` : esBloqueo ? `Bloqueo: ${partido.marcador}` : enMantenimiento ? 'Cancha en Mantenimiento' : '';
+                              
+                              return (
+                                <div 
+                                  key={`${dayStr}-${c}-${horaFloat}`} 
+                                  className={`w-20 md:w-24 shrink-0 h-16 relative rounded-xl transition-all duration-100 cursor-pointer active:scale-95 ${
+                                    enMantenimiento 
+                                      ? 'bg-gray-200 dark:bg-white/5 opacity-50 cursor-not-allowed grayscale border border-dashed border-gray-400' 
+                                      : !esVAd && !esBloqueo && !esDisputa 
+                                        ? `bg-[#FFFFFF] dark:bg-white/5 border-2 border-[#A7F3D0] hover:bg-[#A7F3D0]/30 hover:shadow-md` 
+                                        : ''
+                                  }`}
+                                  onClick={() => !enMantenimiento && handleCellClick(c, horaFloat, dayStr)}
+                                >
+                                  {enMantenimiento ? (
+                                    <div className="absolute inset-0 flex items-center justify-center text-[7px] font-black text-gray-500 uppercase text-center leading-tight p-1">
+                                      Fuera de<br/>Servicio
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {esVAd && (
+                                        <div title={tooltipText} className="absolute inset-0 bg-[#064E3B] rounded-xl flex items-center justify-center shadow-md overflow-hidden p-1 transform hover:scale-105 transition-transform z-10">
+                                          <div className="flex flex-col items-center justify-center w-full">
+                                            <span className="text-[8px] text-[#F9F8F1]/70 font-black uppercase mb-0.5 leading-none">
+                                              {(partido.estado === 'finalizado' || partido.estado === 'wo') ? partido.marcador : 'VAd'}
+                                            </span>
+                                            <span className="text-[9px] md:text-[10px] text-[#F9F8F1] font-black text-center leading-tight truncate w-full">
+                                              {partido.j1_nombre.split(' ')[0]}<br/><span className="text-[7px] opacity-70">vs</span><br/>{partido.j2_nombre.split(' ')[0]}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      {esBloqueo && (
+                                        <div title={tooltipText} className="absolute inset-0 bg-[#FECACA] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10">
+                                          <span className="text-[#991B1B] text-xs mb-0.5">🔒</span>
+                                          <span className="text-[8px] md:text-[9px] text-[#991B1B] font-black text-center leading-tight truncate w-full">
+                                            {partido.marcador || 'Bloqueado'}
+                                          </span>
+                                        </div>
+                                      )}
 
-          {esDisputa && (
-            <div title={tooltipText} className="absolute inset-0 bg-[#991B1B] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10 border-2 border-red-500 animate-pulse">
-              <span className="text-[12px] text-white font-black mb-0.5 leading-none">⚠️</span>
-              <span className="text-[8px] md:text-[9px] text-white font-black text-center leading-tight truncate w-full">
-                DISPUTA<br/>{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
-              </span>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-})}
+                                      {esDisputa && (
+                                        <div title={tooltipText} className="absolute inset-0 bg-[#991B1B] rounded-xl flex flex-col items-center justify-center shadow-md hover:brightness-95 transform hover:scale-105 transition-all p-1 z-10 border-2 border-red-500 animate-pulse">
+                                          <span className="text-[12px] text-white font-black mb-0.5 leading-none">⚠️</span>
+                                          <span className="text-[8px] md:text-[9px] text-white font-black text-center leading-tight truncate w-full">
+                                            DISPUTA<br/>{partido.j1_nombre.split(' ')[0]} v {partido.j2_nombre.split(' ')[0]}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })}
@@ -1679,6 +1696,10 @@ export default function App() {
             </div>
           );
         })()}
+
+        {/* =========================================
+            VISTA ADMIN CANCHAS (COMPRIMIDA)
+        ========================================= */}
         {tab === 'admin_canchas' && (isLoggedIn && (currentUser?.rol === 'admin' || currentUser?.rol === 'club')) && (() => {
           const canchasFiltradas = listaCanchas?.filter(c => {
             if (filtroTablaSuperficie !== 'Todas' && c.superficie !== filtroTablaSuperficie) return false;
@@ -1689,7 +1710,6 @@ export default function App() {
           return (
           <div className="max-w-7xl w-full mx-auto p-6 space-y-8 animate-in fade-in pb-20">
             
-            {/* Cabecera Rediseñada Grid 3-Cols */}
             <div className="grid grid-cols-1 md:grid-cols-3 items-center gap-4 border-b pb-6 border-black/5">
               <div className="justify-self-start">
                 <button 
@@ -1711,18 +1731,17 @@ export default function App() {
               </div>
             </div>
 
-            {/* Layout de una sola columna (Tabla a Full Width) */}
+            {/* Layout Full Width (Sin Formulario de Alta) */}
             <div className="w-full">
               
               <div className="p-4 bg-[#007AFF]/5 border border-[#007AFF]/10 rounded-2xl text-left mb-6 max-w-3xl">
-                <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Estatus Inhabilitada</p>
-                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Master Schedule. (Las canchas nuevas se agregan directamente desde la Base de Datos Administrativa).</p>
+                <p className="text-[10px] font-bold text-[#007AFF] uppercase mb-1">Gestión Externa</p>
+                <p className="text-[11px] leading-relaxed opacity-70 font-medium italic">Utiliza 'Inhabilitada' solo para cierres a largo plazo. El mantenimiento temporal se debe bloquear directamente desde el Master Schedule. (Para agregar nuevas canchas, genéralas directamente en la Base de Datos de Supabase).</p>
               </div>
 
-              {/* Data Table Filtrable */}
               <div className="space-y-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
-                  <h3 className="text-[12px] font-black uppercase tracking-[0.3em] text-[#1268B0]">Inventario de Canchas</h3>
+                  <h3 className="text-[20px] font-black uppercase tracking-[0.3em] text-[#1268B0]">Inventario de Canchas</h3>
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>Superficie:</span>
@@ -1794,7 +1813,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
             </div>
           </div>
           );
@@ -1802,6 +1820,9 @@ export default function App() {
 
       </main>
 
+      {/* =========================================
+          SISTEMA DE ALERTAS GLOBALES
+      ========================================= */}
       {vadAlert && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-[#1A1C1E]/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className={`${theme.card} w-full max-w-sm rounded-[2rem] p-6 shadow-2xl border ${theme.border} animate-in zoom-in-95 duration-300`}>
@@ -1824,7 +1845,9 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.66--- */}
+      {/* =========================================
+          MODAL DE ACCIÓN UX TÁCTIL B2B
+      ========================================= */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
@@ -1964,7 +1987,9 @@ export default function App() {
         </div>
       )}
 
-      {/* NAVEGACIÓN INFERIOR */}
+      {/* =========================================
+          NAVEGACIÓN INFERIOR PWA
+      ========================================= */}
       {(!isLoggedIn || currentUser?.rol !== 'club') && (
         <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
           <div className="flex justify-between items-center max-w-sm mx-auto px-4">
@@ -1980,5 +2005,5 @@ export default function App() {
         </nav>
       )}
     </div>
-  )
+  );
 }
