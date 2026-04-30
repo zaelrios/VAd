@@ -15,7 +15,7 @@ export default function App() {
   const [tab, setTab] = useState('home');
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.64'; 
+  const APP_VERSION = '1.65'; 
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1035,7 +1035,7 @@ export default function App() {
       
       {/* HEADER SUPERIOR */}
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.64</span></h1>
+        <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1"><div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div><span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.65</span></h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
             {tab === 'perfil' ? '📅' : '⚙️'}
@@ -1129,8 +1129,34 @@ export default function App() {
                 <div className="space-y-3">
                   <textarea placeholder="Escribe tu comentario aquí..." value={comentario} onChange={(e) => setComentario(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-bold text-sm focus:outline-none focus:border-[#29C454] resize-none h-28 shadow-inner`} />
                   <button onClick={async (e) => {
-                      e.preventDefault(); if(!comentario.trim()) return; const btn = e.currentTarget; const textoOriginal = btn.innerText; btn.innerText = 'Enviando...';
-                      try { const { error } = await supabase.from('sugerencias').insert([{ remitente_id: isLoggedIn && currentUser ? currentUser.id : null, tipo: 'sugerencia', mensaje: comentario.trim(), estado: 'nueva' }]); if (error) throw error; mostrarAlerta("Buzón", "¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto."); setComentario(''); } catch (error) { mostrarError("Error", "Hubo un error al enviar el mensaje. Intenta de nuevo."); } finally { btn.innerText = textoOriginal; }
+                      e.preventDefault(); 
+                      if(!comentario.trim()) return; 
+
+                      const btn = e.currentTarget; 
+                      const textoOriginal = btn.innerText; 
+                      btn.innerText = 'Enviando...';
+
+                      try { 
+                        // Usamos TUS columnas reales. Si no hay usuario, manda null y 'Anónimo'
+                        const { error } = await supabase.from('sugerencias').insert([{ 
+                          jugador_id: currentUser?.id || null, 
+                          nombre: currentUser?.nombre || 'Anónimo', 
+                          comentario: comentario.trim(), 
+                          estado: 'nueva' 
+                        }]); 
+                        
+                        if (error) {
+                          console.error("Error BD:", error);
+                          throw error;
+                        }
+                        
+                        mostrarAlerta("Buzón", "¡Gracias por hacer VAd. mejor! Hemos recibido tu comentario y lo revisaremos pronto."); 
+                        setComentario(''); 
+                      } catch (error) { 
+                        mostrarError("Error", "Hubo un error al enviar el mensaje. Intenta de nuevo."); 
+                      } finally { 
+                        btn.innerText = textoOriginal; 
+                      }
                     }} className="w-full bg-[#29C454] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-105">
                     Enviar Sugerencia
                   </button>
@@ -1186,6 +1212,12 @@ export default function App() {
             <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
               <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
                 <div className="text-center mb-2"><h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2><p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p></div>
+                
+                <div className="space-y-3 text-left w-full">
+                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label>
+                  <input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} />
+                </div>
+                
                 <div className="space-y-3 text-left w-full">
                   <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
                   <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
@@ -1195,15 +1227,7 @@ export default function App() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-3 text-left w-full">
-                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
-                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
-                    <option value="Cualquier superficie">Cualquier superficie</option>
-                    {[...new Set(listaCanchas?.filter(c => c.estado !== 'inhabilitada').map(c => c.superficie))].map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
+                
                 <div className="space-y-3 text-left w-full">
                   <div className="ml-2"><label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>{modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}</div>
                   <div className="grid grid-cols-2 gap-3 w-full">
@@ -1211,6 +1235,7 @@ export default function App() {
                     <input type="time" step="1800" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
                   </div>
                 </div>
+                
                 {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
               </div>
               <div className="pt-6 flex flex-col items-center"><button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>{modoCancha === 'match' ? <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</> : 'Pagar Reserva ➜'}</button></div>
@@ -1849,7 +1874,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.64--- */}
+      {/* --- MODAL DE ACCIÓN UX TÁCTIL v1.65--- */}
       {bloqueoActivo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[#F9F8F1] w-full max-w-sm rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] overflow-y-auto">
