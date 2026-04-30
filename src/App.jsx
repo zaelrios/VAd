@@ -33,7 +33,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.67';
+  const APP_VERSION = '1.68';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -96,7 +96,7 @@ export default function App() {
   const [searchDate, setSearchDate] = useState(initData.date);
   const [startTime, setStartTime] = useState(initData.start);
   const [endTime, setEndTime] = useState(initData.end);
-  const [superficie, setSuperficie] = useState('Dura');
+  const [superficie, setSuperficie] = useState('Cualquier superficie');
   const [activeSearches, setActiveSearches] = useState([]);
   const [searchError, setSearchError] = useState('');
   const [modoCancha, setModoCancha] = useState('match');
@@ -1044,7 +1044,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.67</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.68</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1500,10 +1500,9 @@ export default function App() {
                         <button onClick={() => { cargarSugerenciasAdmin(); setTab('admin_buzon'); }} className={`w-full ${modoOscuro ? 'bg-white text-[#0F172A]' : 'bg-[#1A1C1E] text-white'} py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 relative transition-transform active:scale-95`}>
                           📩 Buzón {sugerenciasNuevas > 0 && <span className="absolute -top-2 -right-2 bg-[#29C454] text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] border-4 border-[#F8F7F2] animate-bounce">{sugerenciasNuevas}</span>}
                         </button>
-                        <button onClick={() => { cargarUsuariosAdmin(); setTab('admin_usuarios'); }} className="w-full bg-[#007AFF] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">👥 Jugadores</button>
-                        <button onClick={() => setTab('admin_canchas')} className="col-span-2 w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
-                        ⚙️ Canchas
-                      </button>
+                        <button onClick={() => setTab('admin_canchas')} className="w-full bg-[#1A1C1E] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                          ⚙️ Canchas
+                        </button>
                       </>
                     )}
                     
@@ -1860,6 +1859,65 @@ export default function App() {
           </div>
           );
         })()}
+
+        {/* =========================================
+            VISTA BUZÓN ADMIN (NUEVA)
+        ========================================= */}
+        {tab === 'admin_buzon' && currentUser?.rol === 'admin' && (
+          <div className="w-full max-w-3xl mx-auto p-4 space-y-6 animate-in fade-in pb-20">
+            <div className="flex items-center justify-between border-b border-black/5 pb-4">
+              <button onClick={() => setTab('perfil')} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} active:scale-95 transition-all`}>
+                ⬅ Volver
+              </button>
+              <div className="text-right">
+                <h2 className="text-2xl font-black italic uppercase tracking-tighter">Buzón VAd.</h2>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${theme.muted}`}>Sugerencias y Reportes</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Filtramos para que NO se vean los archivados */}
+              {listaSugerencias.filter(s => s.estado !== 'archivado').length === 0 ? (
+                <div className={`${theme.card} border-2 border-dashed ${theme.border} rounded-[2rem] p-10 text-center opacity-50`}>
+                  <p className="text-4xl mb-2">📭</p>
+                  <p className="text-xs font-black uppercase tracking-widest">El buzón está vacío</p>
+                </div>
+              ) : (
+                listaSugerencias.filter(s => s.estado !== 'archivado').map(sug => (
+                  <div key={sug.id} className={`${theme.card} border ${theme.border} rounded-2xl p-5 shadow-sm relative overflow-hidden animate-in fade-in`}>
+                    {sug.estado === 'nueva' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#29C454]"></div>}
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${theme.muted}`}>
+                          {new Date(sug.created_at).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                        </p>
+                        <p className="font-black text-sm mt-0.5 text-[#007AFF]">{sug.nombre || 'Anónimo'}</p>
+                      </div>
+                      <span className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest border ${sug.estado === 'nueva' ? 'bg-[#29C454]/10 text-[#29C454] border-[#29C454]/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/20'}`}>
+                        {sug.estado === 'nueva' ? 'Nueva' : 'Leída'}
+                      </span>
+                    </div>
+                    <div className={`${theme.bg} p-4 rounded-xl border ${theme.border} shadow-inner`}>
+                      <p className={`text-sm font-bold italic leading-relaxed whitespace-pre-wrap ${theme.text}`}>"{sug.comentario}"</p>
+                    </div>
+                    
+                    {/* BOTONERA DE ESTADOS */}
+                    <div className="mt-4 flex justify-end gap-2">
+                      {sug.estado === 'nueva' && (
+                        <button onClick={() => actualizarEstadoSugerencia(sug.id, 'leida')} className="bg-[#29C454] text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-[#29C454]/20 active:scale-95 transition-all hover:brightness-110">
+                          ✓ Marcar Leída
+                        </button>
+                      )}
+                      <button onClick={() => actualizarEstadoSugerencia(sug.id, 'archivado')} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border ${theme.border} ${theme.muted} ${theme.card} active:scale-95 transition-all hover:bg-red-500 hover:text-white`}>
+                        📁 Archivar
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
       </main>
 
