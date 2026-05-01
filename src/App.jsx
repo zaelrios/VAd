@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.81';
+  const APP_VERSION = '1.82';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1325,7 +1325,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.81</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.82</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1805,13 +1805,22 @@ export default function App() {
                       <span className={theme.muted}>➔</span>
                     </button>
                   ) : (
-                    <form onSubmit={handleCambiarPin} className="space-y-2 p-3 bg-black/5 rounded-xl border border-black/10 animate-in fade-in text-left">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-[#1268B0]">Actualizar PIN</p>
-                      <input type="password" inputMode="numeric" maxLength="4" placeholder="PIN Actual" value={pinActual} onChange={e=>setPinActual(e.target.value.replace(/\D/g,''))} className={`w-full bg-white border ${theme.border} rounded-lg px-3 py-2 text-center tracking-[1em] font-black focus:outline-none`} />
-                      <input type="password" inputMode="numeric" maxLength="4" placeholder="Nuevo PIN" value={pinNuevo} onChange={e=>setPinNuevo(e.target.value.replace(/\D/g,''))} className={`w-full bg-white border ${theme.border} rounded-lg px-3 py-2 text-center tracking-[1em] font-black focus:outline-none`} />
-                      <div className="flex gap-2 pt-1">
-                        <button type="button" onClick={() => {setIsChangingPin(false); setPinActual(''); setPinNuevo('');}} className="flex-1 text-[10px] font-black uppercase text-black/40 py-2 hover:bg-black/5 rounded-lg">Cancelar</button>
-                        <button type="submit" className="flex-1 bg-[#1268B0] text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md py-2">Guardar</button>
+                    <form onSubmit={handleCambiarPin} className="space-y-4 p-4 bg-black/5 rounded-2xl border border-black/10 animate-in fade-in text-left shadow-inner">
+                      <p className="text-[11px] font-black uppercase tracking-widest text-[#1268B0] mb-2 border-b border-black/5 pb-2">Actualizar PIN</p>
+                      
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-black/40 ml-1">PIN Actual</label>
+                        <input type="password" inputMode="numeric" maxLength="4" placeholder="••••" value={pinActual} onChange={e=>setPinActual(e.target.value.replace(/\D/g,''))} className={`w-full bg-white border ${theme.border} rounded-xl px-4 py-3 text-center text-xl tracking-[1em] font-black focus:outline-none focus:ring-2 focus:ring-[#1268B0]/20 shadow-sm`} />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-black/40 ml-1">Nuevo PIN</label>
+                        <input type="password" inputMode="numeric" maxLength="4" placeholder="••••" value={pinNuevo} onChange={e=>setPinNuevo(e.target.value.replace(/\D/g,''))} className={`w-full bg-white border ${theme.border} rounded-xl px-4 py-3 text-center text-xl tracking-[1em] font-black focus:outline-none focus:ring-2 focus:ring-[#1268B0]/20 shadow-sm`} />
+                      </div>
+
+                      <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={() => {setIsChangingPin(false); setPinActual(''); setPinNuevo('');}} className="flex-1 text-[10px] font-black uppercase text-black/50 py-3 hover:bg-black/10 rounded-xl transition-all border border-black/5">Cancelar</button>
+                        <button type="submit" className="flex-1 bg-[#1268B0] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md py-3 active:scale-95 transition-all">Guardar</button>
                       </div>
                     </form>
                   )}
