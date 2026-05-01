@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.79';
+  const APP_VERSION = '1.80';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -758,13 +758,16 @@ export default function App() {
           const maxStart = Math.max(getMins(j1.hora_inicio), getMins(j2.hora_inicio), currentLibStart);
           const minEnd = Math.min(getMins(j1.hora_fin), getMins(j2.hora_fin), libEnd);
 
-          if (minEnd - maxStart >= 120) { 
+          // AQUÍ SE EXIGEN 90 MINUTOS EN LUGAR DE 120
+          if (minEnd - maxStart >= 90) { 
             const { data: p1 } = await supabase.from('perfiles').select('elo').eq('id', j1.jugador_id).single();
             const { data: p2 } = await supabase.from('perfiles').select('elo').eq('id', j2.jugador_id).single();
             
             if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
               const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
-              const mEnd = `${String(Math.floor((maxStart+120)/60)).padStart(2,'0')}:${String((maxStart+120)%60).padStart(2,'0')}:00`;
+              
+              // AQUÍ SE SUMAN 90 MINUTOS PARA LA HORA DE FIN
+              const mEnd = `${String(Math.floor((maxStart+90)/60)).padStart(2,'0')}:${String((maxStart+90)%60).padStart(2,'0')}:00`;
               
               const { data: choque } = await supabase.from('partidos').select('id')
                 .eq('fecha', fechaStr)
@@ -783,7 +786,9 @@ export default function App() {
                 if (!error && nuevo) {
                   await supabase.from('buscar').update({ estado: 'match' }).in('id', [j1.id, j2.id]);
                   matchedUserIds.add(j1.jugador_id); matchedUserIds.add(j2.jugador_id);
-                  currentLibStart = maxStart + 120; 
+                  
+                  // AQUÍ SE AVANZA EL RELOJ 90 MINUTOS PARA EL SIGUIENTE CRUCE
+                  currentLibStart = maxStart + 90; 
                   break; 
                 }
               }
@@ -1180,9 +1185,9 @@ export default function App() {
             const startCruce = Math.max(startMins, rStartMins); const endCruce = Math.min(endMins, rEndMins);
             const { data: perfilRival } = await supabase.from('perfiles').select('elo').eq('id', rival.jugador_id).single();
             
-            if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 120) {
+            if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 90) {
               const propInicioStr = `${String(Math.floor(startCruce / 60)).padStart(2, '0')}:${String(startCruce % 60).padStart(2, '0')}:00`;
-              const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}:00`;
+              const propFinStr = `${String(Math.floor((startCruce + 90) / 60)).padStart(2, '0')}:${String((startCruce + 90) % 60).padStart(2, '0')}:00`;
               
               const { data: pCruce } = await supabase.from('partidos').select('cancha_numero')
                 .eq('fecha', searchDate)
@@ -1277,7 +1282,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.79</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.80</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
