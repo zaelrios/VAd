@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.80';
+  const APP_VERSION = '1.81';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -86,6 +86,9 @@ export default function App() {
   const [regNombre, setRegNombre] = useState('');
   const [regApellido, setRegApellido] = useState('');
   const [regStep, setRegStep] = useState(1);
+  const [isChangingPin, setIsChangingPin] = useState(false);
+  const [pinActual, setPinActual] = useState('');
+  const [pinNuevo, setPinNuevo] = useState('');
 
   // ==========================================
   // 4. ESTADOS DE MATCHMAKING Y RESERVAS
@@ -112,8 +115,7 @@ export default function App() {
   
   const v1M_UI = parseInt(s1Mi, 10); const v1R_UI = parseInt(s1Rival, 10);
   const v2M_UI = parseInt(s2Mi, 10); const v2R_UI = parseInt(s2Rival, 10);
-  const partidoDefinidoEnDosSets = (!isNaN(v1M_UI) && !isNaN(v1R_UI) && !isNaN(v2M_UI) && !isNaN(v2R_UI)) && 
-                                   ((v1M_UI > v1R_UI && v2M_UI > v2R_UI) || (v1R_UI > v1M_UI && v2R_UI > v2M_UI));
+  const partidoDefinidoEnDosSets = (!isNaN(v1M_UI) && !isNaN(v1R_UI) && !isNaN(v2M_UI) && !isNaN(v2R_UI)) && ((v1M_UI > v1R_UI && v2M_UI > v2R_UI) || (v1R_UI > v1M_UI && v2R_UI > v2M_UI));
 
   // ==========================================
   // 6. ESTADOS B2B (MASTER SCHEDULE E INFRAESTRUCTURA)
@@ -145,8 +147,12 @@ export default function App() {
   const [partidoAdmin, setPartidoAdmin] = useState(null);
   const [showPendientes, setShowPendientes] = useState(false);
   const [listaPendientes, setListaPendientes] = useState([]);
-
   const procesadosRef = useRef(new Set()); // Candado Anti-Bucle Infinito
+  const [showAltaJugador, setShowAltaJugador] = useState(false);
+  const [altaNombre, setAltaNombre] = useState('');
+  const [altaApellido, setAltaApellido] = useState('');
+  const [altaTelefono, setAltaTelefono] = useState('');
+  const [altaPrefix, setAltaPrefix] = useState('+52');
   
   // Cálculo de notificaciones de buzón
   const sugerenciasNuevas = listaSugerencias.filter(s => s.estado === 'nueva').length;
@@ -1120,6 +1126,43 @@ export default function App() {
     } catch (error) { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
   };
 
+  const handleAltaJugadorAdmin = async (e) => {
+    e.preventDefault();
+    if (altaTelefono.length < 10) { mostrarError("Error", "El celular debe tener 10 dígitos."); return; }
+    const fullPhone = `${altaPrefix}${altaTelefono}`;
+    const fullName = `${altaNombre.trim()} ${altaApellido.trim()}`;
+    const defaultPin = altaTelefono.slice(-4); // El PIN por defecto son sus últimos 4 dígitos
+
+    try {
+      const { data: existingUser } = await supabase.from('perfiles').select('id').eq('telefono', fullPhone).maybeSingle();
+      if (existingUser) { mostrarError("Duplicado", "Este número de teléfono ya está registrado en el sistema."); return; }
+
+      const { error } = await supabase.from('perfiles').insert([{ 
+        telefono: fullPhone, pin: defaultPin, nombre: fullName, elo: 1200, confianza: 5.0, racha_asistencia: 0, comodines: 2, rol: 'gratis' 
+      }]);
+      if (error) throw error;
+
+      mostrarAlerta("Jugador Creado", `¡${fullName} dado de alta con éxito!\n\nSu PIN de acceso son los últimos 4 dígitos de su teléfono: ${defaultPin}`);
+      setShowAltaJugador(false); setAltaNombre(''); setAltaApellido(''); setAltaTelefono('');
+      cargarUsuariosAdmin(); // Recarga la lista para que el admin lo pueda agendar inmediatamente
+    } catch (error) { mostrarError("Error", "Fallo al registrar jugador."); }
+  };
+
+  const handleCambiarPin = async (e) => {
+    e.preventDefault();
+    if(pinActual !== currentUser.pin) { mostrarError("Error", "El PIN actual es incorrecto."); return; }
+    if(pinNuevo.length !== 4) { mostrarError("Error", "El nuevo PIN debe tener 4 dígitos."); return; }
+    try {
+      const { error } = await supabase.from('perfiles').update({ pin: pinNuevo }).eq('id', currentUser.id);
+      if (error) throw error;
+      const updatedUser = { ...currentUser, pin: pinNuevo };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('vad_session', JSON.stringify(updatedUser));
+      mostrarAlerta("Éxito", "Tu PIN ha sido actualizado correctamente.");
+      setIsChangingPin(false); setPinActual(''); setPinNuevo('');
+    } catch (err) { mostrarError("Error", "No se pudo cambiar el PIN."); }
+  };
+
   const handleLogout = () => { localStorage.removeItem('vad_session'); setIsLoggedIn(false); setCurrentUser(null); window.location.href = window.location.pathname; };
   
   const handleSearchSubmit = async (e) => {
@@ -1282,7 +1325,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.80</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.81</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1461,70 +1504,82 @@ export default function App() {
         ========================================= */}
         {tab === 'jugar' && (
           <div className="w-full max-w-sm mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500 mt-4 flex flex-col items-center pb-20">
-            <div className={`${theme.card} p-1.5 rounded-2xl border ${theme.border} shadow-sm flex w-full relative z-20`}>
-              <button onClick={() => setModoCancha('match')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🏆 Match (Puntos)</button>
-              <button onClick={() => setModoCancha('libre')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🎾 Reserva Libre</button>
-            </div>
-            
-            <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
-              <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
-                <div className="text-center mb-2">
-                  <h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2>
-                  <p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p>
-                </div>
-                
-                <div className="space-y-3 text-left w-full">
-                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label>
-                  <input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} />
-                </div>
-                
-                <div className="space-y-3 text-left w-full">
-                  <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
-                  <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
-                    <option value="Cualquier superficie">Cualquier superficie</option>
-                    {[...new Set(listaCanchas?.filter(c => c.estado !== 'inhabilitada').map(c => c.superficie))].map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="space-y-3 text-left w-full">
-                  <div className="ml-2">
-                    <label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>
-                    {modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 w-full">
-                    <input type="time" step="1800" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
-                    <input type="time" step="1800" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
-                  </div>
-                </div>
-                
-                {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
+            {currentUser?.confianza <= 0 ? (
+              <div className={`${theme.card} border-2 border-red-500/50 rounded-[2.5rem] p-8 text-center shadow-xl relative overflow-hidden mt-10 w-full`}>
+                <div className="absolute -right-10 -top-10 w-40 h-40 bg-red-500/10 rounded-full blur-3xl"></div>
+                <p className="text-6xl mb-4 relative z-10">🚫</p>
+                <h3 className="text-2xl font-black italic uppercase text-red-500 mb-2 relative z-10 tracking-tighter">Cuenta Bloqueada</h3>
+                <p className={`${theme.text} font-bold text-xs leading-relaxed relative z-10`}>Has llegado a <span className="text-red-500 font-black text-lg">0</span> de Confiabilidad.</p>
+                <p className={`${theme.muted} text-[10px] font-bold mt-4 relative z-10`}>Perdiste el derecho al circuito VAd. Para recuperar tu cuenta debes presentarte físicamente en la administración del club.</p>
               </div>
-              
-              <div className="pt-6 flex flex-col items-center">
-                <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>
-                  {modoCancha === 'match' ? <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</> : 'Pagar Reserva ➜'}
-                </button>
-              </div>
-            </form>
-            
-            {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
-              <div className="pt-4 space-y-4 animate-in fade-in w-full">
-                <h3 className={`text-sm font-black italic ${theme.text} uppercase border-b ${theme.border} pb-2`}>Búsquedas Activas</h3>
-                <div className="space-y-3">
-                  {activeSearches.map((search) => (
-                    <div key={search.id} className={`${theme.card} border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden`}>
-                      <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
-                      <div className="pl-2 text-left">
-                        <p className={`text-[10px] font-bold uppercase tracking-widest ${theme.muted}`}>{new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} {search.superficie && ` • ${search.superficie}`}</p>
-                        <p className={`text-sm font-black mt-1 ${theme.text}`}>{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
-                      </div>
-                      <button onClick={() => handleCancelSearch(search.id)} className={`w-10 h-10 ${theme.bg} ${theme.muted} rounded-full hover:bg-red-50 hover:text-red-500 transition-colors`}>✕</button>
+            ) : (
+              <>
+                <div className={`${theme.card} p-1.5 rounded-2xl border ${theme.border} shadow-sm flex w-full relative z-20`}>
+                  <button onClick={() => setModoCancha('match')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🏆 Match (Puntos)</button>
+                  <button onClick={() => setModoCancha('libre')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all duration-300 ${modoCancha === 'libre' ? 'bg-[#007AFF] text-white shadow-md' : `${theme.muted} hover:${theme.bg}`}`}>🎾 Reserva Libre</button>
+                </div>
+                
+                <form onSubmit={modoCancha === 'match' ? handleSearchSubmit : handleBookSubmit} className="w-full">
+                  <div className={`${theme.card} border ${theme.border} rounded-[2.5rem] p-6 shadow-sm space-y-6 relative w-full`}>
+                    <div className="text-center mb-2">
+                      <h2 className={`text-3xl font-black italic uppercase transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>{modoCancha === 'match' ? 'Buscar Rival' : 'Reserva Libre'}</h2>
+                      <p className={`text-[10px] font-bold mt-1 ${theme.muted}`}>{modoCancha === 'match' ? 'Juega por ELO en el circuito.' : 'Entrena sin afectar tus puntos.'}</p>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    
+                    <div className="space-y-3 text-left w-full">
+                      <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Día de Juego</label>
+                      <input type="date" min={initData.date} value={modoCancha === 'match' ? searchDate : bookDate} onChange={(e) => modoCancha === 'match' ? setSearchDate(e.target.value) : setBookDate(e.target.value)} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`} />
+                    </div>
+                    
+                    <div className="space-y-3 text-left w-full">
+                      <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${theme.muted}`}>Superficie</label>
+                      <select value={superficie} onChange={(e) => setSuperficie(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-2xl px-5 py-4 ${theme.text} font-black uppercase tracking-wider focus:outline-none focus:border-[#29C454] shadow-inner appearance-none`}>
+                        <option value="Cualquier superficie">Cualquier superficie</option>
+                        {[...new Set(listaCanchas?.filter(c => c.estado !== 'inhabilitada').map(c => c.superficie))].map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="space-y-3 text-left w-full">
+                      <div className="ml-2">
+                        <label className={`text-[15px] font-black uppercase tracking-widest transition-colors duration-300 ${modoCancha === 'match' ? 'text-[#29C454]' : 'text-[#007AFF]'}`}>Rango de disponibilidad</label>
+                        {modoCancha === 'match' && <p className="text-[13px] font-bold text-[#29C454]/80 mt-1 leading-snug">Abre tu rango lo más posible para hacer match.</p>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 w-full">
+                        <input type="time" step="1800" value={modoCancha === 'match' ? startTime : bookStart} onChange={(e) => handleStartTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
+                        <input type="time" step="1800" value={modoCancha === 'match' ? endTime : bookEnd} onChange={(e) => handleEndTimeChange(e.target.value, modoCancha === 'match')} required className={`w-full ${theme.bg} border ${theme.border} rounded-2xl py-4 ${theme.text} font-black text-center focus:outline-none focus:ring-2 transition-all ${modoCancha === 'match' ? 'focus:ring-[#29C454]/50' : 'focus:ring-[#007AFF]/50'}`} />
+                      </div>
+                    </div>
+                    
+                    {searchError && modoCancha === 'match' && <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-xl text-xs font-bold text-center leading-relaxed">{searchError}</div>}
+                  </div>
+                  
+                  <div className="pt-6 flex flex-col items-center">
+                    <button type="submit" className={`w-full flex items-center justify-center gap-2 px-8 text-white py-5 rounded-2xl font-black italic uppercase text-sm shadow-lg active:scale-95 transition-all duration-300 ${modoCancha === 'match' ? 'bg-[#29C454] hover:bg-[#29C454]/90 shadow-[#29C454]/30' : 'bg-[#007AFF] hover:bg-[#007AFF]/90 shadow-[#007AFF]/30'}`}>
+                      {modoCancha === 'match' ? <><span className="text-[#F8F7F2] animate-pulse">●</span> Buscar rival</> : 'Pagar Reserva ➜'}
+                    </button>
+                  </div>
+                </form>
+                
+                {isLoggedIn && activeSearches.length > 0 && modoCancha === 'match' && (
+                  <div className="pt-4 space-y-4 animate-in fade-in w-full">
+                    <h3 className={`text-sm font-black italic ${theme.text} uppercase border-b ${theme.border} pb-2`}>Búsquedas Activas</h3>
+                    <div className="space-y-3">
+                      {activeSearches.map((search) => (
+                        <div key={search.id} className={`${theme.card} border border-[#29C454]/30 rounded-2xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden`}>
+                          <div className="absolute left-0 top-0 w-1 h-full bg-[#29C454] animate-pulse"></div>
+                          <div className="pl-2 text-left">
+                            <p className={`text-[10px] font-bold uppercase tracking-widest ${theme.muted}`}>{new Date(search.fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} {search.superficie && ` • ${search.superficie}`}</p>
+                            <p className={`text-sm font-black mt-1 ${theme.text}`}>{formatTime(search.hora_inicio)} - {formatTime(search.hora_fin)}</p>
+                          </div>
+                          <button onClick={() => handleCancelSearch(search.id)} className={`w-10 h-10 ${theme.bg} ${theme.muted} rounded-full hover:bg-red-50 hover:text-red-500 transition-colors`}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1739,7 +1794,36 @@ export default function App() {
                 </div>
               )}
 
-              <div className={`w-full ${theme.card} border ${theme.border} rounded-2xl p-4 flex items-center justify-between shadow-sm mt-6`}>
+              {/* ACCIONES DE CUENTA (JUGADOR) */}
+              {isLoggedIn && currentUser?.rol !== 'club' && (
+                <div className={`w-full ${theme.card} border ${theme.border} rounded-2xl p-4 shadow-sm mt-6 space-y-3`}>
+                  <h3 className={`text-[10px] font-black uppercase tracking-widest ${theme.muted} mb-2 text-left`}>Ajustes de Cuenta</h3>
+                  
+                  {!isChangingPin ? (
+                    <button onClick={() => setIsChangingPin(true)} className={`w-full flex items-center justify-between p-3 rounded-xl border ${theme.border} hover:bg-black/5 transition-all`}>
+                      <span className={`text-xs font-bold ${theme.text}`}>🔑 Cambiar PIN de Acceso</span>
+                      <span className={theme.muted}>➔</span>
+                    </button>
+                  ) : (
+                    <form onSubmit={handleCambiarPin} className="space-y-2 p-3 bg-black/5 rounded-xl border border-black/10 animate-in fade-in text-left">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#1268B0]">Actualizar PIN</p>
+                      <input type="password" inputMode="numeric" maxLength="4" placeholder="PIN Actual" value={pinActual} onChange={e=>setPinActual(e.target.value.replace(/\D/g,''))} className={`w-full bg-white border ${theme.border} rounded-lg px-3 py-2 text-center tracking-[1em] font-black focus:outline-none`} />
+                      <input type="password" inputMode="numeric" maxLength="4" placeholder="Nuevo PIN" value={pinNuevo} onChange={e=>setPinNuevo(e.target.value.replace(/\D/g,''))} className={`w-full bg-white border ${theme.border} rounded-lg px-3 py-2 text-center tracking-[1em] font-black focus:outline-none`} />
+                      <div className="flex gap-2 pt-1">
+                        <button type="button" onClick={() => {setIsChangingPin(false); setPinActual(''); setPinNuevo('');}} className="flex-1 text-[10px] font-black uppercase text-black/40 py-2 hover:bg-black/5 rounded-lg">Cancelar</button>
+                        <button type="submit" className="flex-1 bg-[#1268B0] text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md py-2">Guardar</button>
+                      </div>
+                    </form>
+                  )}
+
+                  <button onClick={() => { setComentario(`Hola, solicito el cambio de mi nombre en el perfil. Mi nombre correcto es: `); setTab('home'); setTimeout(()=> window.scrollTo(0, document.body.scrollHeight), 500); }} className={`w-full flex items-center justify-between p-3 rounded-xl border ${theme.border} hover:bg-black/5 transition-all`}>
+                    <span className={`text-xs font-bold ${theme.text}`}>📝 Solicitar Cambio de Nombre</span>
+                    <span className={theme.muted}>➔</span>
+                  </button>
+                </div>
+              )}
+
+              <div className={`w-full ${theme.card} border ${theme.border} rounded-2xl p-4 flex items-center justify-between shadow-sm mt-4`}>
                 <div className="flex items-center gap-3"><span className="text-xl">{modoOscuro ? '🌙' : '☀️'}</span><p className={`font-black uppercase tracking-widest text-[11px] ${theme.text}`}>Modo Oscuro</p></div>
                 <button onClick={toggleTheme} className={`w-14 h-8 flex items-center rounded-full p-1 transition-colors duration-300 shadow-inner ${modoOscuro ? 'bg-[#29C454]' : 'bg-[#1A1C1E]/20'}`}>
                   <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 ${modoOscuro ? 'translate-x-6' : 'translate-x-0'}`}></div>
@@ -1764,9 +1848,12 @@ export default function App() {
                     )}
                     
                     {/* ACCIONES COMPARTIDAS (ADMIN Y CLUB) */}
-                    <button onClick={() => { fetchClubPartidos(); setTab('club_agenda'); }} className={`col-span-2 w-full bg-[#E5B824] text-[#1A1C1E] py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95`}>
+                    <button onClick={() => setShowAltaJugador(true)} className={`w-full bg-[#1268B0] text-white py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95`}>
+                      👤 Alta Jugador
+                    </button> 
+                    <button onClick={() => { fetchClubPartidos(); setTab('club_agenda'); }} className={`w-full bg-[#E5B824] text-[#1A1C1E] py-4 rounded-2xl font-black italic uppercase text-[10px] shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95`}>
                       📅 Master Schedule
-                    </button>                    
+                    </button>                  
                   </div>
                 </div>
               )}
@@ -2386,8 +2473,34 @@ export default function App() {
       )}
 
       {/* =========================================
-          NAVEGACIÓN INFERIOR PWA
+          MODAL: ALTA DE JUGADOR RÁPIDA (B2B)
       ========================================= */}
+      {showAltaJugador && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className={`${theme.card} w-full max-w-sm rounded-[24px] p-6 shadow-2xl border ${theme.border} relative`}>
+            <button onClick={() => setShowAltaJugador(false)} className={`absolute top-4 right-4 w-8 h-8 ${theme.bg} rounded-full font-black ${theme.muted} hover:opacity-70 transition-colors`}>✕</button>
+            <div className="text-center mb-6">
+              <h2 className={`text-2xl font-black italic uppercase text-[#1268B0]`}>Nuevo Jugador</h2>
+              <p className={`text-[10px] font-bold uppercase tracking-widest ${theme.muted} mt-1`}>Alta rápida administrativa</p>
+            </div>
+            <form onSubmit={handleAltaJugadorAdmin} className="space-y-4">
+              <input type="text" required placeholder="Nombre (Ej. Juan)" value={altaNombre} onChange={e => setAltaNombre(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold focus:outline-none focus:border-[#1268B0] shadow-inner`} />
+              <input type="text" required placeholder="Apellido (Ej. Pérez)" value={altaApellido} onChange={e => setAltaApellido(e.target.value)} className={`w-full ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold focus:outline-none focus:border-[#1268B0] shadow-inner`} />
+              <div className="flex gap-2">
+                <select value={altaPrefix} onChange={e => setAltaPrefix(e.target.value)} className={`w-1/3 ${theme.bg} border ${theme.border} rounded-xl px-2 py-3 ${theme.text} font-bold appearance-none text-center shadow-inner cursor-pointer`}><option value="+52">+52</option><option value="+1">+1</option></select>
+                <input type="tel" required maxLength="10" placeholder="Celular (10 dígitos)" value={altaTelefono} onChange={e => setAltaTelefono(e.target.value.replace(/\D/g, ''))} className={`w-2/3 ${theme.bg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} font-bold tracking-widest focus:outline-none focus:border-[#1268B0] shadow-inner`} />
+              </div>
+              <div className="bg-[#1268B0]/10 border border-[#1268B0]/20 rounded-xl p-3 text-center mt-2">
+                 <p className="text-[9px] font-black uppercase text-[#1268B0] tracking-widest">Contraseña Automática</p>
+                 <p className={`text-[10px] font-bold mt-1 ${theme.text}`}>El sistema asignará los últimos 4 dígitos de su celular como PIN.</p>
+              </div>
+              <button type="submit" className="w-full bg-[#1268B0] text-white py-4 rounded-xl font-black italic uppercase text-xs shadow-lg shadow-[#1268B0]/30 active:scale-95 transition-all mt-4">
+                Dar de Alta ➜
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* =========================================
           NAVEGACIÓN INFERIOR PWA
