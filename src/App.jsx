@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.75';
+  const APP_VERSION = '1.76';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -374,7 +374,13 @@ export default function App() {
                   reubicados++;
                 } else {
                   if (p.tipo_creacion === 'matchmaking') {
-                    await supabase.from('buscar').update({ estado: 'activa' }).in('jugador_id', [p.jugador1_id, p.jugador2_id]).eq('fecha', p.fecha).eq('estado', 'match');
+                    // Consulta "Francotirador": Solo reactiva la búsqueda que encapsula el horario exacto del partido cancelado
+                    await supabase.from('buscar').update({ estado: 'activa' })
+                      .in('jugador_id', [p.jugador1_id, p.jugador2_id])
+                      .eq('fecha', p.fecha)
+                      .eq('estado', 'match')
+                      .lte('hora_inicio', p.hora_inicio)
+                      .gte('hora_fin', p.hora_fin);
                   }
                   await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', p.id);
                   await supabase.from('partidos').delete().eq('id', p.id);
@@ -449,29 +455,27 @@ export default function App() {
                   clase: "w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest text-white bg-[#007AFF] shadow-lg active:scale-95 transition-all",
                   accion: async () => {
                     try {
-                      // 1. Validar Canchas Activas
                       const { data: canchasActivas } = await supabase.from('canchas').select('*').eq('estado', 'activa');
                       
-                      // 2. Traer todos los partidos que crucen en ese horario
                       const { data: ocupadas } = await supabase.from('partidos')
                         .select('cancha_numero')
                         .eq('fecha', partido.fecha)
                         .lt('hora_inicio', partido.hora_fin)
                         .gt('hora_fin', partido.hora_inicio)
-                        .neq('id', partido.id); // Excluimos el partido actual
+                        .neq('id', partido.id); 
                         
                       const ocupadasIds = ocupadas ? ocupadas.map(o => o.cancha_numero) : [];
                       
-                      // 3. Filtrar canchas libres
-                      const libres = (canchasActivas || []).filter(c => !ocupadasIds.includes(c.id));
+                      // EXCLUSIÓN ESTRICTA: Que no esté ocupada Y que NO sea la cancha en la que ya está el partido
+                      const libres = (canchasActivas || []).filter(c => !ocupadasIds.includes(c.id) && c.id !== partido.cancha_numero);
                       
                       if (libres.length > 0) {
                           const nuevaCancha = libres[0];
                           await supabase.from('partidos').update({ cancha_numero: nuevaCancha.id, cancha_id: nuevaCancha.id }).eq('id', partido.id);
-                          mostrarAlerta("Éxito", `Partido reubicado automáticamente a la ${nuevaCancha.nombre}`);
+                          mostrarAlerta("Éxito", `Partido reubicado a la ${nuevaCancha.nombre}`);
                           fetchClubPartidos();
                       } else {
-                          mostrarError("Sin Canchas", "No hay canchas libres en este horario para reubicar. Deberás cancelar el partido definitivamente.");
+                          mostrarError("Sin Canchas", "No hay otras canchas libres en este horario. Deberás cancelar el partido definitivamente.");
                       }
                     } catch (err) { mostrarError("Error", "Fallo al intentar reubicar el partido."); }
                   }
@@ -1194,7 +1198,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.75</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.76</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
