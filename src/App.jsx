@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.71';
+  const APP_VERSION = '1.72';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -69,6 +69,7 @@ export default function App() {
   const mostrarAlerta = (titulo, mensaje) => setVadAlert({ tipo: 'info', titulo, mensaje });
   const mostrarError = (titulo, mensaje) => setVadAlert({ tipo: 'error', titulo, mensaje });
   const mostrarConfirmacion = (titulo, mensaje, accionConfirmar) => setVadAlert({ tipo: 'confirm', titulo, mensaje, accionConfirmar });
+  const mostrarOpciones = (titulo, mensaje, botones) => setVadAlert({ tipo: 'opciones', titulo, mensaje, botones });
   const cerrarAlerta = () => setVadAlert(null);
 
   // ==========================================
@@ -242,6 +243,10 @@ export default function App() {
         if (currentUser?.rol === 'admin') {
           cargarSugerenciasAdmin(); // Actualiza la lista e ilumina el puntito verde si hay nuevas
         }
+      })
+      // ESCUCHADOR DE INVENTARIO (CANCHAS) EN TIEMPO REAL
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'canchas' }, () => {
+        fetchCanchas();
       })
       .subscribe();
       
@@ -417,15 +422,52 @@ export default function App() {
            return;
         }
         
-        const msj = partido.estado === 'bloqueo_admin' ? `¿Liberar Cancha ${cancha}?` : `¿ELIMINAR PARTIDO?\n\nSe notificará a los jugadores pero NO se les regresará a la lista de espera.`;
-        mostrarConfirmacion("Administrar Celda", msj, async () => {
-            try {
-              if (partido.estado !== 'bloqueo_admin') await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
-              await supabase.from('partidos').delete().eq('id', partido.id); 
-              fetchClubPartidos();
-              resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
-            } catch (err) { mostrarError("Error", "No se pudo procesar la cancelación."); }
-        });
+        if (partido.estado === 'bloqueo_admin') {
+            mostrarConfirmacion("Liberar Cancha", `¿Liberar Cancha ${cancha}?`, async () => {
+                try {
+                  await supabase.from('partidos').delete().eq('id', partido.id); 
+                  fetchClubPartidos();
+                  resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+                } catch (err) { mostrarError("Error", "No se pudo procesar la cancelación."); }
+            });
+        } else {
+            mostrarOpciones(
+              "Administrar Partido", 
+              "¿Qué deseas hacer con los jugadores de este partido?",
+              [
+                {
+                  texto: "🔄 Cancelar y Re-encolar",
+                  clase: "w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest text-white bg-[#007AFF] shadow-lg active:scale-95 transition-all",
+                  accion: async () => {
+                    try {
+                      await supabase.from('buscar').update({ estado: 'activa' }).in('jugador_id', [partido.jugador1_id, partido.jugador2_id]).eq('fecha', partido.fecha).eq('estado', 'match');
+                      await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
+                      await supabase.from('partidos').delete().eq('id', partido.id);
+                      fetchClubPartidos();
+                      resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+                    } catch (err) { mostrarError("Error", "Fallo al cancelar."); }
+                  }
+                },
+                {
+                  texto: "❌ Cancelación Definitiva",
+                  clase: "w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest text-white bg-red-500 shadow-lg active:scale-95 transition-all",
+                  accion: async () => {
+                    try {
+                      await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
+                      await supabase.from('partidos').delete().eq('id', partido.id);
+                      fetchClubPartidos();
+                      resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
+                    } catch (err) { mostrarError("Error", "Fallo al cancelar."); }
+                  }
+                },
+                {
+                  texto: "Volver",
+                  clase: `w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest ${theme.muted} ${theme.bg} border ${theme.border} hover:opacity-70 transition-opacity`,
+                  accion: () => {} // Solo cierra la alerta
+                }
+              ]
+            );
+        }
       }
     } else {
       const hI = Math.floor(horaFloat); const mI = horaFloat % 1 === 0 ? '00' : '30';
@@ -622,8 +664,17 @@ export default function App() {
 
   const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
     try {
-      const { data: espera } = await supabase.from('buscar').select('*').eq('fecha', fechaStr).eq('superficie', superficie).eq('estado', 'activa').order('created_at', { ascending: true });
-      if (!espera || espera.length < 2) return; 
+      // 1. Candado: Asegurarnos de que la cancha libre no esté inhabilitada
+      const canchaDB = listaCanchas.find(c => c.id === canchaNum);
+      if (!canchaDB || canchaDB.estado === 'inhabilitada') return;
+
+      // 2. Traer a todos los que buscan en ese día para no ignorar a los de "Cualquier superficie"
+      const { data: esperaRaw } = await supabase.from('buscar').select('*').eq('fecha', fechaStr).eq('estado', 'activa').order('created_at', { ascending: true });
+      if (!esperaRaw) return;
+      
+      // 3. Filtro inteligente: Los que quieren esta superficie o les da igual
+      const espera = esperaRaw.filter(b => b.superficie === superficie || b.superficie === 'Cualquier superficie');
+      if (espera.length < 2) return; 
 
       const getMins = (t) => { const p = t.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
       let currentLibStart = getMins(horaLibreIn); 
@@ -1081,7 +1132,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.71</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.72</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1958,8 +2009,12 @@ export default function App() {
               <h3 className={`text-xl font-black italic uppercase tracking-tight mb-2 ${vadAlert.tipo === 'error' ? 'text-red-500' : theme.text}`}>{vadAlert.titulo}</h3>
               <p className={`${theme.muted} font-bold text-sm leading-relaxed whitespace-pre-wrap`}>{vadAlert.mensaje}</p>
             </div>
-            <div className="flex gap-3">
-              {vadAlert.tipo === 'confirm' ? (
+            <div className={`flex ${vadAlert.tipo === 'opciones' ? 'flex-col' : ''} gap-3 w-full`}>
+              {vadAlert.tipo === 'opciones' ? (
+                vadAlert.botones.map((btn, i) => (
+                  <button key={i} onClick={() => { btn.accion(); cerrarAlerta(); }} className={btn.clase}>{btn.texto}</button>
+                ))
+              ) : vadAlert.tipo === 'confirm' ? (
                 <>
                   <button onClick={cerrarAlerta} className={`flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest ${theme.muted} ${theme.bg} border ${theme.border} hover:opacity-70 transition-opacity`}>Cancelar</button>
                   <button onClick={() => { vadAlert.accionConfirmar(); cerrarAlerta(); }} className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-widest text-white bg-[#29C454] shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Confirmar</button>
