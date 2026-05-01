@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.78';
+  const APP_VERSION = '1.79';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -325,21 +325,29 @@ export default function App() {
 
   const cargarPendientes = async () => {
     try {
-      const ayer = new Date(new Date().getTime() - 24 * 60 * 60 * 1000);
-      const ayerStr = ayer.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+      const now = new Date();
+      const todayStr = getFormatDate(now);
 
-      // 1. Trae los estancados (en disputa o en revisión)
-      const { data: estancados } = await supabase.from('partidos')
+      // 1. Traer Disputas (Estas entran de inmediato)
+      const { data: disputas } = await supabase.from('partidos')
         .select('*')
-        .in('estado', ['en_disputa', 'en_revision']);
+        .eq('estado', 'en_disputa');
 
-      // 2. Trae los olvidados (Confirmados, pero la fecha fue ayer o antes)
-      const { data: olvidados } = await supabase.from('partidos')
+      // 2. Traer Confirmados y En Revisión (Para evaluar si pasaron 24 hrs)
+      const { data: revisar } = await supabase.from('partidos')
         .select('*')
-        .eq('estado', 'confirmado')
-        .lte('fecha', ayerStr);
+        .in('estado', ['confirmado', 'en_revision'])
+        .lte('fecha', todayStr);
 
-      const data = [...(estancados || []), ...(olvidados || [])].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      // Filtro matemático exacto de 24 horas después de la hora de finalización del partido
+      const masDe24h = (revisar || []).filter(p => {
+         const [y, m, d] = p.fecha.split('-');
+         const [h, min] = p.hora_fin.split(':');
+         const endObj = new Date(y, m - 1, d, h, min);
+         return (now - endObj) / (1000 * 60 * 60) >= 24;
+      });
+
+      const data = [...(disputas || []), ...masDe24h].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         
       if(data && data.length > 0) {
          const userIds = [...new Set(data.flatMap(m => [m.jugador1_id, m.jugador2_id]))];
@@ -856,6 +864,15 @@ export default function App() {
     if (max === 6 && min <= 4) return true; if (max === 7 && (min === 5 || min === 6)) return true; return false;
   };
 
+  const handleScoreChange = (val, setter, nextInputId) => {
+    const num = val.replace(/\D/g, ''); // Solo acepta números
+    setter(num);
+    if (num.length === 1 && nextInputId) {
+      const nextEl = document.getElementById(nextInputId);
+      if (nextEl && !nextEl.disabled) nextEl.focus();
+    }
+  };
+
   const handleDeclararWO = async (partido) => {
     mostrarConfirmacion(
       "Declarar W.O.", 
@@ -1260,7 +1277,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.78</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.79</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1564,19 +1581,19 @@ export default function App() {
                                     </div>
 
                                     <div className="flex gap-2 items-center justify-between">
-                                      <select value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                                      <input id="j_s1Mi" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s1Mi} onChange={(e)=>handleScoreChange(e.target.value, setS1Mi, 'j_s1Rival')} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#29C454]/50" />
                                       <span className="font-bold text-[10px] text-gray-500">1</span>
-                                      <select value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                                      <input id="j_s1Rival" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s1Rival} onChange={(e)=>handleScoreChange(e.target.value, setS1Rival, 'j_s2Mi')} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/50" />
                                     </div>
                                     <div className="flex gap-2 items-center justify-between">
-                                      <select value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                                      <input id="j_s2Mi" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s2Mi} onChange={(e)=>handleScoreChange(e.target.value, setS2Mi, 'j_s2Rival')} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#29C454]/50" />
                                       <span className="font-bold text-[10px] text-gray-500">2</span>
-                                      <select value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                                      <input id="j_s2Rival" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s2Rival} onChange={(e)=>handleScoreChange(e.target.value, setS2Rival, partidoDefinidoEnDosSets ? null : 'j_s3Mi')} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/50" />
                                     </div>
                                     <div className={`flex gap-2 items-center justify-between transition-all ${partidoDefinidoEnDosSets ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
-                                      <select disabled={partidoDefinidoEnDosSets} value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                                      <input id="j_s3Mi" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" disabled={partidoDefinidoEnDosSets} value={partidoDefinidoEnDosSets ? '' : s3Mi} onChange={(e)=>handleScoreChange(e.target.value, setS3Mi, 'j_s3Rival')} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#29C454]/50" />
                                       <span className="font-bold text-[10px] text-gray-500">3</span>
-                                      <select disabled={partidoDefinidoEnDosSets} value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                                      <input id="j_s3Rival" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" disabled={partidoDefinidoEnDosSets} value={partidoDefinidoEnDosSets ? '' : s3Rival} onChange={(e)=>handleScoreChange(e.target.value, setS3Rival, null)} className="w-14 p-2 rounded-lg text-center font-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/50" />
                                     </div>
                                     
                                     <div className="flex gap-2 pt-2">
@@ -2191,19 +2208,19 @@ export default function App() {
                 </div>
                 
                 <div className="flex gap-2 items-center justify-between">
-                  <select value={s1Mi} onChange={(e)=>setS1Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                  <input id="a_s1Mi" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s1Mi} onChange={(e)=>handleScoreChange(e.target.value, setS1Mi, 'a_s1Rival')} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/50" />
                   <span className="font-bold text-[10px] text-black/40">1</span>
-                  <select value={s1Rival} onChange={(e)=>setS1Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                  <input id="a_s1Rival" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s1Rival} onChange={(e)=>handleScoreChange(e.target.value, setS1Rival, 'a_s2Mi')} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 text-black focus:outline-none focus:ring-2 focus:ring-[#007AFF]/50" />
                 </div>
                 <div className="flex gap-2 items-center justify-between">
-                  <select value={s2Mi} onChange={(e)=>setS2Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                  <input id="a_s2Mi" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s2Mi} onChange={(e)=>handleScoreChange(e.target.value, setS2Mi, 'a_s2Rival')} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/50" />
                   <span className="font-bold text-[10px] text-black/40">2</span>
-                  <select value={s2Rival} onChange={(e)=>setS2Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                  <input id="a_s2Rival" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s2Rival} onChange={(e)=>handleScoreChange(e.target.value, setS2Rival, 'a_s3Mi')} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 text-black focus:outline-none focus:ring-2 focus:ring-[#007AFF]/50" />
                 </div>
                 <div className="flex gap-2 items-center justify-between">
-                  <select value={s3Mi} onChange={(e)=>setS3Mi(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                  <input id="a_s3Mi" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s3Mi} onChange={(e)=>handleScoreChange(e.target.value, setS3Mi, 'a_s3Rival')} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 text-black focus:outline-none focus:ring-2 focus:ring-[#064E3B]/50" />
                   <span className="font-bold text-[10px] text-black/40">3</span>
-                  <select value={s3Rival} onChange={(e)=>setS3Rival(e.target.value)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 appearance-none cursor-pointer"><option value="">-</option>{[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n}</option>)}</select>
+                  <input id="a_s3Rival" type="text" inputMode="numeric" pattern="[0-9]*" maxLength="1" placeholder="-" value={s3Rival} onChange={(e)=>handleScoreChange(e.target.value, setS3Rival, null)} className="w-14 p-2 rounded-lg text-center font-black bg-black/5 text-black focus:outline-none focus:ring-2 focus:ring-[#007AFF]/50" />
                 </div>
                 
                 <button onClick={() => handleAdminOverride(partidoAdmin, 'score')} className="w-full bg-[#064E3B] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md mt-4 active:scale-95 transition-all">Sobrescribir Resultado</button>
@@ -2344,11 +2361,11 @@ export default function App() {
                            p.estado === 'en_revision' ? 'bg-yellow-500/10 text-yellow-600' : 
                            'bg-gray-500/10 text-gray-600'
                         }`}>
-                           {p.estado === 'en_disputa' ? 'En Disputa' : p.estado === 'en_revision' ? 'En Revisión' : 'Olvidado (24h+)'}
+                           {p.estado === 'en_disputa' ? 'En Disputa' : p.estado === 'en_revision' ? 'Abandono (24h+)' : 'Olvidado (24h+)'}
                         </span>
                       </div>
                       <p className="text-xs font-bold text-black/60">
-                        {p.estado === 'en_revision' ? `Marcador reportado: ${p.marcador} (El rival no ha confirmado)` : 
+                        {p.estado === 'en_revision' ? `Marcador reportado: ${p.marcador} (Pasaron 24h y el rival nunca confirmó)` : 
                          p.estado === 'en_disputa' ? 'Hay un conflicto con el resultado. Requiere intervención.' : 
                          'Pasaron más de 24 horas y ningún jugador reportó el marcador.'}
                       </p>
