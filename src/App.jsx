@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.82';
+  const APP_VERSION = '1.83';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -171,7 +171,11 @@ export default function App() {
       const parsedUser = JSON.parse(savedUser);
       setCurrentUser(parsedUser);
       setIsLoggedIn(true);
-      if (parsedUser.rol === 'club') setTab('club_agenda');
+      if (parsedUser.rol === 'club' || parsedUser.rol === 'admin') {
+         setTab('club_agenda');
+      } else {
+         setTab('jugar'); // 🚀 Manda al jugador directo a la acción
+      }
     } else {
       localStorage.removeItem('vad_session');
     }
@@ -1096,8 +1100,8 @@ export default function App() {
       if (existingUser) {
         if (existingUser.pin === pin) { 
           setCurrentUser(existingUser); setIsLoggedIn(true); 
-          setTab(existingUser.rol === 'club' ? 'club_agenda' : 'home'); 
-          localStorage.setItem('vad_session', JSON.stringify(existingUser)); 
+          setTab((existingUser.rol === 'club' || existingUser.rol === 'admin') ? 'club_agenda' : 'jugar'); 
+          localStorage.setItem('vad_session', JSON.stringify(existingUser));
         } else { setAuthError('PIN incorrecto.'); }
       } else { setAuthError('Número no registrado. Regístrate primero.'); }
     } catch (error) { setAuthError('Error de conexión.'); } finally { setAuthLoading(false); }
@@ -1122,7 +1126,7 @@ export default function App() {
     try {
       const { data: newUser, error } = await supabase.from('perfiles').insert([{ telefono: fullPhone, pin: pin, nombre: fullName, elo: 1200, confianza: 5.0, racha_asistencia: 0, comodines: 2, rol: 'gratis' }]).select().single();
       if (error) throw error;
-      setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegNombre(''); setRegApellido(''); setRegStep(1); setPin(''); setTab('home'); localStorage.setItem('vad_session', JSON.stringify(newUser));
+      setCurrentUser(newUser); setIsLoggedIn(true); setIsRegistering(false); setRegNombre(''); setRegApellido(''); setRegStep(1); setPin(''); setTab('jugar'); localStorage.setItem('vad_session', JSON.stringify(newUser));
     } catch (error) { setAuthError('Error al crear tu cuenta.'); } finally { setAuthLoading(false); }
   };
 
@@ -1325,7 +1329,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.82</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.83</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -2514,10 +2518,15 @@ export default function App() {
       {/* =========================================
           NAVEGACIÓN INFERIOR PWA
       ========================================= */}
-      {(!isLoggedIn || currentUser?.rol !== 'club') && (
+      {(!isLoggedIn || (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin')) && (
         <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
           <div className="flex justify-between items-center max-w-sm mx-auto px-4">
-            {[ { id: 'home', icon: '🏠', label: 'Inicio' }, { id: 'jugar', icon: '🎾', label: 'Jugar' }, { id: 'partidos', icon: '📋', label: 'Partidos' }, { id: 'perfil', icon: '👤', label: 'Perfil' } ].map((item) => (
+            {[ 
+               ...(isLoggedIn ? [] : [{ id: 'home', icon: '🏠', label: 'Inicio' }]), 
+               { id: 'jugar', icon: '🎾', label: 'Jugar' }, 
+               { id: 'partidos', icon: '📋', label: 'Partidos' }, 
+               { id: 'perfil', icon: '👤', label: 'Perfil' } 
+            ].map((item) => (
               <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-150 active:scale-90 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
                 <div className="relative flex flex-col items-center gap-1">
                   <span className="text-xl mb-0.5">{item.icon}</span>
