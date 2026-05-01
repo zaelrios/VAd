@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.76';
+  const APP_VERSION = '1.77';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -143,6 +143,8 @@ export default function App() {
   const [iteraciones, setIteraciones] = useState(1);
   const [diasRecurrencia, setDiasRecurrencia] = useState([]);
   const [partidoAdmin, setPartidoAdmin] = useState(null);
+  const [showPendientes, setShowPendientes] = useState(false);
+  const [listaPendientes, setListaPendientes] = useState([]);
 
   const procesadosRef = useRef(new Set()); // Candado Anti-Bucle Infinito
   
@@ -319,6 +321,26 @@ export default function App() {
         setClubPartidos(matches.map(m => ({ ...m, j1_nombre: pMap[m.jugador1_id] || 'Club', j2_nombre: pMap[m.jugador2_id] || 'Reservado' })));
       } else { setClubPartidos([]); }
     } catch (error) { console.error("Error agenda:", error); }
+  };
+
+  const cargarPendientes = async () => {
+    try {
+      // Trae los estancados (en disputa o en revisión que no han sido confirmados)
+      const { data } = await supabase.from('partidos')
+        .select('*')
+        .in('estado', ['en_disputa', 'en_revision'])
+        .order('fecha', { ascending: false });
+        
+      if(data && data.length > 0) {
+         const userIds = [...new Set(data.flatMap(m => [m.jugador1_id, m.jugador2_id]))];
+         const { data: perfiles } = await supabase.from('perfiles').select('id, nombre').in('id', userIds);
+         const pMap = perfiles?.reduce((acc, p) => ({...acc, [p.id]: p.nombre}), {}) || {};
+         setListaPendientes(data.map(m => ({ ...m, j1_nombre: pMap[m.jugador1_id], j2_nombre: pMap[m.jugador2_id] })));
+      } else {
+         setListaPendientes([]);
+      }
+      setShowPendientes(true);
+    } catch (e) { mostrarError("Error", "No se pudieron cargar los pendientes."); }
   };
 
   const fetchCanchas = async () => {
@@ -916,75 +938,82 @@ export default function App() {
       let baseConfP1 = p1.confianza; let baseConfP2 = p2.confianza;
       let baseRachaP1 = p1.racha_asistencia; let baseRachaP2 = p2.racha_asistencia;
 
+      // Revertir si el partido ya había restado puntos antes de la disputa
       if (partido.estado === 'finalizado' || partido.estado === 'wo') {
-        baseEloP1 -= (partido.puntos_j1 || 0);
-        baseEloP2 -= (partido.puntos_j2 || 0);
-        baseConfP1 -= (partido.delta_conf_j1 || 0);
-        baseConfP2 -= (partido.delta_conf_j2 || 0);
-        if (partido.racha_previa_j1 !== undefined && partido.racha_previa_j1 !== null) baseRachaP1 = partido.racha_previa_j1;
-        if (partido.racha_previa_j2 !== undefined && partido.racha_previa_j2 !== null) baseRachaP2 = partido.racha_previa_j2;
+        baseEloP1 -= (partido.puntos_j1 || 0); baseEloP2 -= (partido.puntos_j2 || 0);
+        baseConfP1 -= (partido.delta_conf_j1 || 0); baseConfP2 -= (partido.delta_conf_j2 || 0);
+        if (partido.racha_previa_j1 !== null) baseRachaP1 = partido.racha_previa_j1;
+        if (partido.racha_previa_j2 !== null) baseRachaP2 = partido.racha_previa_j2;
       }
 
-      let marcadorFinal = "W.O.";
-      let ganadorIdCalculado = null;
-      let isWO = tipoResultado.startsWith('wo_');
-
-      if (isWO) {
-        ganadorIdCalculado = tipoResultado === 'wo_j1' ? partido.jugador2_id : partido.jugador1_id;
-      } else {
-        const v1Mi = parseInt(s1Mi, 10); const v1Riv = parseInt(s1Rival, 10); const v2Mi = parseInt(s2Mi, 10); const v2Riv = parseInt(s2Rival, 10);
-        if (!isValidTennisSet(v1Mi, v1Riv) || !isValidTennisSet(v2Mi, v2Riv)) { mostrarError("Inválido", "Marcadores de set inválidos."); return; }
-        let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0); let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0); 
-        marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
-        if (setsMi === 1 && setsRiv === 1) {
-          const v3Mi = parseInt(s3Mi, 10); const v3Riv = parseInt(s3Rival, 10);
-          if (!isValidTennisSet(v3Mi, v3Riv)) { mostrarError("Inválido", "Tercer set inválido."); return; }
-          setsMi += (v3Mi > v3Riv ? 1 : 0); setsRiv += (v3Riv > v3Mi ? 1 : 0); marcadorFinal += `, ${v3Mi}-${v3Riv}`;
-        }
-        if (setsMi === setsRiv) { mostrarError("Error", "No puede haber empate."); return; }
-        ganadorIdCalculado = setsMi > setsRiv ? partido.jugador1_id : partido.jugador2_id;
+      // OPCIÓN: Anulación (Empate técnico / Clima). No hay castigo.
+      if (tipoResultado === 'anulado') {
+         await supabase.from('perfiles').update({ elo: baseEloP1, confianza: baseConfP1, racha_asistencia: baseRachaP1 }).eq('id', p1.id);
+         await supabase.from('perfiles').update({ elo: baseEloP2, confianza: baseConfP2, racha_asistencia: baseRachaP2 }).eq('id', p2.id);
+         await supabase.from('partidos').update({ estado: 'cancelado_admin', marcador: 'Anulado (Sin afectación)', ganador_id: null, puntos_j1: 0, puntos_j2: 0, delta_conf_j1: 0, delta_conf_j2: 0 }).eq('id', partido.id);
+         fetchClubPartidos(); setBloqueoActivo(null); setPartidoAdmin(null);
+         if(showPendientes) cargarPendientes();
+         mostrarAlerta("Partido Anulado", "Se canceló sin afectar el ELO ni la confiabilidad de los jugadores.");
+         return;
       }
 
-      const p1Gano = ganadorIdCalculado === partido.jugador1_id;
-      let p1NuevoElo = calculateElo(baseEloP1, baseEloP2, isWO ? (p1Gano ? "6-0, 6-0" : "0-6, 0-6") : marcadorFinal, p1Gano);
-      let p2NuevoElo = calculateElo(baseEloP2, baseEloP1, isWO ? (!p1Gano ? "6-0, 6-0" : "0-6, 0-6") : marcadorFinal, !p1Gano);
-
+      let marcadorFinal = "W.O."; let ganadorIdCalculado = null;
+      let p1NuevoElo = baseEloP1; let p2NuevoElo = baseEloP2;
       let p1NuevaConf = baseConfP1; let p2NuevaConf = baseConfP2;
       let p1NuevaRacha = baseRachaP1; let p2NuevaRacha = baseRachaP2;
 
-      if (isWO) {
-        if (tipoResultado === 'wo_j1') { p1NuevaConf = Math.max(0, baseConfP1 - 1.0); p1NuevaRacha = 0; }
-        if (tipoResultado === 'wo_j2') { p2NuevaConf = Math.max(0, baseConfP2 - 1.0); p2NuevaRacha = 0; }
-      } else {
-        const res1 = calcularNuevaConfianza(baseConfP1, baseRachaP1); p1NuevaConf = res1.nuevaConfianza; p1NuevaRacha = res1.nuevaRacha;
-        const res2 = calcularNuevaConfianza(baseConfP2, baseRachaP2); p2NuevaConf = res2.nuevaConfianza; p2NuevaRacha = res2.nuevaRacha;
+      // OPCIÓN: Doble W.O. (Ambos no llegaron). Ambos pierden ELO, Confianza y Racha.
+      if (tipoResultado === 'wo_ambos') {
+         marcadorFinal = "Doble W.O.";
+         p1NuevoElo = calculateElo(baseEloP1, baseEloP2, "0-6, 0-6", false);
+         p2NuevoElo = calculateElo(baseEloP2, baseEloP1, "0-6, 0-6", false);
+         p1NuevaConf = Math.max(0, baseConfP1 - 1.0); p2NuevaConf = Math.max(0, baseConfP2 - 1.0);
+         p1NuevaRacha = 0; p2NuevaRacha = 0;
+      } 
+      // OPCIÓN: W.O. Tradicional
+      else if (tipoResultado.startsWith('wo_')) {
+         ganadorIdCalculado = tipoResultado === 'wo_j1' ? p2.id : p1.id;
+         const p1Gano = ganadorIdCalculado === p1.id;
+         p1NuevoElo = calculateElo(baseEloP1, baseEloP2, p1Gano ? "6-0, 6-0" : "0-6, 0-6", p1Gano);
+         p2NuevoElo = calculateElo(baseEloP2, baseEloP1, !p1Gano ? "6-0, 6-0" : "0-6, 0-6", !p1Gano);
+         if (!p1Gano) { p1NuevaConf = Math.max(0, baseConfP1 - 1.0); p1NuevaRacha = 0; }
+         if (p1Gano) { p2NuevaConf = Math.max(0, baseConfP2 - 1.0); p2NuevaRacha = 0; }
+      } 
+      // OPCIÓN: Sobrescribir Marcador Manual
+      else {
+         const v1Mi = parseInt(s1Mi, 10); const v1Riv = parseInt(s1Rival, 10); const v2Mi = parseInt(s2Mi, 10); const v2Riv = parseInt(s2Rival, 10);
+         if (!isValidTennisSet(v1Mi, v1Riv) || !isValidTennisSet(v2Mi, v2Riv)) { mostrarError("Inválido", "Marcadores de set inválidos."); return; }
+         let setsMi = (v1Mi > v1Riv ? 1 : 0) + (v2Mi > v2Riv ? 1 : 0); let setsRiv = (v1Riv > v1Mi ? 1 : 0) + (v2Riv > v2Mi ? 1 : 0); 
+         marcadorFinal = `${v1Mi}-${v1Riv}, ${v2Mi}-${v2Riv}`;
+         if (setsMi === 1 && setsRiv === 1) {
+           const v3Mi = parseInt(s3Mi, 10); const v3Riv = parseInt(s3Rival, 10);
+           if (!isValidTennisSet(v3Mi, v3Riv)) { mostrarError("Inválido", "Tercer set inválido."); return; }
+           setsMi += (v3Mi > v3Riv ? 1 : 0); setsRiv += (v3Riv > v3Mi ? 1 : 0); marcadorFinal += `, ${v3Mi}-${v3Riv}`;
+         }
+         if (setsMi === setsRiv) { mostrarError("Error", "No puede haber empate."); return; }
+         ganadorIdCalculado = setsMi > setsRiv ? p1.id : p2.id;
+         
+         const p1Gano = ganadorIdCalculado === p1.id;
+         p1NuevoElo = calculateElo(baseEloP1, baseEloP2, marcadorFinal, p1Gano);
+         p2NuevoElo = calculateElo(baseEloP2, baseEloP1, marcadorFinal, !p1Gano);
+         const res1 = calcularNuevaConfianza(baseConfP1, baseRachaP1); p1NuevaConf = res1.nuevaConfianza; p1NuevaRacha = res1.nuevaRacha;
+         const res2 = calcularNuevaConfianza(baseConfP2, baseRachaP2); p2NuevaConf = res2.nuevaConfianza; p2NuevaRacha = res2.nuevaRacha;
       }
-      
-      const { error: err1 } = await supabase.from('perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
-      if (err1) throw err1;
-      const { error: err2 } = await supabase.from('perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
-      if (err2) throw err2;
+
+      await supabase.from('perfiles').update({ elo: p1NuevoElo, confianza: p1NuevaConf, racha_asistencia: p1NuevaRacha }).eq('id', p1.id);
+      await supabase.from('perfiles').update({ elo: p2NuevoElo, confianza: p2NuevaConf, racha_asistencia: p2NuevaRacha }).eq('id', p2.id);
 
       const dataUpdate = { 
-        estado: isWO ? 'wo' : 'finalizado', 
-        marcador: marcadorFinal, 
-        ganador_id: ganadorIdCalculado, 
-        reportado_por: currentUser.id, 
-        puntos_j1: p1NuevoElo - baseEloP1, 
-        puntos_j2: p2NuevoElo - baseEloP2,
-        delta_conf_j1: p1NuevaConf - baseConfP1,
-        delta_conf_j2: p2NuevaConf - baseConfP2,
-        racha_previa_j1: baseRachaP1,
-        racha_previa_j2: baseRachaP2
+        estado: tipoResultado.startsWith('wo') ? 'wo' : 'finalizado', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id, 
+        puntos_j1: p1NuevoElo - baseEloP1, puntos_j2: p2NuevoElo - baseEloP2, delta_conf_j1: p1NuevaConf - baseConfP1, delta_conf_j2: p2NuevaConf - baseConfP2,
+        racha_previa_j1: baseRachaP1, racha_previa_j2: baseRachaP2
       };
       
-      const { error: err3 } = await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
-      if (err3) throw err3;
-      
-      await fetchClubPartidos(); 
-      setBloqueoActivo(null); setPartidoAdmin(null);
-      mostrarAlerta("Override Exitoso", "El partido ha sido procesado/revertido correctamente.");
-    } catch (error) { mostrarError("Error", error.message || "Error al actualizar la base de datos."); }
+      await supabase.from('partidos').update(dataUpdate).eq('id', partido.id); 
+      fetchClubPartidos(); setBloqueoActivo(null); setPartidoAdmin(null);
+      if(showPendientes) cargarPendientes();
+      mostrarAlerta("Éxito", "El partido ha sido resuelto y los perfiles actualizados.");
+    } catch (error) { mostrarError("Error", "Fallo de conexión al actualizar."); }
   };
 
   const handleWO = (partido) => {
@@ -1198,7 +1227,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.76</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.77</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1692,7 +1721,7 @@ export default function App() {
               <div className="flex flex-col items-center text-center space-y-4 relative w-full">
                 
                 <button 
-                  onClick={() => { /* Lógica futura para disputas */ }}
+                  onClick={cargarPendientes}
                   className={`absolute top-0 left-0 hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border ${theme.border} ${theme.card} hover:text-[#E5B824] transition-all active:scale-95 shadow-sm`}
                 >
                   ⏳ Partidos Pendientes
@@ -1712,10 +1741,10 @@ export default function App() {
                 
                 <div className="md:hidden flex w-full gap-2">
                   <button 
-                    onClick={() => { /* Lógica futura para disputas */ }}
+                  onClick={cargarPendientes}
                     className="flex-1 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest bg-[#E5B824] text-[#1A1C1E] shadow-lg active:scale-95"
                   >
-                    ⏳ Pendientes
+                    ⏳ Partidos Pendientes
                   </button>
                   <button 
                     onClick={() => { fetchCanchas(); setTab('admin_canchas'); }}
@@ -1780,8 +1809,8 @@ export default function App() {
                 <div className="flex flex-col min-w-max">
                   
                  {/* HEADER DE HORAS (Línea de Tiempo Continua) */}
-                  <div className={`flex sticky top-0 z-30 ${theme.card} border-b-2 ${theme.border} shadow-sm`}>
-                    <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-40 ${theme.card} flex items-end justify-end pr-4 pt-4 pb-3 border-r-2 ${theme.border}`}>
+                  <div className={`flex sticky top-0 z-40 ${theme.card} border-b-2 ${theme.border} shadow-sm h-16`}>
+                    <div className={`w-28 md:w-36 shrink-0 sticky left-0 z-50 ${theme.card} flex items-end justify-end pr-4 pb-3 border-r-2 ${theme.border}`}>
                       <span className={`text-[9px] font-black uppercase tracking-widest ${theme.muted} mb-1`}>Hora ➜</span>
                     </div>
                     {horasGrid.map(horaFloat => {
@@ -1789,7 +1818,7 @@ export default function App() {
                       const mInt = horaFloat % 1 === 0 ? 0 : 30;
                       const isHalfHour = mInt === 30;
                       return (
-                        <div key={horaFloat} className={`w-20 md:w-24 shrink-0 flex flex-col items-center justify-end pt-4 pb-3 border-r ${theme.border} ${isHalfHour ? 'bg-black/5' : ''}`}>
+                        <div key={horaFloat} className={`w-20 md:w-24 shrink-0 flex flex-col items-center justify-end pb-3 border-r ${theme.border} ${isHalfHour ? 'bg-black/5' : ''}`}>
                           <span className={`text-[10px] md:text-xs font-black ${isHalfHour ? theme.muted : theme.text} ${isHalfHour ? 'opacity-40' : 'opacity-100'}`}>
                             {hInt > 12 ? hInt - 12 : hInt}:{mInt === 0 ? '00' : '30'}
                           </span>
@@ -1802,16 +1831,16 @@ export default function App() {
                   {/* CUERPO DEL CALENDARIO */}
                   {selectedDays.map((dayStr) => (
                     <React.Fragment key={dayStr}>
-                      {selectedDays.length > 1 && (
-                        <div className={`flex w-full sticky left-0 z-20 bg-[#007AFF] text-white p-2 mt-4 shadow-sm`}>
-                          <span className="font-black text-xs uppercase tracking-widest pl-4">
-                            📅 {new Date(dayStr + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
-                          </span>
-                        </div>
-                      )}
+                      
+                      {/* BANNER DE FECHA SIEMPRE VISIBLE Y PEGAJOSO (top-16 = 64px debajo de las horas, capa 30) */}
+                      <div className={`flex w-full sticky top-16 z-30 bg-[#007AFF] text-white p-2 shadow-md border-b border-black/10`}>
+                        {/* El texto flota a la izquierda al hacer scroll horizontal */}
+                        <span className="font-black text-xs uppercase tracking-widest sticky left-4">
+                          📅 {new Date(dayStr + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
 
                       {filtroCanchas.map(c => {
-                        const [y, m, d] = dayStr.split('-');
                         return (
                           <div key={`${dayStr}-${c}`} className={`flex group border-b ${theme.border} hover:bg-white/50 transition-colors`}>
                             
@@ -1820,7 +1849,6 @@ export default function App() {
                               <span className={`text-xs md:text-sm font-black uppercase ${theme.text}`}>
                                 {listaCanchas.find(lc => lc.id === c)?.nombre || `Cancha ${c}`}
                               </span>
-                              {selectedDays.length === 1 && <span className="text-[#007AFF] text-[9px] font-black tracking-widest opacity-80 mt-0.5">{d}/{m}</span>}
                             </div>
 
                             {/* CELDAS DE TIEMPO (Bloques de 30 min fusionados) */}
@@ -2128,9 +2156,11 @@ export default function App() {
                 
                 <button onClick={() => handleAdminOverride(partidoAdmin, 'score')} className="w-full bg-[#064E3B] text-white py-3 rounded-xl font-black uppercase text-xs shadow-md mt-4 active:scale-95 transition-all">Sobrescribir Resultado</button>
                 <div className="flex gap-2 mt-2">
-                  <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_j1')} className="flex-1 border border-[#991B1B] text-[#991B1B] py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#991B1B]/10 active:scale-95 transition-all">W.O. {partidoAdmin.j1_nombre.split(' ')[0]}</button>
-                  <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_j2')} className="flex-1 border border-[#991B1B] text-[#991B1B] py-3 rounded-xl font-black uppercase text-[10px] hover:bg-[#991B1B]/10 active:scale-95 transition-all">W.O. {partidoAdmin.j2_nombre.split(' ')[0]}</button>
+                  <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_j1')} className="flex-1 border border-[#991B1B] text-[#991B1B] py-2 rounded-xl font-black uppercase text-[9px] hover:bg-[#991B1B]/10 active:scale-95 transition-all">W.O. {partidoAdmin.j1_nombre.split(' ')[0]}</button>
+                  <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_j2')} className="flex-1 border border-[#991B1B] text-[#991B1B] py-2 rounded-xl font-black uppercase text-[9px] hover:bg-[#991B1B]/10 active:scale-95 transition-all">W.O. {partidoAdmin.j2_nombre.split(' ')[0]}</button>
                 </div>
+                <button onClick={() => handleAdminOverride(partidoAdmin, 'wo_ambos')} className="w-full bg-[#991B1B] text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md mt-2 active:scale-95 transition-all">🚨 Doble W.O. (Castigar a Ambos)</button>
+                <button onClick={() => handleAdminOverride(partidoAdmin, 'anulado')} className="w-full border-2 border-[#007AFF]/50 text-[#007AFF] py-3 rounded-xl font-black uppercase text-[10px] tracking-widest mt-2 active:scale-95 hover:bg-[#007AFF]/10 transition-all">Anular (Sin Afectación)</button>
                 <button onClick={() => { setPartidoAdmin(null); setBloqueoActivo(null); }} className="w-full text-black/40 font-bold text-[10px] uppercase mt-4 active:scale-95">Cancelar</button>
               </div>
             ) : (
@@ -2234,6 +2264,50 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* =========================================
+          MODAL DE PARTIDOS PENDIENTES
+      ========================================= */}
+      {showPendientes && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-[#F9F8F1] w-full max-w-lg rounded-[24px] p-6 shadow-2xl border border-black/5 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b border-black/10 pb-4 mb-4">
+              <h2 className="text-2xl font-black italic uppercase text-[#064E3B]">Pendientes</h2>
+              <button onClick={() => setShowPendientes(false)} className="w-8 h-8 bg-black/5 rounded-full font-black text-black/40 hover:bg-black/10 transition-colors">✕</button>
+            </div>
+            
+            <div className="overflow-y-auto custom-scrollbar flex-1 space-y-4">
+               {listaPendientes.length === 0 ? (
+                 <p className="text-center font-bold text-black/40 py-10 uppercase tracking-widest text-[10px]">No hay partidos estancados.</p>
+               ) : (
+                 listaPendientes.map(p => (
+                   <div key={p.id} className="bg-white p-4 rounded-xl border border-black/10 shadow-sm flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-[10px] font-black uppercase text-black/40 tracking-widest">{p.fecha} • {p.hora_inicio}</p>
+                          <p className="font-black italic text-lg">{p.j1_nombre.split(' ')[0]} vs {p.j2_nombre.split(' ')[0]}</p>
+                        </div>
+                        <span className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${p.estado === 'en_disputa' ? 'bg-red-500/10 text-red-600' : 'bg-yellow-500/10 text-yellow-600'}`}>
+                           {p.estado === 'en_disputa' ? 'En Disputa' : 'En Revisión'}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-black/60">
+                        {p.estado === 'en_revision' ? `Marcador reportado: ${p.marcador} (El rival no ha confirmado)` : 'Hay un conflicto con el resultado. Requiere intervención.'}
+                      </p>
+                      <button onClick={() => { setPartidoAdmin(p); setModalAccion('reportar_admin'); setBloqueoActivo({ cancha: p.cancha_numero, horaFloat: 0, fechaStr: p.fecha }); }} className="w-full bg-[#007AFF] text-white py-3 rounded-lg font-black uppercase tracking-widest text-[10px] shadow-sm active:scale-95 transition-all">
+                        Resolver Partido ➜
+                      </button>
+                   </div>
+                 ))
+               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================
+          NAVEGACIÓN INFERIOR PWA
+      ========================================= */}
 
       {/* =========================================
           NAVEGACIÓN INFERIOR PWA
