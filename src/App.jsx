@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.72';
+  const APP_VERSION = '1.73';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -664,8 +664,8 @@ export default function App() {
 
   const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
     try {
-      // 1. Candado: Asegurarnos de que la cancha libre no esté inhabilitada
-      const canchaDB = listaCanchas.find(c => c.id === canchaNum);
+      // 1. Candado: Preguntar al servidor si la cancha está realmente activa
+      const { data: canchaDB } = await supabase.from('canchas').select('estado').eq('id', canchaNum).single();
       if (!canchaDB || canchaDB.estado === 'inhabilitada') return;
 
       // 2. Traer a todos los que buscan en ese día para no ignorar a los de "Cualquier superficie"
@@ -1019,7 +1019,12 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      const canchasActivas = listaCanchas.filter(c => c.estado === 'activa' && (superficie === 'Cualquier superficie' || c.superficie === superficie));
+      // 🛡️ REGLA DE ORO: Validar canchas activas directo en la Base de Datos (Server-Side Truth)
+      let queryCanchas = supabase.from('canchas').select('*').eq('estado', 'activa');
+      if (superficie !== 'Cualquier superficie') queryCanchas = queryCanchas.eq('superficie', superficie);
+      const { data: canchasActivasDB } = await queryCanchas;
+      const canchasActivas = canchasActivasDB || [];
+
       let queryOcupadas = supabase.from('partidos').select('cancha_numero, superficie').eq('fecha', searchDate).lt('hora_inicio', endTime).gt('hora_fin', startTime);
       if (superficie !== 'Cualquier superficie') queryOcupadas = queryOcupadas.eq('superficie', superficie);
       const { data: ocupadas } = await queryOcupadas;
@@ -1132,7 +1137,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.72</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.73</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
