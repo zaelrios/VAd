@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.74';
+  const APP_VERSION = '1.75';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -692,15 +692,12 @@ export default function App() {
 
   const resolverListaDeEspera = async (fechaStr, superficie, canchaNum, horaLibreIn, horaLibreFin) => {
     try {
-      // 1. Candado: Preguntar al servidor si la cancha está realmente activa
       const { data: canchaDB } = await supabase.from('canchas').select('estado').eq('id', canchaNum).single();
       if (!canchaDB || canchaDB.estado === 'inhabilitada') return;
 
-      // 2. Traer a todos los que buscan en ese día para no ignorar a los de "Cualquier superficie"
       const { data: esperaRaw } = await supabase.from('buscar').select('*').eq('fecha', fechaStr).eq('estado', 'activa').order('created_at', { ascending: true });
       if (!esperaRaw) return;
       
-      // 3. Filtro inteligente: Los que quieren esta superficie o les da igual
       const espera = esperaRaw.filter(b => b.superficie === superficie || b.superficie === 'Cualquier superficie');
       if (espera.length < 2) return; 
 
@@ -723,13 +720,20 @@ export default function App() {
             
             if (Math.abs((p1?.elo||1000) - (p2?.elo||1000)) <= 200) {
               const mStart = `${String(Math.floor(maxStart/60)).padStart(2,'0')}:${String(maxStart%60).padStart(2,'0')}:00`;
-              const mEnd = `${String(Math.floor((maxStart+60)/60)).padStart(2,'0')}:${String((maxStart+60)%60).padStart(2,'0')}:00`;
-              const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', fechaStr).eq('cancha_numero', canchaNum).lt('hora_inicio', mEnd).gt('hora_fin', mStart);
+              const mEnd = `${String(Math.floor((maxStart+120)/60)).padStart(2,'0')}:${String((maxStart+120)%60).padStart(2,'0')}:00`;
+              
+              const { data: choque } = await supabase.from('partidos').select('id')
+                .eq('fecha', fechaStr)
+                .eq('cancha_numero', canchaNum)
+                .in('estado', ['confirmado', 'bloqueo_admin', 'en_revision', 'en_disputa']) // Blindaje anti-fantasmas
+                .lt('hora_inicio', mEnd)
+                .gt('hora_fin', mStart);
 
               if (!choque || choque.length === 0) {
+                const cInfo = listaCanchas.find(c => c.id === canchaNum);
                 const { data: nuevo, error } = await supabase.from('partidos').insert([{
                   jugador1_id: j1.jugador_id, jugador2_id: j2.jugador_id, fecha: fechaStr, 
-                  hora_inicio: mStart, hora_fin: mEnd, superficie: superficie, cancha_numero: canchaNum, estado: 'confirmado', tipo_creacion: 'matchmaking'
+                  hora_inicio: mStart, hora_fin: mEnd, superficie: cInfo?.superficie || superficie, cancha_numero: canchaNum, cancha_id: canchaNum, estado: 'confirmado', tipo_creacion: 'matchmaking'
                 }]).select();
 
                 if (!error && nuevo) {
@@ -1047,13 +1051,18 @@ export default function App() {
     if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
 
     try {
-      // 🛡️ REGLA DE ORO: Validar canchas activas directo en la Base de Datos (Server-Side Truth)
+      // 1. Obtener canchas reales activas
       let queryCanchas = supabase.from('canchas').select('*').eq('estado', 'activa');
       if (superficie !== 'Cualquier superficie') queryCanchas = queryCanchas.eq('superficie', superficie);
       const { data: canchasActivasDB } = await queryCanchas;
       const canchasActivas = canchasActivasDB || [];
 
-      let queryOcupadas = supabase.from('partidos').select('cancha_numero, superficie').eq('fecha', searchDate).lt('hora_inicio', endTime).gt('hora_fin', startTime);
+      // 2. Obtener ocupadas (IGNORANDO PARTIDOS FANTASMA/CANCELADOS)
+      let queryOcupadas = supabase.from('partidos').select('cancha_numero, superficie')
+        .eq('fecha', searchDate)
+        .in('estado', ['confirmado', 'bloqueo_admin', 'en_revision', 'en_disputa'])
+        .lt('hora_inicio', endTime)
+        .gt('hora_fin', startTime);
       if (superficie !== 'Cualquier superficie') queryOcupadas = queryOcupadas.eq('superficie', superficie);
       const { data: ocupadas } = await queryOcupadas;
       
@@ -1072,12 +1081,16 @@ export default function App() {
         return;
       }
 
+      // 3. Buscar Rivales Inteligente (Match de Superficies)
       let queryRivales = supabase.from('buscar').select('*').eq('fecha', searchDate).neq('jugador_id', currentUser.id).eq('estado', 'activa');
-      if (superficie !== 'Cualquier superficie') queryRivales = queryRivales.eq('superficie', superficie);
-      const { data: posiblesRivales } = await queryRivales;
+      const { data: posiblesRivalesRaw } = await queryRivales;
+      const posiblesRivales = posiblesRivalesRaw ? posiblesRivalesRaw.filter(r => 
+         (superficie === 'Cualquier superficie' || r.superficie === 'Cualquier superficie' || r.superficie === superficie)
+      ) : [];
+
       let matchEncontrado = null, matchInicio = '', matchFin = '', canchaAsignada = null;
 
-      if (posiblesRivales && posiblesRivales.length > 0) {
+      if (posiblesRivales.length > 0) {
         for (let rival of posiblesRivales) {
           const rStartMins = getMins(rival.hora_inicio); const rEndMins = getMins(rival.hora_fin);
           if (startMins < rEndMins && endMins > rStartMins) {
@@ -1085,36 +1098,52 @@ export default function App() {
             const { data: perfilRival } = await supabase.from('perfiles').select('elo').eq('id', rival.jugador_id).single();
             
             if (Math.abs(currentUser.elo - (perfilRival?.elo || 1000)) <= 200 && (endCruce - startCruce) >= 120) {
-              const propInicioStr = `${String(Math.floor(startCruce / 60)).padStart(2, '0')}:${String(startCruce % 60).padStart(2, '0')}`;
-              const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}`;
+              const propInicioStr = `${String(Math.floor(startCruce / 60)).padStart(2, '0')}:${String(startCruce % 60).padStart(2, '0')}:00`;
+              const propFinStr = `${String(Math.floor((startCruce + 120) / 60)).padStart(2, '0')}:${String((startCruce + 120) % 60).padStart(2, '0')}:00`;
               
-              const { data: pCruce } = await supabase.from('partidos').select('cancha_numero').eq('fecha', searchDate).eq('superficie', superficie).lt('hora_inicio', propFinStr).gt('hora_fin', propInicioStr);
-              const canchaLibre = canchasActivas.find(c => !(pCruce ? pCruce.map(p => p.cancha_numero) : []).includes(c.id));
-              if (canchaLibre) { matchEncontrado = rival; matchInicio = propInicioStr; matchFin = propFinStr; canchaAsignada = canchaLibre.id; break; }
+              const { data: pCruce } = await supabase.from('partidos').select('cancha_numero')
+                .eq('fecha', searchDate)
+                .in('estado', ['confirmado', 'bloqueo_admin', 'en_revision', 'en_disputa']) // Blindaje anti-fantasmas
+                .lt('hora_inicio', propFinStr)
+                .gt('hora_fin', propInicioStr);
+                
+              const ocupadasEnCruce = pCruce ? pCruce.map(p => p.cancha_numero) : [];
+              
+              // Buscamos cancha que acomode la preferencia de ambos
+              const canchaLibre = canchasActivas.find(c => {
+                  const isFree = !ocupadasEnCruce.includes(c.id);
+                  const satisfiesMe = superficie === 'Cualquier superficie' || c.superficie === superficie;
+                  const satisfiesRival = rival.superficie === 'Cualquier superficie' || c.superficie === rival.superficie;
+                  return isFree && satisfiesMe && satisfiesRival;
+              });
+
+              if (canchaLibre) { 
+                  matchEncontrado = rival; matchInicio = propInicioStr; matchFin = propFinStr; canchaAsignada = canchaLibre.id; break; 
+              }
             }
           }
         }
       }
 
       if (matchEncontrado) {
-        const { data: choque } = await supabase.from('partidos').select('id').eq('fecha', searchDate).eq('cancha_numero', canchaAsignada).lt('hora_inicio', matchFin).gt('hora_fin', matchInicio);
-        if (choque && choque.length > 0) throw new Error("¡Interferencia! Alguien reservó esta cancha. Intenta de nuevo.");
+        // Doble chequeo final
+        const { data: choque } = await supabase.from('partidos').select('id')
+          .eq('fecha', searchDate).eq('cancha_numero', canchaAsignada)
+          .in('estado', ['confirmado', 'bloqueo_admin', 'en_revision', 'en_disputa']) // Blindaje anti-fantasmas
+          .lt('hora_inicio', matchFin).gt('hora_fin', matchInicio);
+          
+        if (choque && choque.length > 0) throw new Error("¡Interferencia! Alguien reservó esta cancha hace un segundo. Intenta de nuevo.");
+        
         const { data: mc, error: eM } = await supabase.from('partidos').insert([{ 
-          jugador1_id: matchEncontrado.jugador_id, 
-          jugador2_id: currentUser.id, 
-          fecha: searchDate, 
-          hora_inicio: matchInicio, 
-          hora_fin: matchFin, 
-          superficie: listaCanchas.find(c => c.id === canchaAsignada)?.superficie, 
-          cancha_numero: canchaAsignada, 
-          cancha_id: canchaAsignada, 
-          estado: 'confirmado', 
-          tipo_creacion: 'matchmaking' 
+          jugador1_id: matchEncontrado.jugador_id, jugador2_id: currentUser.id, fecha: searchDate, 
+          hora_inicio: matchInicio, hora_fin: matchFin, superficie: listaCanchas.find(c => c.id === canchaAsignada)?.superficie, 
+          cancha_numero: canchaAsignada, cancha_id: canchaAsignada, estado: 'confirmado', tipo_creacion: 'matchmaking' 
         }]).select();
-        if (eM || !mc || mc.length === 0) throw new Error("Error en el servidor.");
+        
+        if (eM || !mc || mc.length === 0) throw new Error("Error al agendar el partido.");
         await supabase.from('buscar').update({ estado: 'match' }).eq('id', matchEncontrado.id);
         await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'match' }]);
-        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada} (${superficie}).`); setTab('partidos'); fetchPartidos();
+        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada}.`); setTab('partidos'); fetchPartidos();
       } else {
         await publicarBusqueda(false);
       }
@@ -1165,7 +1194,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.74</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.75</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
