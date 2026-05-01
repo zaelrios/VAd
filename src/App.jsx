@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.73';
+  const APP_VERSION = '1.74';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -333,73 +333,82 @@ export default function App() {
   };
 
   const toggleEstadoCancha = async (cancha) => {
-    const nuevoEstado = cancha.estado === 'activa' ? 'inhabilitada' : 'activa';
-    const { error } = await supabase.from('canchas').update({ estado: nuevoEstado }).eq('id', cancha.id);
-    
-    if (!error) {
-      fetchCanchas();
+    if (cancha.estado === 'activa') {
+      // PROCESO PARA INHABILITAR: EVACUACIÓN Y REUBICACIÓN
+      const now = new Date();
+      const todayStr = getFormatDate(now);
       
-      // 🧠 GATILLO DE MATCHMAKING: Si abrimos una cancha, intentamos acomodar a los que están en lista de espera
-      if (nuevoEstado === 'activa') {
-        // Buscamos si hay días con gente esperando
+      const { data: partidos } = await supabase.from('partidos')
+        .select('*')
+        .eq('cancha_numero', cancha.id)
+        .gte('fecha', todayStr)
+        .in('estado', ['confirmado', 'bloqueo_admin']);
+
+      const matchesToProcess = partidos?.filter(p => {
+        if (p.fecha > todayStr) return true;
+        const [h, m] = p.hora_inicio.split(':');
+        const matchStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+        return matchStart > now;
+      }) || [];
+
+      if (matchesToProcess.length > 0) {
+        mostrarConfirmacion(
+          "⚠️ Cancha con Actividad", 
+          `Hay ${matchesToProcess.length} partido(s)/bloqueo(s) programados aquí.\n\nEl sistema intentará reubicarlos automáticamente a otras canchas libres de la misma superficie. Los que no quepan, serán cancelados y re-encolados.\n\n¿Deseas proceder?`,
+          async () => {
+            try {
+              const { data: canchasActivas } = await supabase.from('canchas').select('*').eq('estado', 'activa').neq('id', cancha.id);
+              let reubicados = 0; 
+              let cancelados = 0;
+
+              for (let p of matchesToProcess) {
+                const { data: ocupadas } = await supabase.from('partidos').select('cancha_numero').eq('fecha', p.fecha).lt('hora_inicio', p.hora_fin).gt('hora_fin', p.hora_inicio).neq('id', p.id);
+                const ocupadasIds = ocupadas ? ocupadas.map(o => o.cancha_numero) : [];
+                
+                // Buscar cancha libre que sea de la misma superficie (o si es bloqueo, cualquier cancha sirve)
+                const libres = (canchasActivas || []).filter(cDB => !ocupadasIds.includes(cDB.id) && (p.tipo_creacion === 'bloqueo' || cDB.superficie === p.superficie));
+
+                if (libres.length > 0) {
+                  const nuevaCancha = libres[0];
+                  await supabase.from('partidos').update({ cancha_numero: nuevaCancha.id, cancha_id: nuevaCancha.id }).eq('id', p.id);
+                  reubicados++;
+                } else {
+                  if (p.tipo_creacion === 'matchmaking') {
+                    await supabase.from('buscar').update({ estado: 'activa' }).in('jugador_id', [p.jugador1_id, p.jugador2_id]).eq('fecha', p.fecha).eq('estado', 'match');
+                  }
+                  await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', p.id);
+                  await supabase.from('partidos').delete().eq('id', p.id);
+                  cancelados++;
+                }
+              }
+              
+              await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', cancha.id);
+              fetchCanchas(); fetchClubPartidos();
+              mostrarAlerta("Cancha Inhabilitada", `Evacuación completada:\n\n✅ ${reubicados} Reubicados a otras canchas.\n❌ ${cancelados} Cancelados (Sin espacio).`);
+            } catch (err) { mostrarError("Error", "Fallo al procesar la evacuación de la cancha."); }
+          }
+        );
+      } else {
+        // La cancha está vacía, apagar directamente
+        const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', cancha.id);
+        if (!error) { fetchCanchas(); fetchClubPartidos(); }
+      }
+    } else {
+      // PROCESO PARA ACTIVAR: RE-EVALUAR LISTA DE ESPERA
+      const { error } = await supabase.from('canchas').update({ estado: 'activa' }).eq('id', cancha.id);
+      if (!error) {
+        fetchCanchas();
         const { data: busquedas } = await supabase.from('buscar').select('fecha').eq('estado', 'activa');
-        
         if (busquedas && busquedas.length > 0) {
           const fechasUnicas = [...new Set(busquedas.map(b => b.fecha))];
-          
           for (let fecha of fechasUnicas) {
-            // Evaluamos a los que pidieron esta superficie específica para todo el día (06:00 a 23:00)
             await resolverListaDeEspera(fecha, cancha.superficie, cancha.id, '06:00', '23:00');
-            // Evaluamos a los que pidieron "Cualquier superficie"
             await resolverListaDeEspera(fecha, 'Cualquier superficie', cancha.id, '06:00', '23:00');
           }
-          // Refrescamos los partidos del club por si el sistema generó retas nuevas
           fetchClubPartidos();
         }
       }
     }
-  };
-
-  const eliminarCancha = async (id) => {
-    const now = new Date();
-    const todayStr = getFormatDate(now);
-    
-    const { data: partidos } = await supabase.from('partidos').select('*').eq('cancha_numero', id).gte('fecha', todayStr).in('estado', ['confirmado', 'bloqueo_admin']);
-
-    const matchesToCancel = partidos?.filter(p => {
-      if (p.fecha > todayStr) return true;
-      const [h, m] = p.hora_inicio.split(':');
-      const matchStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
-      return matchStart > now;
-    }) || [];
-
-    let titulo = "Inhabilitar Cancha";
-    let msj = "¿Estás seguro de inhabilitar esta cancha? Ya no aparecerá en el calendario.";
-
-    if (matchesToCancel.length > 0) {
-      titulo = "⚠️ Cancha con Actividad";
-      msj = `Hay ${matchesToCancel.length} partido(s)/bloqueo(s) programado(s) en esta cancha.\n\nSi continúas, se cancelarán automáticamente. Los jugadores de matchmaking regresarán a la lista de espera.\n\n¿Deseas inhabilitar la cancha de todos modos?`;
-    }
-
-    mostrarConfirmacion(titulo, msj, async () => {
-      try {
-        if (matchesToCancel.length > 0) {
-          const matchmakingPartidos = matchesToCancel.filter(p => p.tipo_creacion === 'matchmaking');
-          for (let p of matchmakingPartidos) {
-             await supabase.from('buscar').update({ estado: 'activa' }).in('jugador_id', [p.jugador1_id, p.jugador2_id]).eq('fecha', p.fecha).eq('estado', 'match');
-          }
-          await supabase.from('partidos').delete().in('id', matchesToCancel.map(m => m.id));
-        }
-
-        const { error } = await supabase.from('canchas').update({ estado: 'inhabilitada' }).eq('id', id);
-        if (error) throw error;
-
-        fetchCanchas(); fetchClubPartidos();
-        mostrarAlerta("Inhabilitada", "La cancha fue cerrada y la agenda se ha limpiado correctamente.");
-      } catch (err) {
-        mostrarError("Error", "Hubo un problema al inhabilitar la cancha.");
-      }
-    });
   };
 
   const obtenerEstadoCelda = (canchaId, horaFloat, fechaStr) => {
@@ -433,19 +442,38 @@ export default function App() {
         } else {
             mostrarOpciones(
               "Administrar Partido", 
-              "¿Qué deseas hacer con los jugadores de este partido?",
+              "¿Qué deseas hacer con este partido?",
               [
                 {
-                  texto: "🔄 Cancelar y Re-encolar",
+                  texto: "🔄 Intentar Reubicar (Automático)",
                   clase: "w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest text-white bg-[#007AFF] shadow-lg active:scale-95 transition-all",
                   accion: async () => {
                     try {
-                      await supabase.from('buscar').update({ estado: 'activa' }).in('jugador_id', [partido.jugador1_id, partido.jugador2_id]).eq('fecha', partido.fecha).eq('estado', 'match');
-                      await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
-                      await supabase.from('partidos').delete().eq('id', partido.id);
-                      fetchClubPartidos();
-                      resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
-                    } catch (err) { mostrarError("Error", "Fallo al cancelar."); }
+                      // 1. Validar Canchas Activas
+                      const { data: canchasActivas } = await supabase.from('canchas').select('*').eq('estado', 'activa');
+                      
+                      // 2. Traer todos los partidos que crucen en ese horario
+                      const { data: ocupadas } = await supabase.from('partidos')
+                        .select('cancha_numero')
+                        .eq('fecha', partido.fecha)
+                        .lt('hora_inicio', partido.hora_fin)
+                        .gt('hora_fin', partido.hora_inicio)
+                        .neq('id', partido.id); // Excluimos el partido actual
+                        
+                      const ocupadasIds = ocupadas ? ocupadas.map(o => o.cancha_numero) : [];
+                      
+                      // 3. Filtrar canchas libres
+                      const libres = (canchasActivas || []).filter(c => !ocupadasIds.includes(c.id));
+                      
+                      if (libres.length > 0) {
+                          const nuevaCancha = libres[0];
+                          await supabase.from('partidos').update({ cancha_numero: nuevaCancha.id, cancha_id: nuevaCancha.id }).eq('id', partido.id);
+                          mostrarAlerta("Éxito", `Partido reubicado automáticamente a la ${nuevaCancha.nombre}`);
+                          fetchClubPartidos();
+                      } else {
+                          mostrarError("Sin Canchas", "No hay canchas libres en este horario para reubicar. Deberás cancelar el partido definitivamente.");
+                      }
+                    } catch (err) { mostrarError("Error", "Fallo al intentar reubicar el partido."); }
                   }
                 },
                 {
@@ -453,17 +481,17 @@ export default function App() {
                   clase: "w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest text-white bg-red-500 shadow-lg active:scale-95 transition-all",
                   accion: async () => {
                     try {
+                      // Se marca como cancelado por admin para el historial y se elimina del calendario
                       await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
                       await supabase.from('partidos').delete().eq('id', partido.id);
                       fetchClubPartidos();
-                      resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
-                    } catch (err) { mostrarError("Error", "Fallo al cancelar."); }
+                    } catch (err) { mostrarError("Error", "Fallo al cancelar el partido."); }
                   }
                 },
                 {
                   texto: "Volver",
                   clase: `w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest ${theme.muted} ${theme.bg} border ${theme.border} hover:opacity-70 transition-opacity`,
-                  accion: () => {} // Solo cierra la alerta
+                  accion: () => {} 
                 }
               ]
             );
@@ -1137,7 +1165,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.73</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.74</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
