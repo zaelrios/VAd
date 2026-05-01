@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.77';
+  const APP_VERSION = '1.78';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -325,11 +325,21 @@ export default function App() {
 
   const cargarPendientes = async () => {
     try {
-      // Trae los estancados (en disputa o en revisión que no han sido confirmados)
-      const { data } = await supabase.from('partidos')
+      const ayer = new Date(new Date().getTime() - 24 * 60 * 60 * 1000);
+      const ayerStr = ayer.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+
+      // 1. Trae los estancados (en disputa o en revisión)
+      const { data: estancados } = await supabase.from('partidos')
         .select('*')
-        .in('estado', ['en_disputa', 'en_revision'])
-        .order('fecha', { ascending: false });
+        .in('estado', ['en_disputa', 'en_revision']);
+
+      // 2. Trae los olvidados (Confirmados, pero la fecha fue ayer o antes)
+      const { data: olvidados } = await supabase.from('partidos')
+        .select('*')
+        .eq('estado', 'confirmado')
+        .lte('fecha', ayerStr);
+
+      const data = [...(estancados || []), ...(olvidados || [])].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         
       if(data && data.length > 0) {
          const userIds = [...new Set(data.flatMap(m => [m.jugador1_id, m.jugador2_id]))];
@@ -846,6 +856,29 @@ export default function App() {
     if (max === 6 && min <= 4) return true; if (max === 7 && (min === 5 || min === 6)) return true; return false;
   };
 
+  const handleDeclararWO = async (partido) => {
+    mostrarConfirmacion(
+      "Declarar W.O.", 
+      "¿Han pasado 15 minutos y tu rival no llegó?\n\nAl confirmar, el partido se enviará a revisión. Si es falso, serás penalizado.", 
+      async () => {
+        try {
+          const { error } = await supabase.from('partidos').update({
+            estado: 'en_revision',
+            marcador: 'W.O. (Ausencia reportada)',
+            reportado_por: currentUser.id
+          }).eq('id', partido.id);
+
+          if (error) throw error;
+          
+          mostrarAlerta("Reportado", "El partido ha sido enviado a revisión por W.O. de tu rival.");
+          fetchPartidos(); 
+        } catch (e) {
+          mostrarError("Error", "No se pudo reportar el W.O.");
+        }
+      }
+    );
+  };
+
   const handleSubmitReport = async (partido) => {
     if (s1Mi === '' || s1Rival === '' || s2Mi === '' || s2Rival === '') { mostrarError("Datos Incompletos", "Debes ingresar al menos 2 sets."); return; }
     const v1Mi = parseInt(s1Mi, 10); const v1Riv = parseInt(s1Rival, 10); const v2Mi = parseInt(s2Mi, 10); const v2Riv = parseInt(s2Rival, 10);
@@ -1227,7 +1260,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.77</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.78</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1556,7 +1589,26 @@ export default function App() {
                                   <button onClick={() => setReportingMatch(partido.id)} className="w-full bg-[#29C454] text-white py-4 rounded-xl font-black uppercase text-xs shadow-lg shadow-[#29C454]/30 active:scale-95 transition-all">Reportar Resultado ➜</button>
                                 )
                               ) : obtenerEstadoTiempo(partido) === 'en_curso' ? (
-                                <div className="text-center py-4 bg-[#29C454]/10 rounded-2xl border border-dashed border-[#29C454]/50"><p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-[#29C454]">Partido en curso 🔥</p><p className={`text-[9px] opacity-60 mt-1 ${theme.text}`}>El reporte se habilitará al terminar.</p></div>
+                                (() => {
+                                  const now = new Date();
+                                  const matchStart = new Date(`${partido.fecha}T${partido.hora_inicio}`);
+                                  const diffMins = (now - matchStart) / 60000;
+                                  const canWO = diffMins >= 15;
+
+                                  return (
+                                    <div className="text-center space-y-2 mt-2">
+                                      <div className="py-4 bg-[#29C454]/10 rounded-2xl border border-dashed border-[#29C454]/50">
+                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-[#29C454]">Partido en curso 🔥</p>
+                                        <p className={`text-[9px] opacity-60 mt-1 ${theme.text}`}>El reporte de marcador se habilitará al terminar.</p>
+                                      </div>
+                                      {canWO && (
+                                        <button onClick={() => handleDeclararWO(partido)} className="w-full border-2 border-red-500/40 bg-red-500/10 text-red-600 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all">
+                                          🚨 Declarar W.O. (Rival no llegó)
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })()
                               ) : (
                                 <div className={`text-center pt-8 pb-4 ${theme.bg} rounded-[1.8rem] shadow-inner relative overflow-hidden border ${theme.border}`}>
                                   {((new Date(`${partido.fecha}T${partido.hora_inicio}`) - currentTime) / (1000 * 60 * 60)) > 0.5 ? (
@@ -2287,12 +2339,18 @@ export default function App() {
                           <p className="text-[10px] font-black uppercase text-black/40 tracking-widest">{p.fecha} • {p.hora_inicio}</p>
                           <p className="font-black italic text-lg">{p.j1_nombre.split(' ')[0]} vs {p.j2_nombre.split(' ')[0]}</p>
                         </div>
-                        <span className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${p.estado === 'en_disputa' ? 'bg-red-500/10 text-red-600' : 'bg-yellow-500/10 text-yellow-600'}`}>
-                           {p.estado === 'en_disputa' ? 'En Disputa' : 'En Revisión'}
+                        <span className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${
+                           p.estado === 'en_disputa' ? 'bg-red-500/10 text-red-600' : 
+                           p.estado === 'en_revision' ? 'bg-yellow-500/10 text-yellow-600' : 
+                           'bg-gray-500/10 text-gray-600'
+                        }`}>
+                           {p.estado === 'en_disputa' ? 'En Disputa' : p.estado === 'en_revision' ? 'En Revisión' : 'Olvidado (24h+)'}
                         </span>
                       </div>
                       <p className="text-xs font-bold text-black/60">
-                        {p.estado === 'en_revision' ? `Marcador reportado: ${p.marcador} (El rival no ha confirmado)` : 'Hay un conflicto con el resultado. Requiere intervención.'}
+                        {p.estado === 'en_revision' ? `Marcador reportado: ${p.marcador} (El rival no ha confirmado)` : 
+                         p.estado === 'en_disputa' ? 'Hay un conflicto con el resultado. Requiere intervención.' : 
+                         'Pasaron más de 24 horas y ningún jugador reportó el marcador.'}
                       </p>
                       <button onClick={() => { setPartidoAdmin(p); setModalAccion('reportar_admin'); setBloqueoActivo({ cancha: p.cancha_numero, horaFloat: 0, fechaStr: p.fecha }); }} className="w-full bg-[#007AFF] text-white py-3 rounded-lg font-black uppercase tracking-widest text-[10px] shadow-sm active:scale-95 transition-all">
                         Resolver Partido ➜
