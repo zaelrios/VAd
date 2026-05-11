@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.90';
+  const APP_VERSION = '1.91';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1002,6 +1002,13 @@ export default function App() {
         const { error } = await supabase.from('partidos').update({ estado: 'en_revision', marcador: marcadorFinal, ganador_id: ganadorIdCalculado, reportado_por: currentUser.id }).eq('id', partido.id);
         if (error) throw error;
         setReportingMatch(null); setS1Mi(''); setS1Rival(''); setS2Mi(''); setS2Rival(''); setS3Mi(''); setS3Rival(''); 
+        // --- 🤖 GATILLO WA: MARCADOR REPORTADO ---
+        const { data: rivalWA } = await supabase.from('perfiles').select('telefono').eq('id', partido.rival.id).single();
+        if (rivalWA?.telefono) {
+            enviarNotificacionWA(rivalWA.telefono, `🎾 *VAd: Marcador a Revisión*\n\nTu rival ha reportado el siguiente marcador: *${marcadorFinal}*.\n\nEntra a la app para confirmarlo o impugnarlo. Si no respondes en 24 horas, el resultado se hará oficial automáticamente.`);
+        }
+        // -----------------------------------------
+
         await fetchPartidos(); 
         mostrarAlerta("Enviado", "Reporte enviado al rival.");
       } catch (error) { mostrarError("Error", error.message || "Error al conectar con la base de datos."); }
@@ -1053,6 +1060,19 @@ export default function App() {
       
       let mensajeFinal = `Sumaste: ${deltaMi > 0 ? '+' : ''}${deltaMi} pts de ELO.`;
       if (misNuevosDatos.nuevaConfianza > currentUser.confianza) mensajeFinal += `\n\n🟢 ¡Felicidades! Tu confiabilidad subió a ${misNuevosDatos.nuevaConfianza.toFixed(1)}/5.0`;
+
+      // --- 🤖 GATILLO WA: RESULTADO OFICIAL (Para ambos) ---
+      const msgGanador = `🏆 *VAd: ¡Victoria!*\n\nEl resultado es oficial. Sumaste *+${Math.max(deltaMi, deltaRival)} pts* de ELO.\n🔥 Racha actual: ${yoGane ? misNuevosDatos.nuevaRacha : rivalNuevosDatos.nuevaRacha}`;
+      const msgPerdedor = `📉 *VAd: Resultado Oficial*\n\nSe confirmó tu derrota. Se ajustó tu ELO en *${Math.min(deltaMi, deltaRival)} pts*.\n\n¡No te desanimes! Vuelve a la sala de búsqueda por tu revancha.`;
+
+      // Tú confirmaste (Tú recibes mensaje)
+      enviarNotificacionWA(currentUser.telefono, yoGane ? msgGanador : msgPerdedor);
+      
+      // El rival (El que reportó inicialmente) también recibe mensaje
+      const { data: rivalWA } = await supabase.from('perfiles').select('telefono').eq('id', rivalDB.id).single();
+      if (rivalWA?.telefono) enviarNotificacionWA(rivalWA.telefono, !yoGane ? msgGanador : msgPerdedor);
+      // -----------------------------------------------------
+
       mostrarAlerta("¡Partido finalizado!", mensajeFinal);
     } catch (error) {
       mostrarError("Error", "No se pudo confirmar el reporte. Intenta de nuevo.");
@@ -1446,7 +1466,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.90</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.91</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
