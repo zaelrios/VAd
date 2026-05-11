@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.84';
+  const APP_VERSION = '1.85';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1329,7 +1329,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.84</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.85</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -2474,7 +2474,7 @@ export default function App() {
                          p.estado === 'en_disputa' ? 'Hay un conflicto con el resultado. Requiere intervención.' : 
                          'Pasaron más de 24 horas y ningún jugador reportó el marcador.'}
                       </p>
-                      <button onClick={() => { setPartidoAdmin(p); setModalAccion('reportar_admin'); setBloqueoActivo({ cancha: p.cancha_numero, horaFloat: 0, fechaStr: p.fecha }); }} className="w-full bg-[#007AFF] text-white py-3 rounded-lg font-black uppercase tracking-widest text-[10px] shadow-sm active:scale-95 transition-all">
+                      <button onClick={() => { setShowPendientes(false); setPartidoAdmin(p); setModalAccion('reportar_admin'); setBloqueoActivo({ cancha: p.cancha_numero, horaFloat: 0, fechaStr: p.fecha }); }} className="w-full bg-[#007AFF] text-white py-3 rounded-lg font-black uppercase tracking-widest text-[10px] shadow-sm active:scale-95 transition-all">
                         Resolver Partido ➜
                       </button>
                    </div>
@@ -2518,34 +2518,41 @@ export default function App() {
       {/* =========================================
           NAVEGACIÓN INFERIOR PWA
       ========================================= */}
-      {(!isLoggedIn || (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin')) && (
-        <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
-          <div className="flex justify-between items-center max-w-sm mx-auto px-4">
-            {[ 
-               ...(isLoggedIn ? [] : [{ id: 'home', icon: '🏠', label: 'Inicio' }]), 
-               { id: 'jugar', icon: '🎾', label: 'Jugar' }, 
-               { id: 'partidos', icon: '📋', label: 'Partidos' }, 
-               { id: 'perfil', icon: '👤', label: 'Perfil' } 
-            ].map((item) => (
-              <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-150 active:scale-90 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
-                <div className="relative flex flex-col items-center gap-1">
-                  <span className="text-xl mb-0.5">{item.icon}</span>
-                  
-                  {/* Puntito Azul: Partidos/Reportes pendientes para el Jugador */}
-                  {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && ( 
-                    <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span> 
-                  )}
+      <nav className={`fixed bottom-0 left-0 w-full z-50 backdrop-blur-lg border-t px-6 pb-8 pt-4 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] transition-colors duration-500 ${theme.nav} ${theme.border}`}>
+        <div className="flex justify-between items-center max-w-sm mx-auto px-4">
+          {[ 
+            // 1. Mostrar Inicio solo si NO ha entrado
+            ...(!isLoggedIn ? [{ id: 'home', icon: '🏠', label: 'Inicio' }] : []),
+            // 2. Mostrar Agenda solo si es ADMIN o CLUB
+            ...(isLoggedIn && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') ? [{ id: 'club_agenda', icon: '📅', label: 'Agenda' }] : []),
+            // 3. Mostrar Jugar solo si es JUGADOR regular
+            ...(isLoggedIn && currentUser?.rol !== 'club' && currentUser?.rol !== 'admin' ? [{ id: 'jugar', icon: '🎾', label: 'Jugar' }] : []),
+            // 4. Partidos y Perfil (siempre logueados, o Entrar si no hay sesión)
+            ...(isLoggedIn ? [
+              { id: 'partidos', icon: '📋', label: 'Partidos' }, 
+              { id: 'perfil', icon: '👤', label: 'Perfil' }
+            ] : [
+              { id: 'perfil', icon: '👤', label: 'Entrar' }
+            ])
+          ].map((item) => (
+            <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-150 active:scale-90 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
+              <div className="relative flex flex-col items-center gap-1">
+                <span className="text-xl mb-0.5">{item.icon}</span>
+                
+                {/* Puntito Azul: Partidos pendientes */}
+                {item.id === 'partidos' && misPartidos.length > 0 && misPartidos.some(p => p.estado === 'confirmado' || (p.estado === 'en_revision' && p.reportado_por !== currentUser?.id)) && ( 
+                  <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#007AFF] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span> 
+                )}
 
-                  {/* Puntito Verde: Nuevas sugerencias en el Buzón para el Admin */}
-                  {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
-                    <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#29C454] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        </nav>
-      )}
+                {/* Puntito Verde: Sugerencias nuevas (Solo Admin) */}
+                {item.id === 'perfil' && currentUser?.rol === 'admin' && sugerenciasNuevas > 0 && (
+                  <span className="absolute -top-1 -right-2 w-3 h-3 bg-[#29C454] rounded-full animate-pulse border-2 border-[#F8F7F2] shadow-md"></span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }
