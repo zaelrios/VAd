@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.88';
+  const APP_VERSION = '1.89';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1212,26 +1212,45 @@ export default function App() {
   const handleLogout = () => { localStorage.removeItem('vad_session'); setIsLoggedIn(false); setCurrentUser(null); window.location.href = window.location.pathname; };
   
   const handleSearchSubmit = async (e) => {
-    e.preventDefault(); setSearchError(''); 
+    e.preventDefault(); 
+    setSearchError(''); 
+
     if (!isLoggedIn || !currentUser) { handleLogout(); setTab('auth'); return; }
     const getMins = (timeStr) => { if (!timeStr) return 0; const p = timeStr.split(':'); return (parseInt(p[0], 10) * 60) + parseInt(p[1], 10); };
     const startMins = getMins(startTime); const endMins = getMins(endTime);
     
-    if ((endMins - startMins) < 60) { setSearchError('El rango de búsqueda debe ser de al menos 1 hora.'); return; }
+    if ((endMins - startMins) < 60) { 
+      mostrarError('Error de Horario', 'El rango de búsqueda debe ser de al menos 1 hora.'); 
+      return; 
+    }
     
-    const now = new Date(); const [year, month, day] = searchDate.split('-').map(Number); const [sH, sM] = startTime.split(':').map(Number);
-    if ((new Date(year, month - 1, day, sH, sM) - now) / (1000 * 60 * 60) < 2) { setSearchError('Debes programar tu búsqueda con al menos 2 horas de anticipación.'); return; }
+    const now = new Date(); 
+    const [year, month, day] = searchDate.split('-').map(Number); 
+    const [sH, sM] = startTime.split(':').map(Number);
+    if ((new Date(year, month - 1, day, sH, sM) - now) / (1000 * 60 * 60) < 2) { 
+      mostrarError('Anticipación Requerida', 'Debes programar tu búsqueda con al menos 2 horas de anticipación.'); 
+      return; 
+    }
 
     const hasOverlap = activeSearches.some(s => s.fecha === searchDate && startMins < getMins(s.hora_fin) && endMins > getMins(s.hora_inicio));
-    if (hasOverlap) { setSearchError('Ya tienes una búsqueda activa en este rango.'); return; }
+    if (hasOverlap) { 
+      mostrarError('Búsqueda Duplicada', 'Ya tienes una búsqueda activa en este rango de horario.'); 
+      return; 
+    }
+
     const hasMatchOverlap = misPartidos.some(p => p.fecha === searchDate && p.estado !== 'finalizado' && p.estado !== 'wo' && startMins < getMins(p.hora_fin) && endMins > getMins(p.hora_inicio));
-    if (hasMatchOverlap) { setSearchError('Ya tienes un partido programado en este horario.'); return; }
+    if (hasMatchOverlap) { 
+      mostrarError('Cruce de Horarios', 'Ya tienes un partido programado que choca con este horario.'); 
+      return; 
+    }
 
     try {
       // 1. Obtener canchas reales activas
       let queryCanchas = supabase.from('canchas').select('*').eq('estado', 'activa');
       if (superficie !== 'Cualquier superficie') queryCanchas = queryCanchas.eq('superficie', superficie);
-      const { data: canchasActivasDB } = await queryCanchas;
+      const { data: canchasActivasDB, error: errorCanchas } = await queryCanchas;
+      if (errorCanchas) throw errorCanchas;
+      
       const canchasActivas = canchasActivasDB || [];
 
       // 2. Obtener ocupadas (IGNORANDO PARTIDOS FANTASMA/CANCELADOS)
@@ -1241,26 +1260,38 @@ export default function App() {
         .lt('hora_inicio', endTime)
         .gt('hora_fin', startTime);
       if (superficie !== 'Cualquier superficie') queryOcupadas = queryOcupadas.eq('superficie', superficie);
-      const { data: ocupadas } = await queryOcupadas;
+      const { data: ocupadas, error: errorOcupadas } = await queryOcupadas;
+      if (errorOcupadas) throw errorOcupadas;
       
       const canchasOcupadasIds = ocupadas ? [...new Set(ocupadas.map(o => o.cancha_numero))] : [];
       const hayCanchasLibres = canchasActivas.some(c => !canchasOcupadasIds.includes(c.id));
 
       const publicarBusqueda = async (standby = false) => {
-        const { data: nb, error: eI } = await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'activa' }]).select().single();
+        const { data: nb, error: eI } = await supabase.from('buscar').insert([{ 
+            jugador_id: currentUser.id, 
+            nombre: currentUser.nombre, 
+            fecha: searchDate, 
+            hora_inicio: startTime, 
+            hora_fin: endTime, 
+            superficie: superficie, 
+            estado: 'activa' 
+        }]).select().single();
+        
         if (eI) throw eI;
         setActiveSearches([...activeSearches, nb]);
-        mostrarAlerta(standby ? "Lista de Espera" : "Búsqueda Publicada", standby ? "Las canchas están llenas, pero te avisaremos si alguien cancela." : "Te avisaremos al hacer match.");
+        mostrarAlerta(standby ? "Lista de Espera" : "Búsqueda Publicada", standby ? "Las canchas están llenas, pero te avisaremos si alguien cancela." : "¡Listo! Te avisaremos por WhatsApp al hacer match con un rival.");
       };
 
       if (!hayCanchasLibres) {
-        mostrarConfirmacion("Canchas Llenas", `Todas las canchas de ${superficie} están ocupadas o en mantenimiento...`, () => publicarBusqueda(true));
+        mostrarConfirmacion("Canchas Llenas", `Todas las canchas de ${superficie} están ocupadas o en mantenimiento en este horario.\n\n¿Deseas entrar a la lista de espera?`, () => publicarBusqueda(true));
         return;
       }
 
       // 3. Buscar Rivales Inteligente (Match de Superficies)
       let queryRivales = supabase.from('buscar').select('*').eq('fecha', searchDate).neq('jugador_id', currentUser.id).eq('estado', 'activa');
-      const { data: posiblesRivalesRaw } = await queryRivales;
+      const { data: posiblesRivalesRaw, error: errorRivales } = await queryRivales;
+      if (errorRivales) throw errorRivales;
+
       const posiblesRivales = posiblesRivalesRaw ? posiblesRivalesRaw.filter(r => 
          (superficie === 'Cualquier superficie' || r.superficie === 'Cualquier superficie' || r.superficie === superficie)
       ) : [];
@@ -1322,18 +1353,24 @@ export default function App() {
         await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'match' }]);
         
         // --- 🤖 GATILLO WA: MATCH ENCONTRADO ---
-        // Buscamos el teléfono del rival rápido en la base de datos
         const { data: rivalWA } = await supabase.from('perfiles').select('telefono').eq('id', matchEncontrado.jugador_id).single();
         const msgMatch = `🎾 *¡VAd: Tenemos Partido!* 🔥\n\nSe armó tu reta para el *${searchDate}* a las *${formatTime(matchInicio)}* en *Cancha ${canchaAsignada}*.\n\n¡Entra a la app para ver contra quién juegas y preparar tu estrategia!`;
         
-        enviarNotificacionWA(currentUser.telefono, msgMatch); // Mensaje para ti
-        if (rivalWA?.telefono) enviarNotificacionWA(rivalWA.telefono, msgMatch); // Mensaje para el rival
+        enviarNotificacionWA(currentUser.telefono, msgMatch); 
+        if (rivalWA?.telefono) enviarNotificacionWA(rivalWA.telefono, msgMatch); 
         // ---------------------------------------
 
-        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada}.`); setTab('partidos'); fetchPartidos();
+        mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada}.`); 
+        setTab('partidos'); 
+        fetchPartidos();
+      } else {
+        // Si no hay match, solo publicamos la búsqueda normal
         await publicarBusqueda(false);
       }
-    } catch (error) { setSearchError(error.message || 'Error en el circuito.'); }
+    } catch (error) { 
+       console.error("Falla en backend:", error);
+       mostrarError("Error", error.message || 'Fallo de conexión. Revisa tu internet e intenta de nuevo.'); 
+    }
   };
 
   const handleCancelSearch = async (id) => { try { await supabase.from('buscar').delete().eq('id', id); setActiveSearches(prev => prev.filter(s => s.id !== id)); } catch (e) { mostrarError("Error", "Error al eliminar."); } };
@@ -1380,7 +1417,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.88</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.89</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -1882,6 +1919,12 @@ export default function App() {
 
                   <button onClick={() => { setComentario(`Hola, solicito el cambio de mi nombre en el perfil. Mi nombre correcto es: `); setTab('home'); setTimeout(()=> window.scrollTo(0, document.body.scrollHeight), 500); }} className={`w-full flex items-center justify-between p-3 rounded-xl border ${theme.border} hover:bg-black/5 transition-all`}>
                     <span className={`text-xs font-bold ${theme.text}`}>📝 Solicitar Cambio de Nombre</span>
+                    <span className={theme.muted}>➔</span>
+                  </button>
+                  
+                  {/* NUEVO BOTÓN: VER REGLAS (Manda al Home) */}
+                  <button onClick={() => { setTab('home'); window.scrollTo(0,0); }} className={`w-full flex items-center justify-between p-3 rounded-xl border ${theme.border} hover:bg-black/5 transition-all`}>
+                    <span className={`text-xs font-bold ${theme.text}`}>📖 Ver Reglas y Sistema ELO</span>
                     <span className={theme.muted}>➔</span>
                   </button>
                 </div>
