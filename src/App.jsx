@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.89';
+  const APP_VERSION = '1.90';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -552,6 +552,15 @@ export default function App() {
                       if (libres.length > 0) {
                           const nuevaCancha = libres[0];
                           await supabase.from('partidos').update({ cancha_numero: nuevaCancha.id, cancha_id: nuevaCancha.id }).eq('id', partido.id);
+                          
+                          // --- 🤖 GATILLO WA: ADMIN REUBICA ---
+                          const { data: p1 } = await supabase.from('perfiles').select('telefono').eq('id', partido.jugador1_id).single();
+                          const { data: p2 } = await supabase.from('perfiles').select('telefono').eq('id', partido.jugador2_id).single();
+                          const msgAdminReubica = `🔄 *VAd: Cambio de Cancha*\n\nEl club ha movido tu partido de hoy a la *${nuevaCancha.nombre}*. El horario se mantiene igual. ¡Éxito!`;
+                          if (p1?.telefono) enviarNotificacionWA(p1.telefono, msgAdminReubica);
+                          if (p2?.telefono) enviarNotificacionWA(p2.telefono, msgAdminReubica);
+                          // -------------------------------------
+
                           mostrarAlerta("Éxito", `Partido reubicado a la ${nuevaCancha.nombre}`);
                           fetchClubPartidos();
                       } else {
@@ -568,6 +577,15 @@ export default function App() {
                       // Se marca como cancelado por admin para el historial y se elimina del calendario
                       await supabase.from('partidos').update({ estado: 'cancelado_admin' }).eq('id', partido.id);
                       await supabase.from('partidos').delete().eq('id', partido.id);
+                      
+                      // --- 🤖 GATILLO WA: ADMIN CANCELA ---
+                      const { data: p1 } = await supabase.from('perfiles').select('telefono').eq('id', partido.jugador1_id).single();
+                      const { data: p2 } = await supabase.from('perfiles').select('telefono').eq('id', partido.jugador2_id).single();
+                      const msgAdminCancel = `🚫 *VAd: Partido Cancelado*\n\nEl club ha cancelado por fuerza mayor tu partido del ${partido.fecha}. Si tienes dudas, comunícate con administración.`;
+                      if (p1?.telefono) enviarNotificacionWA(p1.telefono, msgAdminCancel);
+                      if (p2?.telefono) enviarNotificacionWA(p2.telefono, msgAdminCancel);
+                      // -------------------------------------
+
                       fetchClubPartidos();
                     } catch (err) { mostrarError("Error", "Fallo al cancelar el partido."); }
                   }
@@ -648,6 +666,18 @@ export default function App() {
 
       const { error } = await supabase.from('partidos').insert(inserts);
       if (error) throw error;
+
+      // --- 🤖 GATILLO WA: ADMIN CREA PARTIDO MANUAL ---
+      if (modalAccion === 'partido') {
+        const { data: p1 } = await supabase.from('perfiles').select('telefono, nombre').eq('id', partidoJ1).single();
+        const { data: p2 } = await supabase.from('perfiles').select('telefono, nombre').eq('id', partidoJ2).single();
+        const msgAdminCrea = `🎾 *¡VAd: Nuevo Partido Agendado!* 🔥\n\nEl club ha programado un partido oficial para ti el *${fechaStr}* a las *${formatTime(startStr)}* en *Cancha ${cancha}*.\n\nRivales: ${p1?.nombre?.split(' ')[0] || 'Jugador 1'} vs ${p2?.nombre?.split(' ')[0] || 'Jugador 2'}`;
+        
+        if (p1?.telefono) enviarNotificacionWA(p1.telefono, msgAdminCrea);
+        if (p2?.telefono) enviarNotificacionWA(p2.telefono, msgAdminCrea);
+      }
+      // ------------------------------------------------
+
       fetchClubPartidos(); setBloqueoActivo(null);
       mostrarAlerta("Éxito", "Agenda actualizada correctamente.");
     } catch (e) { mostrarError("Error", e.message); }
@@ -1245,11 +1275,10 @@ export default function App() {
     }
 
     try {
-      // 1. Obtener canchas reales activas
-      let queryCanchas = supabase.from('canchas').select('*').eq('estado', 'activa');
+      // 1. Obtener canchas reales activas (ORDENADAS DE LA 1 A LA 10)
+      let queryCanchas = supabase.from('canchas').select('*').eq('estado', 'activa').order('id', { ascending: true });
       if (superficie !== 'Cualquier superficie') queryCanchas = queryCanchas.eq('superficie', superficie);
       const { data: canchasActivasDB, error: errorCanchas } = await queryCanchas;
-      if (errorCanchas) throw errorCanchas;
       
       const canchasActivas = canchasActivasDB || [];
 
@@ -1417,7 +1446,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.89</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.90</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
