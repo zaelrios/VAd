@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.85';
+  const APP_VERSION = '1.86';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -1329,7 +1329,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.85</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.86</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -2523,17 +2523,18 @@ export default function App() {
           {[ 
             // 1. Mostrar Inicio solo si NO ha entrado
             ...(!isLoggedIn ? [{ id: 'home', icon: '🏠', label: 'Inicio' }] : []),
+            
             // 2. Mostrar Agenda solo si es ADMIN o CLUB
             ...(isLoggedIn && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') ? [{ id: 'club_agenda', icon: '📅', label: 'Agenda' }] : []),
-            // 3. Mostrar Jugar solo si es JUGADOR regular
-            ...(isLoggedIn && currentUser?.rol !== 'club' && currentUser?.rol !== 'admin' ? [{ id: 'jugar', icon: '🎾', label: 'Jugar' }] : []),
-            // 4. Partidos y Perfil (siempre logueados, o Entrar si no hay sesión)
-            ...(isLoggedIn ? [
-              { id: 'partidos', icon: '📋', label: 'Partidos' }, 
-              { id: 'perfil', icon: '👤', label: 'Perfil' }
-            ] : [
-              { id: 'perfil', icon: '👤', label: 'Entrar' }
-            ])
+            
+            // 3. Mostrar JUGAR a todos (incluso no logueados para demo) EXCEPTO al Club
+            ...(!isLoggedIn || currentUser?.rol !== 'club' ? [{ id: 'jugar', icon: '🎾', label: 'Jugar' }] : []),
+            
+            // 4. Mostrar PARTIDOS a todos (incluso no logueados para demo) EXCEPTO al Club
+            ...(!isLoggedIn || currentUser?.rol !== 'club' ? [{ id: 'partidos', icon: '📋', label: 'Partidos' }] : []),
+            
+            // 5. Perfil o Entrar siempre visible
+            { id: 'perfil', icon: '👤', label: isLoggedIn ? 'Perfil' : 'Entrar' }
           ].map((item) => (
             <button key={item.id} onClick={() => setTab(item.id)} className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl transition-all duration-150 active:scale-90 ${tab === item.id ? 'bg-[#29C454] text-white scale-110 shadow-lg shadow-[#29C454]/20' : (modoOscuro ? 'text-white/40 hover:text-white/70' : 'text-[#1A1C1E]/40 hover:text-[#1A1C1E]/70')}`}>
               <div className="relative flex flex-col items-center gap-1">
