@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.87';
+  const APP_VERSION = '1.88';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -347,9 +347,13 @@ export default function App() {
   const fetchClubPartidos = async () => {
     if (currentUser?.rol !== 'club' && currentUser?.rol !== 'admin') return;
     try {
-      const { data: matches, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
+      const { data: matchesRaw, error } = await supabase.from('partidos').select('*').in('fecha', selectedDays);
       if (error) throw error;
-      if (matches && matches.length > 0) {
+      
+      // --- 🛡️ FILTRO AGENDA CLUB: Quitar fantasmas cancelados ---
+      const matches = (matchesRaw || []).filter(m => m.estado !== 'cancelado_admin' && m.estado !== 'cancelado_jugador');
+
+      if (matches.length > 0) {
         await checkExpiredPartidos(matches);
         const userIds = [...new Set(matches.flatMap(m => [m.jugador1_id, m.jugador2_id]).filter(Boolean))];
         const { data: perfiles } = await supabase.from('perfiles').select('id, nombre').in('id', userIds);
@@ -751,11 +755,15 @@ export default function App() {
       const { data: freshUser } = await supabase.from('perfiles').select('*').eq('id', currentUser.id).single();
       if (freshUser) { setCurrentUser(freshUser); localStorage.setItem('vad_session', JSON.stringify(freshUser)); }
 
-      const { data: matches, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
+      const { data: matchesRaw, error } = await supabase.from('partidos').select('*').or(`jugador1_id.eq.${currentUser.id},jugador2_id.eq.${currentUser.id}`);
       if (error) throw error;
-      if (matches && matches.length > 0) {
-        await checkExpiredPartidos(matches);
-        const partidosConRivales = await Promise.all(matches.map(async (partido) => {
+      
+      // --- 🛡️ FILTRO MAESTRO: Ignorar cancelados y bloqueos ---
+      const validMatches = (matchesRaw || []).filter(m => m.estado !== 'cancelado_admin' && m.estado !== 'cancelado_jugador' && m.estado !== 'bloqueo_admin');
+
+      if (validMatches.length > 0) {
+        await checkExpiredPartidos(validMatches);
+        const partidosConRivales = await Promise.all(validMatches.map(async (partido) => {
           const rivalId = partido.jugador1_id === currentUser.id ? partido.jugador2_id : partido.jugador1_id;
           const { data: rivalData } = await supabase.from('perfiles').select('id, nombre, elo, color').eq('id', rivalId).single();
           return { ...partido, rival: rivalData || { id: '?', nombre: 'Desconocido', elo: '?' } };
@@ -1372,7 +1380,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.87</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.88</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
@@ -2570,10 +2578,10 @@ export default function App() {
             // 2. Mostrar Agenda solo si es ADMIN o CLUB
             ...(isLoggedIn && (currentUser?.rol === 'club' || currentUser?.rol === 'admin') ? [{ id: 'club_agenda', icon: '📅', label: 'Agenda' }] : []),
             
-            // 3. Mostrar JUGAR a todos (incluso no logueados para demo) EXCEPTO al Club
+            // 3. Mostrar JUGAR a todos (incluso demo) EXCEPTO al Club
             ...(!isLoggedIn || currentUser?.rol !== 'club' ? [{ id: 'jugar', icon: '🎾', label: 'Jugar' }] : []),
             
-            // 4. Mostrar PARTIDOS a todos (incluso no logueados para demo) EXCEPTO al Club
+            // 4. Mostrar PARTIDOS a todos (incluso demo) EXCEPTO al Club
             ...(!isLoggedIn || currentUser?.rol !== 'club' ? [{ id: 'partidos', icon: '📋', label: 'Partidos' }] : []),
             
             // 5. Perfil o Entrar siempre visible
