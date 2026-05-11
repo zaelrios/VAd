@@ -29,7 +29,7 @@ export default function App() {
   };
 
   // --- 🛡️ CANDADO 1: DESTRUCTOR DE CACHÉ ---
-  const APP_VERSION = '1.86';
+  const APP_VERSION = '1.87';
 
   useEffect(() => {
     const versionGuardada = localStorage.getItem('vad_app_version');
@@ -71,6 +71,32 @@ export default function App() {
   const mostrarConfirmacion = (titulo, mensaje, accionConfirmar) => setVadAlert({ tipo: 'confirm', titulo, mensaje, accionConfirmar });
   const mostrarOpciones = (titulo, mensaje, botones) => setVadAlert({ tipo: 'opciones', titulo, mensaje, botones });
   const cerrarAlerta = () => setVadAlert(null);
+
+  // ==========================================
+  // 🤖 MOTOR DE NOTIFICACIONES WHATSAPP (VAd)
+  // ==========================================
+  const enviarNotificacionWA = async (telefono, mensaje) => {
+    if (!telefono) return;
+    const telefonoLimpio = telefono.replace(/\D/g, ''); 
+    const telefonoFinal = telefonoLimpio.startsWith('52') ? `+${telefonoLimpio}` : `+52${telefonoLimpio}`;
+
+    const url = "https://api.ultramsg.com/instance174627/messages/chat";
+    const data = new URLSearchParams();
+    data.append("token", "jun0fonvb2vj6ib6");
+    data.append("to", telefonoFinal);
+    data.append("body", mensaje);
+
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: data
+      });
+      console.log("Notificación VAd enviada a:", telefonoFinal);
+    } catch (error) {
+      console.error("Error WA:", error);
+    }
+  };
 
   // ==========================================
   // 3. ESTADOS DE USUARIO (AUTENTICACIÓN)
@@ -865,6 +891,14 @@ export default function App() {
                   } else {
                     await supabase.from('buscar').insert([{ jugador_id: partido.rival.id, nombre: partido.rival.nombre, fecha: partido.fecha, hora_inicio: partido.hora_inicio, hora_fin: partido.hora_fin, superficie: partido.superficie, estado: 'activa' }]);
                   }
+
+                  // --- 🤖 GATILLO WA: CANCELACIÓN DE RIVAL ---
+                  const { data: rivalWA } = await supabase.from('perfiles').select('telefono').eq('id', partido.rival.id).single();
+                  if (rivalWA?.telefono) {
+                      enviarNotificacionWA(rivalWA.telefono, `🚫 *VAd: Partido Cancelado*\n\nTu rival tuvo que cancelar el partido del ${partido.fecha}. Tus puntos están a salvo y el sistema te ha regresado automáticamente a la Búsqueda Activa para encontrarte otro match.`);
+                  }
+                  // -------------------------------------------
+
                   mostrarAlerta("Cancelado", "Partido cancelado. El rival ha regresado a la sala de búsqueda.");
               }
               resolverListaDeEspera(partido.fecha, partido.superficie, partido.cancha_numero, partido.hora_inicio, partido.hora_fin);
@@ -1278,8 +1312,17 @@ export default function App() {
         if (eM || !mc || mc.length === 0) throw new Error("Error al agendar el partido.");
         await supabase.from('buscar').update({ estado: 'match' }).eq('id', matchEncontrado.id);
         await supabase.from('buscar').insert([{ jugador_id: currentUser.id, nombre: currentUser.nombre, fecha: searchDate, hora_inicio: startTime, hora_fin: endTime, superficie: superficie, estado: 'match' }]);
+        
+        // --- 🤖 GATILLO WA: MATCH ENCONTRADO ---
+        // Buscamos el teléfono del rival rápido en la base de datos
+        const { data: rivalWA } = await supabase.from('perfiles').select('telefono').eq('id', matchEncontrado.jugador_id).single();
+        const msgMatch = `🎾 *¡VAd: Tenemos Partido!* 🔥\n\nSe armó tu reta para el *${searchDate}* a las *${formatTime(matchInicio)}* en *Cancha ${canchaAsignada}*.\n\n¡Entra a la app para ver contra quién juegas y preparar tu estrategia!`;
+        
+        enviarNotificacionWA(currentUser.telefono, msgMatch); // Mensaje para ti
+        if (rivalWA?.telefono) enviarNotificacionWA(rivalWA.telefono, msgMatch); // Mensaje para el rival
+        // ---------------------------------------
+
         mostrarAlerta("¡MATCH ENCONTRADO!", `Tienes un partido en Cancha ${canchaAsignada}.`); setTab('partidos'); fetchPartidos();
-      } else {
         await publicarBusqueda(false);
       }
     } catch (error) { setSearchError(error.message || 'Error en el circuito.'); }
@@ -1329,7 +1372,7 @@ export default function App() {
       <header className={`fixed top-0 left-0 w-full backdrop-blur-md shadow-sm z-50 h-16 flex items-center justify-center border-b transition-colors duration-500 ${theme.nav} ${theme.border}`}>
         <h1 className="text-2xl font-black italic tracking-tighter flex items-end gap-1">
           <div><span className="text-[#1D873B]">V</span><span className="text-[#1268B0]">Ad.</span></div>
-          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.86</span>
+          <span className={`text-[9px] font-bold mb-1.5 ${theme.muted}`}>v  1.87</span>
         </h1>
         {isLoggedIn && currentUser?.rol === 'club' && (
           <button onClick={() => setTab(tab === 'perfil' ? 'club_agenda' : 'perfil')} className={`absolute right-6 text-xl p-2 rounded-full ${theme.card} shadow-sm border ${theme.border} active:scale-95`}>
